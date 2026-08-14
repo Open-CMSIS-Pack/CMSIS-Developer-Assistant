@@ -1,0 +1,16 @@
+name: Bug Report
+description: Report a bug or issue.
+title: "<title>"
+type: "Bug"
+projects:
+  - Open-CMSIS-Pack/24
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Details
+      description: Describe the problem and include any useful context.
+      placeholder: Explain what happened, what you expected, and how to reproduce it.
+    validations:
+      required: true

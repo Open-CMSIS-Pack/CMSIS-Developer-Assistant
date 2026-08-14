@@ -1,0 +1,37 @@
+[
+    {
+        "name": "@modelcontextprotocol/sdk",
+        "version": "1.26.0",
+        "spdx": "MIT",
+        "url": "https://github.com/modelcontextprotocol/typescript-sdk",
+        "license": "https://github.com/modelcontextprotocol/typescript-sdk/blob/main/LICENSE"
+    },
+    {
+        "name": "express",
+        "version": "5.2.1",
+        "spdx": "MIT",
+        "url": "https://github.com/expressjs/express",
+        "license": "https://github.com/expressjs/express/blob/master/LICENSE"
+    },
+    {
+        "name": "jsonc-parser",
+        "version": "3.3.1",
+        "spdx": "MIT",
+        "url": "https://github.com/microsoft/node-jsonc-parser",
+        "license": "https://github.com/microsoft/node-jsonc-parser/blob/main/LICENSE.md"
+    },
+    {
+        "name": "serialport",
+        "version": "13.0.0",
+        "spdx": "MIT",
+        "url": "https://github.com/serialport/node-serialport",
+        "license": "https://github.com/serialport/node-serialport/blob/master/LICENSE"
+    },
+    {
+        "name": "zod",
+        "version": "3.25.76",
+        "spdx": "MIT",
+        "url": "https://github.com/colinhacks/zod",
+        "license": "https://github.com/colinhacks/zod/blob/main/LICENSE"
+    }
+]

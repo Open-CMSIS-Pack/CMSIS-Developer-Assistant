@@ -1,0 +1,154 @@
+{
+  "name": "cmsis-debugmcp",
+  "displayName": "CMSIS-DebugMCP",
+  "description": "AI-driven debugging for Arm Cortex-M targets via the CMSIS Debugger. MCP server with fault analysis, memory inspection, peripheral registers, and core register reads. Fork of microsoft/DebugMCP.",
+  "version": "2.0.3",
+  "publisher": "arm",
+  "license": "MIT",
+  "homepage": "https://github.com/mather01/DebugMCP",
+  "bugs": {
+    "url": "https://github.com/mather01/DebugMCP/issues"
+  },
+  "keywords": [
+    "debug",
+    "mcp",
+    "debugging",
+    "ai",
+    "microsoft",
+    "vscode-extension",
+    "ai debugging",
+    "copilot debugging",
+    "llm debugging",
+    "model context protocol",
+    "breakpoints",
+    "debugger",
+    "ai agent",
+    "copilot",
+    "embedded",
+    "cortex-m",
+    "cmsis",
+    "arm",
+    "gdbtarget"
+  ],
+  "engines": {
+    "node": "^22.22.0",
+    "npm": "^10.0.0",
+    "vscode": "^1.109.0"
+  },
+  "icon": "assets/debug_mcp_icon.png",
+  "categories": [
+    "Debuggers",
+    "AI",
+    "Programming Languages"
+  ],
+  "extensionDependencies": [],
+  "extensionPack": [],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mather01/DebugMCP.git"
+  },
+  "activationEvents": [
+    "onStartupFinished",
+    "onDebug"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "cmsis-debugmcp",
+        "label": "CMSIS-DebugMCP"
+      }
+    ],
+    "commands": [
+      {
+        "command": "cmsis-debugmcp.showAgentSelectionPopup",
+        "title": "Show Agent Selection Popup",
+        "category": "CMSIS-DebugMCP"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "cmsis-debugmcp.showAgentSelectionPopup",
+          "when": "true"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "CMSIS-DebugMCP",
+      "properties": {
+        "cmsis-debugmcp.timeoutInSeconds": {
+          "type": "number",
+          "default": 180,
+          "description": "Timeout in seconds for debugging operations"
+        },
+        "cmsis-debugmcp.serverPort": {
+          "type": "number",
+          "default": 3001,
+          "description": "Port number for the CMSIS-DebugMCP server"
+        },
+        "cmsis-debugmcp.redactSecrets": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Withhold variable and expression values whose name or content looks like a credential (API key, token, password, connection string) before they are sent to an AI agent. Numeric scalars are never withheld, so firmware flags and counters named `auth`, `token` or `key` stay readable. Raw target reads \u2014 `read_memory`, `read_core_registers`, `read_peripheral_register`, `get_fault_info`, and `-exec` GDB passthrough \u2014 are never redacted."
+        },
+        "cmsis-debugmcp.dapRequestTimeoutMs": {
+          "type": "number",
+          "default": 10000,
+          "minimum": 500,
+          "description": "Per-request timeout (in milliseconds) for DAP traffic to the debug adapter / hardware probe. If the probe or GDB server stalls, requests will fail with a HardwareTimeoutError instead of hanging the MCP tool call. Increase for slow targets or large memory reads."
+        },
+        "cmsis-debugmcp.memoryReadTimeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 1000,
+          "description": "Overall timeout (in milliseconds) for a single read_memory / read_core_registers tool call. Caps the total time spent talking to the hardware, even across many word-level fallback reads."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "build": "npm run check-types && node esbuild.js --production",
+    "check-types": "tsc --noEmit -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test",
+    "test:transport": "npm run compile && node test/transport/session-lifecycle.js && node test/transport/two-window-routing.js",
+    "bundle": "node esbuild.js",
+    "package": "npm run build && tsx scripts/package.ts",
+    "tpip:update": "tsx scripts/update-tpip docs/third-party-licenses.json",
+    "tpip:report": "tsx scripts/tpip-reporter --header docs/tpip-header.md docs/third-party-licenses.json TPIP.md"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@types/express": "^5.0.3",
+    "express": "^5.2.1",
+    "jsonc-parser": "^3.3.1",
+    "serialport": "^13.0.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^25.3.0",
+    "@types/semver": "^7.7.1",
+    "@types/vscode": "^1.104.0",
+    "@types/yargs": "^17.0.33",
+    "@typescript-eslint/eslint-plugin": "^8.56.0",
+    "@typescript-eslint/parser": "^8.56.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.0",
+    "eslint": "^10.0.1",
+    "semver": "^7.7.4",
+    "tsx": "^4.22.4",
+    "typescript": "^5.9.3",
+    "yargs": "^18.0.0"
+  },
+  "overrides": {
+    "minimatch": "^10.2.1",
+    "diff": "^8.0.3"
+  }
+}

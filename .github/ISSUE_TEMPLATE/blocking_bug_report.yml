@@ -1,0 +1,14 @@
+name: Blocking Bug Report
+description: Report a bug that cannot be worked around.
+title: "[Blocker]: "
+type: "Bug"
+labels: ["critical"]
+body:
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Describe the problem and include any useful context.
+      placeholder: Explain what happened, what you expected, and how to reproduce it.
+    validations:
+      required: true

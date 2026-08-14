@@ -183,6 +183,7 @@ jobs:
         with:
           token: ${{ secrets.QLTY_COVERAGE_TOKEN }}
           files: coverage/lcov.info
+          skip-errors: false
 
   package:
     needs: build-and-test

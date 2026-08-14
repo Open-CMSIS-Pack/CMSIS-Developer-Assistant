@@ -423,6 +423,7 @@ test/realboard/realboard.report.*.json
 
 node_modules/*
 out/*
+coverage/*
 .vscode-test/*
 .cmsis-dev/*
 # macOS Finder metadata

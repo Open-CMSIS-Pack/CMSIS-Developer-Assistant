@@ -12,7 +12,7 @@
 ## Get up and running straight away
 
 * Press `F5` to open a new window with your extension loaded.
-* Initiate a debug sessoin via your agent.
+* Initiate a debug session via your agent.
 * Set breakpoints in your code inside `src/extension.ts` to debug your extension.
 * Find output from your extension in the debug console.
 

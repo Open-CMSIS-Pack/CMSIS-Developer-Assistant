@@ -4,7 +4,7 @@
   "description": "AI-driven debugging for Arm Cortex-M targets via the CMSIS Debugger. MCP server with fault analysis, memory inspection, peripheral registers, and core register reads. Fork of microsoft/DebugMCP.",
   "version": "2.0.3",
   "publisher": "arm",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "homepage": "https://github.com/mather01/DebugMCP",
   "bugs": {
     "url": "https://github.com/mather01/DebugMCP/issues"
@@ -133,7 +133,7 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.3.0",
     "@types/semver": "^7.7.1",
-    "@types/vscode": "^1.104.0",
+    "@types/vscode": "^1.109.0",
     "@types/yargs": "^17.0.33",
     "@typescript-eslint/eslint-plugin": "^8.56.0",
     "@typescript-eslint/parser": "^8.56.0",

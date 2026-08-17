@@ -69,11 +69,15 @@ export class Logger {
         }
     }
 
-    private formatError(error: any): string {
+    private formatError(error: unknown): string {
         if (error instanceof Error) {
             return `${error.message}${error.stack ? `\nStack: ${error.stack}` : ''}`;
         }
-        return JSON.stringify(error, null, 2);
+        try {
+             return JSON.stringify(error, null, 2);
+         } catch {
+             return String(error);
+         }
     }
 
     public setLogLevel(level: LogLevel): void {

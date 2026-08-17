@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { SERVER_VERSION } from './debuggingExecutor';
 import { AgentConfigurationManager } from './utils/agentConfigurationManager';
 import { clearSvdCache } from './core/svdParser';
-import { logger, LogLevel } from './utils/logger';
+import { logger } from './utils/logger';
 import { registerSessionStateTracker } from './utils/sessionStateTracker';
 import { WindowCoordinator } from './windowCoordinator';
 
@@ -15,7 +15,6 @@ export async function activate(context: vscode.ExtensionContext) {
     // Initialize logging first
     logger.info('CMSIS-DebugMCP extension is now active!');
     logger.logSystemInfo();
-    logger.logEnvironment();
 
     const config = vscode.workspace.getConfiguration('cmsis-debugmcp');
     const timeoutInSeconds = config.get<number>('timeoutInSeconds', 60);

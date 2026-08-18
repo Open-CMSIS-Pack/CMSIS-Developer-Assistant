@@ -20,7 +20,7 @@ jobs:
   analysis:
     name: Scorecard analysis
     runs-on: ubuntu-24.04
-    if: github.event.repository.default_branch == github.ref_name || github.repository == 'Open-CMSIS-Pack/CMSIS-DebugMCP'
+    if: github.event.repository.default_branch == github.ref_name || github.repository == 'Open-CMSIS-Pack/CMSIS-Developer-Assistant'
     permissions:
       security-events: write
       id-token: write

@@ -1,14 +1,15 @@
 # Contributing
 
-This project welcomes contributions and suggestions. Most contributions require you to
-agree to a Contributor License Agreement (CLA) declaring that you have the right to,
-and actually do, grant us the rights to use your contribution. For details, visit
-https://cla.microsoft.com.
+Contributions and suggestions are welcome.
 
-When you submit a pull request, a CLA-bot will automatically determine whether you need
-to provide a CLA and decorate the PR appropriately (e.g., label, comment). Simply follow the
-instructions provided by the bot. You will only need to do this once across all repositories using our CLA.
+- Open an issue to discuss a bug or feature before large changes.
+- Submit changes as a pull request against `main`; keep PRs focused and include
+  a clear description of what changed and why.
+- Make sure the build and tests pass locally (`npm run compile`, `npm run lint`,
+  and the test suites) before requesting review.
+- By contributing, you agree that your contributions are licensed under the
+  project's dual license (**Apache-2.0 OR MIT**; see [NOTICE](NOTICE)).
 
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/)
-or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+This project is part of [Open-CMSIS-Pack](https://github.com/Open-CMSIS-Pack);
+please follow the org's contribution and sign-off requirements where they apply.
+All participation is subject to the [Code of Conduct](CODE_OF_CONDUCT.md).

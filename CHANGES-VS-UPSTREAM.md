@@ -1,10 +1,12 @@
-# CMSIS-DebugMCP — Changes vs. Upstream
+# CMSIS Developer Assistant — Provenance & changes vs. the DebugMCP origin
 
-This fork of [microsoft/DebugMCP](https://github.com/microsoft/DebugMCP) adapts the MCP debugger server for **Arm Cortex-M targets driven through the CMSIS Debugger VS Code extension**. Upstream DebugMCP is language-agnostic; it assumes a `vscode.debug.startDebugging(...)` call against a standard `launch.json` of type `python`, `node`, `cppdbg`, etc. It has no concept of a GDB target server, no memory or register reads, no fault decoding, no SVD awareness, no per-call timeouts, and no resilience to a wedged probe. Everything in this document exists because that is the gap to close before an AI agent can debug real embedded hardware (pyOCD / J-Link / CMSIS-DAP + `gdbtarget`).
+> **Historical provenance.** CMSIS Developer Assistant was originally derived from [microsoft/DebugMCP](https://github.com/microsoft/DebugMCP) (MIT) and is now developed independently by Arm as part of Open-CMSIS-Pack. Upstream syncing has stopped; this document is retained to record how the project diverged from that origin.
+
+Originally derived from [microsoft/DebugMCP](https://github.com/microsoft/DebugMCP), this project adapts the MCP debugger server for **Arm Cortex-M targets driven through the CMSIS Debugger VS Code extension**. Upstream DebugMCP is language-agnostic; it assumes a `vscode.debug.startDebugging(...)` call against a standard `launch.json` of type `python`, `node`, `cppdbg`, etc. It has no concept of a GDB target server, no memory or register reads, no fault decoding, no SVD awareness, no per-call timeouts, and no resilience to a wedged probe. Everything in this document exists because that is the gap to close before an AI agent can debug real embedded hardware (pyOCD / J-Link / CMSIS-DAP + `gdbtarget`).
 
 Upstream baseline: forked at [`4422d8c`](https://github.com/microsoft/DebugMCP/commit/4422d8c) (2026-03-14), last synced against [`4051049`](https://github.com/microsoft/DebugMCP/commit/4051049) (upstream v2.3.0, 2026-08-05) in fork v2.0.0. See [§9](#9-upstream-work-deliberately-not-taken) for what was deliberately left behind.
 
-Current fork release: **v2.0.3** (2026-08-10) — see [CHANGELOG.md](CHANGELOG.md) for the per-version detail.
+Current release: **v2.1.0** — see [CHANGELOG.md](CHANGELOG.md) for the per-version detail.
 
 ---
 

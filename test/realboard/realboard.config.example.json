@@ -1,0 +1,26 @@
+{
+  "endpoint": "http://localhost:3001/mcp",
+
+  "configurationName": "CMSIS Debugger: pyOCD",
+  "workingDirectory": "/path/to/your/project",
+
+  "breakpoint": {
+    "fileFullPath": "/path/to/your/project/algorithm/main.c",
+    "lineContent": "int main(void)"
+  },
+
+  "memoryProbe":     { "address": "0x20000000", "length": 64 },
+  "peripheralProbe": { "peripheral": "GPIO0" },
+  "evaluateProbe":   { "expression": "$pc" },
+
+  "serial": {
+    "path": "/dev/tty.example",
+    "baudRate": 115200,
+    "skipIfMissing": true
+  },
+
+  "preferCmsisLoadAndDebug": true,
+
+  "globalCapMs": 60000,
+  "abortOnFirstFailure": false
+}

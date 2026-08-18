@@ -23,7 +23,7 @@ export const REDACTION_NOTICE =
     'content looks like a credential (key, token, password, connection string, ...). ' +
     'Use debug-specific checks (type, length, is-null) instead of reading the raw value. ' +
     'Numeric scalars are never withheld, so firmware flags and counters stay readable. ' +
-    'Turn this off with the "cmsis-debugmcp.redactSecrets" setting.';
+    'Turn this off with the "cmsis-developer-assistant.redactSecrets" setting.';
 
 /**
  * Names that mark a variable as credential-bearing.

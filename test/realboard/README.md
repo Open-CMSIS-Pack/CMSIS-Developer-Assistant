@@ -1,6 +1,6 @@
 # Real-board test driver
 
-End-to-end test that exercises every MCP tool exposed by `cmsis-debugmcp`
+End-to-end test that exercises every MCP tool exposed by `cmsis-developer-assistant`
 against a live target (e.g. Alif AppKit-E8).
 
 ## What it does
@@ -25,8 +25,8 @@ cp test/realboard/realboard.config.example.json test/realboard/realboard.config.
 # edit test/realboard/realboard.config.json — see fields below
 ```
 
-Make sure the VS Code window with `cmsis-debugmcp` installed is running and
-note the port (the activation log prints `CMSIS-DebugMCP server running on
+Make sure the VS Code window with `cmsis-developer-assistant` installed is running and
+note the port (the activation log prints `CMSIS Developer Assistant server running on
 http://localhost:<port>`). Put that in `endpoint`.
 
 ## Run

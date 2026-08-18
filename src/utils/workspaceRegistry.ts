@@ -40,7 +40,7 @@ export type ResolutionReason =
     | 'only-window';
 
 /** Default directory holding one JSON file per live window. */
-const DEFAULT_REGISTRY_DIR = path.join(os.tmpdir(), 'cmsis-debugmcp-registry');
+const DEFAULT_REGISTRY_DIR = path.join(os.tmpdir(), 'cmsis-developer-assistant-registry');
 
 /** Entries not refreshed within this window are considered stale. */
 const STALE_MS = 60_000;
@@ -78,7 +78,7 @@ function isInside(target: string, folder: string): boolean {
 }
 
 /**
- * File-based registry of CMSIS-DebugMCP-enabled VS Code windows on this machine.
+ * File-based registry of CMSIS Developer Assistant-enabled VS Code windows on this machine.
  * One file per window (named by pid); reads prune dead/stale entries.
  */
 export class WorkspaceRegistry {
@@ -103,7 +103,7 @@ export class WorkspaceRegistry {
             const entry: WindowRegistration = { ...reg, pid: this.pid, updatedAt: Date.now() };
             fs.writeFileSync(this.filePath, JSON.stringify(entry), 'utf8');
         } catch (error) {
-            logger.error('Failed to write CMSIS-DebugMCP registry entry', error);
+            logger.error('Failed to write CMSIS Developer Assistant registry entry', error);
         }
     }
 

@@ -201,7 +201,7 @@ suite('Multi-window routing', () => {
         await assert.rejects(
             () => router().handleGetSessionStatus(),
             (err: Error) => {
-                assert.match(err.message, /No CMSIS-DebugMCP-enabled VS Code window/);
+                assert.match(err.message, /No CMSIS Developer Assistant-enabled VS Code window/);
                 return true;
             },
         );
@@ -240,7 +240,7 @@ suite('Multi-window routing', () => {
         });
 
         test('list_debug_windows says so when nothing is registered', () => {
-            assert.match(router().listDebugWindows(), /No CMSIS-DebugMCP-enabled VS Code windows/);
+            assert.match(router().listDebugWindows(), /No CMSIS Developer Assistant-enabled VS Code windows/);
         });
     });
 

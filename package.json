@@ -1,20 +1,19 @@
 {
-  "name": "cmsis-debugmcp",
-  "displayName": "CMSIS-DebugMCP",
-  "description": "AI-driven debugging for Arm Cortex-M targets via the CMSIS Debugger. MCP server with fault analysis, memory inspection, peripheral registers, and core register reads. Fork of microsoft/DebugMCP.",
+  "name": "cmsis-developer-assistant",
+  "displayName": "CMSIS Developer Assistant",
+  "description": "AI-driven debugging for Arm Cortex-M targets via the CMSIS Debugger. MCP server with fault analysis, memory inspection, peripheral registers, and core register reads.",
   "version": "2.0.3",
   "publisher": "arm",
   "license": "Apache-2.0 OR MIT",
-  "homepage": "https://github.com/mather01/DebugMCP",
+  "homepage": "https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant",
   "bugs": {
-    "url": "https://github.com/mather01/DebugMCP/issues"
+    "url": "https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues"
   },
   "keywords": [
     "debug",
     "mcp",
     "debugging",
     "ai",
-    "microsoft",
     "vscode-extension",
     "ai debugging",
     "copilot debugging",
@@ -45,7 +44,7 @@
   "extensionPack": [],
   "repository": {
     "type": "git",
-    "url": "https://github.com/mather01/DebugMCP.git"
+    "url": "https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant.git"
   },
   "activationEvents": [
     "onStartupFinished",
@@ -55,60 +54,60 @@
   "contributes": {
     "mcpServerDefinitionProviders": [
       {
-        "id": "cmsis-debugmcp",
-        "label": "CMSIS-DebugMCP"
+        "id": "cmsis-developer-assistant",
+        "label": "CMSIS Developer Assistant"
       }
     ],
     "commands": [
       {
-        "command": "cmsis-debugmcp.showAgentSelectionPopup",
+        "command": "cmsis-developer-assistant.showAgentSelectionPopup",
         "title": "Show Agent Selection Popup",
-        "category": "CMSIS-DebugMCP"
+        "category": "CMSIS Developer Assistant"
       },
       {
-         "command": "cmsis-debugmcp.configureAgents",
+         "command": "cmsis-developer-assistant.configureAgents",
          "title": "Configure Agents",
-         "category": "CMSIS-DebugMCP"
+         "category": "CMSIS Developer Assistant"
        },
        {
-         "command": "cmsis-debugmcp.resetPopupState",
+         "command": "cmsis-developer-assistant.resetPopupState",
          "title": "Reset Popup State",
-         "category": "CMSIS-DebugMCP"
+         "category": "CMSIS Developer Assistant"
        }
     ],
     "menus": {
       "commandPalette": [
         {
-          "command": "cmsis-debugmcp.showAgentSelectionPopup",
+          "command": "cmsis-developer-assistant.showAgentSelectionPopup",
           "when": "true"
         }
       ]
     },
     "configuration": {
-      "title": "CMSIS-DebugMCP",
+      "title": "CMSIS Developer Assistant",
       "properties": {
-        "cmsis-debugmcp.timeoutInSeconds": {
+        "cmsis-developer-assistant.timeoutInSeconds": {
           "type": "number",
           "default": 180,
           "description": "Timeout in seconds for debugging operations"
         },
-        "cmsis-debugmcp.serverPort": {
+        "cmsis-developer-assistant.serverPort": {
           "type": "number",
           "default": 3001,
-          "description": "Port number for the CMSIS-DebugMCP server"
+          "description": "Port number for the CMSIS Developer Assistant server"
         },
-        "cmsis-debugmcp.redactSecrets": {
+        "cmsis-developer-assistant.redactSecrets": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "Withhold variable and expression values whose name or content looks like a credential (API key, token, password, connection string) before they are sent to an AI agent. Numeric scalars are never withheld, so firmware flags and counters named `auth`, `token` or `key` stay readable. Raw target reads \u2014 `read_memory`, `read_core_registers`, `read_peripheral_register`, `get_fault_info`, and `-exec` GDB passthrough \u2014 are never redacted."
         },
-        "cmsis-debugmcp.dapRequestTimeoutMs": {
+        "cmsis-developer-assistant.dapRequestTimeoutMs": {
           "type": "number",
           "default": 10000,
           "minimum": 500,
           "description": "Per-request timeout (in milliseconds) for DAP traffic to the debug adapter / hardware probe. If the probe or GDB server stalls, requests will fail with a HardwareTimeoutError instead of hanging the MCP tool call. Increase for slow targets or large memory reads."
         },
-        "cmsis-debugmcp.memoryReadTimeoutMs": {
+        "cmsis-developer-assistant.memoryReadTimeoutMs": {
           "type": "number",
           "default": 30000,
           "minimum": 1000,

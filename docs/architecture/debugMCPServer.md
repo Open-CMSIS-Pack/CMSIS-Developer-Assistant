@@ -79,12 +79,12 @@ Each request creates a new `StreamableHTTPServerTransport` instance in stateless
 
 | URI | Content |
 |-----|---------|
-| `cmsis-debugmcp://docs/debug_instructions` | General debugging guide |
-| `cmsis-debugmcp://docs/cmsis-embedded-guide` | Cortex-M debugging expertise |
-| `cmsis-debugmcp://docs/troubleshooting/embedded` | Embedded-specific troubleshooting |
-| `cmsis-debugmcp://docs/troubleshooting/*` | Language-specific tips |
+| `cmsis-developer-assistant://docs/debug_instructions` | General debugging guide |
+| `cmsis-developer-assistant://docs/cmsis-embedded-guide` | Cortex-M debugging expertise |
+| `cmsis-developer-assistant://docs/troubleshooting/embedded` | Embedded-specific troubleshooting |
+| `cmsis-developer-assistant://docs/troubleshooting/*` | Language-specific tips |
 
 ## Configuration
 
-- `cmsis-debugmcp.serverPort`: Port number (default: 3001)
-- `cmsis-debugmcp.timeoutInSeconds`: Operation timeout (default: 180)
+- `cmsis-developer-assistant.serverPort`: Port number (default: 3001)
+- `cmsis-developer-assistant.timeoutInSeconds`: Operation timeout (default: 180)

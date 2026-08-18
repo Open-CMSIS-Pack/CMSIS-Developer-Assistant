@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Handles automatic configuration of AI coding agents (Cline, GitHub Copilot, Cursor) to connect to the CMSIS-DebugMCP server. Provides a seamless onboarding experience.
+Handles automatic configuration of AI coding agents (Cline, GitHub Copilot, Cursor) to connect to the CMSIS Developer Assistant server. Provides a seamless onboarding experience.
 
 ## Motivation
 
-For AI agents to use CMSIS-DebugMCP, they need MCP server configuration in their settings files. Rather than requiring users to manually edit JSON files, this manager auto-configures supported agents with the correct Streamable HTTP endpoint.
+For AI agents to use CMSIS Developer Assistant, they need MCP server configuration in their settings files. Rather than requiring users to manually edit JSON files, this manager auto-configures supported agents with the correct Streamable HTTP endpoint.
 
 ## Responsibility
 
@@ -38,7 +38,7 @@ Config base paths vary by OS:
 The configuration written to agent settings:
 ```json
 {
-  "cmsis-debugmcp": {
+  "cmsis-developer-assistant": {
     "autoApprove": [],
     "disabled": false,
     "timeout": 180,
@@ -71,6 +71,6 @@ Uses VS Code's `globalState` to track whether the onboarding popup has been show
 
 ## Commands
 
-- `cmsis-debugmcp.showAgentSelectionPopup`: Manually trigger agent setup
-- `cmsis-debugmcp.configureAgents`: Alternative manual configuration
-- `cmsis-debugmcp.resetPopupState`: Reset for testing (re-shows popup)
+- `cmsis-developer-assistant.showAgentSelectionPopup`: Manually trigger agent setup
+- `cmsis-developer-assistant.configureAgents`: Alternative manual configuration
+- `cmsis-developer-assistant.resetPopupState`: Reset for testing (re-shows popup)

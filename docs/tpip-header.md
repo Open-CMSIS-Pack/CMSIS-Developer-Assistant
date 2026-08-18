@@ -1,1 +1,1 @@
-# TPIP Report for CMSIS-DebugMCP
+# TPIP Report for CMSIS Developer Assistant

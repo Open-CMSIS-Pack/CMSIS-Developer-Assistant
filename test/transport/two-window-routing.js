@@ -1,4 +1,4 @@
-// Two-window routing check for CMSIS-DebugMCP.
+// Two-window routing check for CMSIS Developer Assistant.
 //
 // Stands up two WindowCoordinators against a shared temporary registry, with a
 // stubbed `vscode`, and drives the router's MCP endpoint with a real MCP client.

@@ -9,7 +9,7 @@
 // So: unpack the VSIX to a temp dir and load from there, exactly as VS Code
 // would. Run after `vsce package`:
 //
-//   node test/transport/packaged-vsix.js cmsis-debugmcp-<version>.vsix
+//   node test/transport/packaged-vsix.js cmsis-developer-assistant-<version>.vsix
 
 const { execFileSync } = require('child_process');
 const fs = require('fs');

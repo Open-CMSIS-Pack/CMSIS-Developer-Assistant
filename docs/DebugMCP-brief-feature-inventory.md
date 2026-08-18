@@ -1,4 +1,4 @@
-# CMSIS-DebugMCP — Feature Inventory & Agent-Usage Priority
+# CMSIS Developer Assistant — Feature Inventory & Agent-Usage Priority
 
 ## Product brief: Arm Keil MDK integration
 
@@ -29,7 +29,7 @@ The upstream base is a language-agnostic bridge from an MCP client to the VS Cod
 
 ---
 
-## B. Added by CMSIS-DebugMCP
+## B. Added by CMSIS Developer Assistant
 
 Upstream has no concept of a GDB target server, hardware memory or registers, fault decoding, SVD awareness, or a wedged probe. The fork closes exactly that gap so an agent can debug real Cortex-M silicon over pyOCD / J-Link / CMSIS-DAP + `gdbtarget`. Two layers: **new tools** (22) and **always-on infrastructure** that hardens every call.
 

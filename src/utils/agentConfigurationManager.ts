@@ -39,7 +39,22 @@ export interface MCPServerConfig {
 }
 
 /**
- * Insert or update the `[mcp_servers.cmsis-debugmcp]` block in a Codex
+ * MCP server key written into external agent config files — the JSON map key
+ * under `mcpServers`, and the Codex TOML `[mcp_servers.<key>]` section name.
+ * Renamed from `cmsis-debugmcp` when the product became "CMSIS Developer
+ * Assistant".
+ */
+export const SERVER_KEY = 'cmsis-developer-assistant';
+
+/**
+ * The pre-rename key. Existing user configs written by earlier versions are
+ * migrated from this to SERVER_KEY on activation; afterwards it is only used
+ * for detection of a stale entry.
+ */
+export const LEGACY_SERVER_KEY = 'cmsis-debugmcp';
+
+/**
+ * Insert or update the `[mcp_servers.<SERVER_KEY>]` block in a Codex
  * `config.toml`, preserving the rest of the file. Codex configs are TOML,
  * not JSON, so they cannot go through the generic JSON path.
  */
@@ -47,13 +62,13 @@ export function upsertCodexDebugMCPConfig(configContent: string, mcpServerUrl: s
     const normalizedConfigContent = configContent.replace(/\r\n/g, '\n');
     const lines = normalizedConfigContent.split('\n');
     const escapedUrl = escapeTomlString(mcpServerUrl);
-    const debugMCPSectionIndex = lines.findIndex(line => isCodexDebugMCPSectionHeader(line));
+    const debugMCPSectionIndex = lines.findIndex(line => isCodexServerSectionHeader(line, SERVER_KEY));
 
     if (debugMCPSectionIndex === -1) {
         const separator = normalizedConfigContent.length === 0
             ? ''
             : normalizedConfigContent.endsWith('\n') ? '\n' : '\n\n';
-        return `${normalizedConfigContent}${separator}[mcp_servers.cmsis-debugmcp]\nurl = "${escapedUrl}"\n`;
+        return `${normalizedConfigContent}${separator}[mcp_servers.${SERVER_KEY}]\nurl = "${escapedUrl}"\n`;
     }
 
     const nextSectionIndex = findNextTomlSectionIndex(lines, debugMCPSectionIndex + 1);
@@ -69,6 +84,25 @@ export function upsertCodexDebugMCPConfig(configContent: string, mcpServerUrl: s
 
     lines.splice(debugMCPSectionIndex + 1, 0, `url = "${escapedUrl}"`);
     return lines.join('\n');
+}
+
+/**
+ * Remove a legacy `[mcp_servers.cmsis-debugmcp]` section from a Codex
+ * config.toml if present, bounded by the next TOML section so adjacent
+ * `[mcp_servers.*]` blocks survive. Returns the stripped content and whether
+ * anything was removed.
+ */
+export function stripLegacyCodexSection(configContent: string): { content: string; removed: boolean } {
+    const normalized = configContent.replace(/\r\n/g, '\n');
+    const lines = normalized.split('\n');
+    const idx = lines.findIndex(line => isCodexServerSectionHeader(line, LEGACY_SERVER_KEY));
+    if (idx === -1) {
+        return { content: configContent, removed: false };
+    }
+    const nextIdx = findNextTomlSectionIndex(lines, idx + 1);
+    const end = nextIdx === -1 ? lines.length : nextIdx;
+    lines.splice(idx, end - idx);
+    return { content: lines.join('\n'), removed: true };
 }
 
 function escapeTomlString(value: string): string {
@@ -88,8 +122,9 @@ function isTomlSectionHeader(line: string): boolean {
     return /^\s*\[\[?[^\]]+\]\]?\s*(?:#.*)?$/.test(line);
 }
 
-function isCodexDebugMCPSectionHeader(line: string): boolean {
-    return /^\s*\[mcp_servers\.cmsis-debugmcp\]\s*(?:#.*)?$/.test(line);
+function isCodexServerSectionHeader(line: string, key: string): boolean {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`^\\s*\\[mcp_servers\\.${escaped}\\]\\s*(?:#.*)?$`).test(line);
 }
 
 /**
@@ -108,7 +143,7 @@ export class AgentConfigurationManager {
     private context: vscode.ExtensionContext;
     // Versioned so the popup re-appears once when new agents are added to
     // the roster (v2: Claude Code + Claude Desktop).
-    private readonly POPUP_SHOWN_KEY = 'cmsis-debugmcp.popupShown.v2';
+    private readonly POPUP_SHOWN_KEY = 'cmsis-developer-assistant.popupShown.v2';
     private readonly timeoutInSeconds: number;
     private serverPort: number;
     
@@ -179,13 +214,13 @@ export class AgentConfigurationManager {
 
         const items: vscode.QuickPickItem[] = agents.map(agent => ({
             label: agent.displayName,
-            description: 'Configure CMSIS-DebugMCP for this agent',
-            detail: `Add CMSIS-DebugMCP server configuration to ${agent.displayName}`
+            description: 'Configure CMSIS Developer Assistant for this agent',
+            detail: `Add CMSIS Developer Assistant server configuration to ${agent.displayName}`
         }));
 
         const selected = await vscode.window.showQuickPick(items, {
-            title: 'Configure CMSIS-DebugMCP for AI Agent',
-            placeHolder: 'Select an AI agent to configure with CMSIS-DebugMCP'
+            title: 'Configure CMSIS Developer Assistant for AI Agent',
+            placeHolder: 'Select an AI agent to configure with CMSIS Developer Assistant'
         });
 
         if (selected) {
@@ -332,13 +367,13 @@ export class AgentConfigurationManager {
      * hold state well beyond MCP entries).
      */
     private async writeFileAtomic(filePath: string, content: string): Promise<void> {
-        const tmpPath = `${filePath}.cmsis-debugmcp.tmp`;
+        const tmpPath = `${filePath}.cmsis-developer-assistant.tmp`;
         await fs.promises.writeFile(tmpPath, content, 'utf8');
         await fs.promises.rename(tmpPath, filePath);
     }
 
     /**
-     * Get CMSIS-DebugMCP server configuration with current port and timeout settings.
+     * Get CMSIS Developer Assistant server configuration with current port and timeout settings.
      * The Copilot CLI expects a `type: 'http'` entry with a `tools` allowlist.
      * Claude Code takes a plain `type: 'http'` entry; Claude Desktop only
      * supports stdio servers, so it gets an `mcp-remote` bridge.
@@ -392,12 +427,17 @@ export class AgentConfigurationManager {
                 const configContent = await fs.promises.readFile(agent.configPath, 'utf8');
 
                 if (agent.configFormat === 'toml') {
-                    if (this.shouldMigrateCodexConfig(configContent)) {
-                        await fs.promises.writeFile(
-                            agent.configPath,
-                            upsertCodexDebugMCPConfig(configContent, this.getMCPServerUrl()),
-                            'utf8'
-                        );
+                    // Rename a legacy [mcp_servers.cmsis-debugmcp] section to the
+                    // new key, then refresh a stale /sse endpoint on the new key.
+                    const legacy = stripLegacyCodexSection(configContent);
+                    let tomlContent = legacy.content;
+                    let tomlChanged = legacy.removed;
+                    if (legacy.removed || this.shouldMigrateCodexConfig(tomlContent)) {
+                        tomlContent = upsertCodexDebugMCPConfig(tomlContent, this.getMCPServerUrl());
+                        tomlChanged = true;
+                    }
+                    if (tomlChanged) {
+                        await fs.promises.writeFile(agent.configPath, tomlContent, 'utf8');
                         migrationCount++;
                         console.log(`Successfully migrated ${agent.displayName} configuration`);
                     }
@@ -413,10 +453,29 @@ export class AgentConfigurationManager {
                 }
 
                 const fieldName = agent.mcpServerFieldName;
-                const debugmcpConfig = config[fieldName]?.['cmsis-debugmcp'];
+                const servers = config[fieldName];
+
+                // Rename a legacy `cmsis-debugmcp` entry to the new key,
+                // carrying its settings, then operate on the new key. This is
+                // what stops the rename from orphaning a dead duplicate server
+                // in the user's home-directory agent config.
+                let renamed = false;
+                if (servers && servers[LEGACY_SERVER_KEY]) {
+                    if (!servers[SERVER_KEY]) {
+                        servers[SERVER_KEY] = servers[LEGACY_SERVER_KEY];
+                    }
+                    delete servers[LEGACY_SERVER_KEY];
+                    renamed = true;
+                }
+
+                const debugmcpConfig = servers?.[SERVER_KEY];
 
                 if (!debugmcpConfig) {
-                    continue; // CMSIS-DebugMCP not configured for this agent
+                    if (renamed) {
+                        await this.writeFileAtomic(agent.configPath, JSON.stringify(config, null, 2));
+                        migrationCount++;
+                    }
+                    continue; // server not configured for this agent
                 }
 
                 // Migrate only when the existing entry doesn't match the
@@ -444,26 +503,28 @@ export class AgentConfigurationManager {
                         JSON.stringify(debugmcpConfig.args) !== JSON.stringify(desiredConfig.args));
                 const needsMigration = isLegacySse || isWrongTransport || isStaleEndpoint;
 
-                if (needsMigration) {
-                    console.log(`Migrating CMSIS-DebugMCP configuration for ${agent.displayName} to the ${desiredConfig.type ?? 'stdio-bridge'} transport`);
+                if (needsMigration || renamed) {
+                    if (needsMigration) {
+                        console.log(`Migrating server configuration for ${agent.displayName} to the ${desiredConfig.type ?? 'stdio-bridge'} transport`);
 
-                    // Update to new configuration
-                    config[fieldName]['cmsis-debugmcp'] = desiredConfig;
+                        // Update to new configuration
+                        config[fieldName][SERVER_KEY] = desiredConfig;
 
-                    // Preserve any custom autoApprove settings
-                    if (debugmcpConfig.autoApprove && Array.isArray(debugmcpConfig.autoApprove)) {
-                        config[fieldName]['cmsis-debugmcp'].autoApprove = debugmcpConfig.autoApprove;
+                        // Preserve any custom autoApprove settings
+                        if (debugmcpConfig.autoApprove && Array.isArray(debugmcpConfig.autoApprove)) {
+                            config[fieldName][SERVER_KEY].autoApprove = debugmcpConfig.autoApprove;
+                        }
                     }
-                    
+
                     // Write the migrated config
                     await this.writeFileAtomic(
                         agent.configPath,
                         JSON.stringify(config, null, 2)
                     );
-                    
-                    // Only legacy-transport migrations get counted toward the
-                    // user-facing toast; silent endpoint refreshes don't.
-                    if (isLegacySse || isWrongTransport) {
+
+                    // Count legacy-transport migrations and key renames toward
+                    // the user-facing toast; silent endpoint refreshes don't.
+                    if (isLegacySse || isWrongTransport || renamed) {
                         migrationCount++;
                     }
                     console.log(`Successfully migrated ${agent.displayName} configuration`);
@@ -476,7 +537,7 @@ export class AgentConfigurationManager {
 
         if (migrationCount > 0) {
             vscode.window.showInformationMessage(
-                `CMSIS-DebugMCP: Migrated ${migrationCount} agent configuration(s) to use the new transport protocol.`
+                `CMSIS Developer Assistant: Migrated ${migrationCount} agent configuration(s).`
             );
         }
     }
@@ -488,7 +549,7 @@ export class AgentConfigurationManager {
     private shouldMigrateCodexConfig(configContent: string): boolean {
         const normalizedConfigContent = configContent.replace(/\r\n/g, '\n');
         const lines = normalizedConfigContent.split('\n');
-        const debugMCPSectionIndex = lines.findIndex(line => isCodexDebugMCPSectionHeader(line));
+        const debugMCPSectionIndex = lines.findIndex(line => isCodexServerSectionHeader(line, SERVER_KEY));
 
         if (debugMCPSectionIndex === -1) {
             return false;
@@ -507,7 +568,7 @@ export class AgentConfigurationManager {
     }
 
     /**
-     * Add CMSIS-DebugMCP server configuration to the specified agent's config
+     * Add CMSIS Developer Assistant server configuration to the specified agent's config
      */
     private async addDebugMCPToAgent(agent: AgentInfo): Promise<boolean> {
         try {
@@ -528,7 +589,7 @@ export class AgentConfigurationManager {
                     upsertCodexDebugMCPConfig(existing, this.getMCPServerUrl()),
                     'utf8'
                 );
-                console.log(`Successfully added CMSIS-DebugMCP configuration to ${agent.name}`);
+                console.log(`Successfully added CMSIS Developer Assistant configuration to ${agent.name}`);
                 return true;
             }
 
@@ -559,8 +620,8 @@ export class AgentConfigurationManager {
                 config[fieldName] = {};
             }
 
-            // Add or update CMSIS-DebugMCP configuration with current settings
-            config[fieldName]['cmsis-debugmcp'] = this.getDebugMCPConfig(agent);
+            // Add or update the server configuration with current settings
+            config[fieldName][SERVER_KEY] = this.getDebugMCPConfig(agent);
 
             // Write the updated config back to file
             await this.writeFileAtomic(
@@ -568,11 +629,11 @@ export class AgentConfigurationManager {
                 JSON.stringify(config, null, 2)
             );
 
-            console.log(`Successfully added CMSIS-DebugMCP configuration to ${agent.name}`);
+            console.log(`Successfully added CMSIS Developer Assistant configuration to ${agent.name}`);
             return true;
         } catch (error) {
-            console.error(`Error adding CMSIS-DebugMCP to ${agent.name}:`, error);
-            vscode.window.showErrorMessage(`Failed to configure CMSIS-DebugMCP for ${agent.displayName}: ${error}`);
+            console.error(`Error adding CMSIS Developer Assistant to ${agent.name}:`, error);
+            vscode.window.showErrorMessage(`Failed to configure CMSIS Developer Assistant for ${agent.displayName}: ${error}`);
             return false;
         }
     }
@@ -585,7 +646,7 @@ export class AgentConfigurationManager {
         agents.forEach(agent => {
             items.push({
                 label: `$(add) Configure ${agent.displayName}`,
-                description: 'Add CMSIS-DebugMCP server to this agent',
+                description: 'Add CMSIS Developer Assistant server to this agent',
                 detail: agent.displayName,
                 picked: false
             });
@@ -593,8 +654,8 @@ export class AgentConfigurationManager {
 
 
         const quickPick = vscode.window.createQuickPick();
-        quickPick.title = 'CMSIS-DebugMCP Setup - Choose AI Agent to Configure';
-        quickPick.placeholder = 'Select an AI agent to configure with CMSIS-DebugMCP';
+        quickPick.title = 'CMSIS Developer Assistant Setup - Choose AI Agent to Configure';
+        quickPick.placeholder = 'Select an AI agent to configure with CMSIS Developer Assistant';
         quickPick.items = items;
         quickPick.canSelectMany = true;
         quickPick.ignoreFocusOut = true;
@@ -625,7 +686,7 @@ export class AgentConfigurationManager {
     }
 
     /**
-     * Configure a specific agent with CMSIS-DebugMCP
+     * Configure a specific agent with CMSIS Developer Assistant
      */
     private async configureAgent(agent: AgentInfo): Promise<void> {
         try {
@@ -642,7 +703,7 @@ export class AgentConfigurationManager {
 
                 const openConfigButton = 'Open Config';
                 const result = await vscode.window.showInformationMessage(
-                    `✅ CMSIS-DebugMCP successfully configured for ${agent.displayName}` +
+                    `✅ CMSIS Developer Assistant successfully configured for ${agent.displayName}` +
                     (skillPath ? ' (skill /cmsis-debug-live installed)' : ''),
                     openConfigButton
                 );

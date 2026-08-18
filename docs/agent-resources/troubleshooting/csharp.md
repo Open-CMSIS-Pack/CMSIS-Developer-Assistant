@@ -1,8 +1,7 @@
 # C# Debugging Tips
 
 ## Overview
-
-CMSIS-DebugMCP provides enhanced support for debugging C# applications using the C# Dev Kit. This guide covers configuration options and best practices for C# debugging.
+CMSIS Developer Assistant provides enhanced support for debugging C# applications using the C# Dev Kit. This guide covers configuration options and best practices for C# debugging.
 
 ## Supported C# Project Types
 
@@ -72,9 +71,13 @@ CMSIS-DebugMCP provides enhanced support for debugging C# applications using the
 ## Advanced Features
 
 ### Expression Evaluation
+<<<<<<< HEAD
 
 CMSIS-DebugMCP supports evaluating C# expressions during debugging:
 
+=======
+CMSIS Developer Assistant supports evaluating C# expressions during debugging:
+>>>>>>> 251b176 (rename: CMSIS-DebugMCP -> CMSIS Developer Assistant)
 - Property access: `myObject.Property`
 - Method calls: `myObject.Method()`
 - LINQ expressions: `list.Where(x => x > 5)`
@@ -104,9 +107,13 @@ When running specific test methods:
 - Exception handling configuration
 
 ### Project Templates
+<<<<<<< HEAD
 
 CMSIS-DebugMCP works seamlessly with C# Dev Kit project templates:
 
+=======
+CMSIS Developer Assistant works seamlessly with C# Dev Kit project templates:
+>>>>>>> 251b176 (rename: CMSIS-DebugMCP -> CMSIS Developer Assistant)
 - Console applications
 - Class libraries  
 - Test projects
@@ -115,9 +122,13 @@ CMSIS-DebugMCP works seamlessly with C# Dev Kit project templates:
 ## External Project Support
 
 ### Opening C# Projects Outside Workspace
+<<<<<<< HEAD
 
 CMSIS-DebugMCP can debug C# files that are part of external projects:
 
+=======
+CMSIS Developer Assistant can debug C# files that are part of external projects:
+>>>>>>> 251b176 (rename: CMSIS-DebugMCP -> CMSIS Developer Assistant)
 1. Specify the full path to the C# source file
 2. Set appropriate working directory
 3. Use custom launch configurations if needed

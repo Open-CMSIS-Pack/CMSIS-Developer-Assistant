@@ -49,7 +49,7 @@ export class ControlServer {
                 // would otherwise take down the extension host.
                 server.removeListener('error', reject);
                 server.on('error', (err) => logger.error('Control server error', err));
-                logger.info(`CMSIS-DebugMCP control server listening on 127.0.0.1:${this.boundPort}`);
+                logger.info(`CMSIS Developer Assistant control server listening on 127.0.0.1:${this.boundPort}`);
                 resolve(this.boundPort);
             });
         });
@@ -70,7 +70,7 @@ export class ControlServer {
             res.writeHead(404).end();
             return;
         }
-        if (req.headers['x-cmsis-debugmcp-token'] !== this.token) {
+        if (req.headers['x-cmsis-developer-assistant-token'] !== this.token) {
             res.writeHead(403).end();
             return;
         }

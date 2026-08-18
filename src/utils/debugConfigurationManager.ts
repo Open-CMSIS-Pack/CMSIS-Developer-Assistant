@@ -60,7 +60,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
                     if (namedConfig) {
                         return {
                             ...namedConfig,
-                            name: `CMSIS-DebugMCP Launch (${configurationName})`
+                            name: `CMSIS Developer Assistant Launch (${configurationName})`
                         };
                     }
                     console.log(`No configuration named '${configurationName}' found in launch.json`);
@@ -114,7 +114,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
             configOptions.push({
                 label: DebugConfigurationManager.AUTO_LAUNCH_CONFIG,
                 description: 'Use auto-detected default configuration (beta)',
-                detail: 'CMSIS-DebugMCP will create a default configuration based on file extension. This is a heuristic and may not always work as expected.'
+                detail: 'CMSIS Developer Assistant will create a default configuration based on file extension. This is a heuristic and may not always work as expected.'
             });
             
             // Show quick pick to user
@@ -181,7 +181,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
             python: {
                 type: 'python',
                 request: 'launch',
-                name: 'CMSIS-DebugMCP Python Launch',
+                name: 'CMSIS Developer Assistant Python Launch',
                 program: fileFullPath,
                 console: 'integratedTerminal',
                 cwd: cwd,
@@ -191,7 +191,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
             node: {
                 type: 'pwa-node',
                 request: 'launch',
-                name: 'CMSIS-DebugMCP Node.js Launch',
+                name: 'CMSIS Developer Assistant Node.js Launch',
                 program: fileFullPath,
                 console: 'integratedTerminal',
                 cwd: cwd,
@@ -201,7 +201,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
             java: {
                 type: 'java',
                 request: 'launch',
-                name: 'CMSIS-DebugMCP Java Launch',
+                name: 'CMSIS Developer Assistant Java Launch',
                 mainClass: path.basename(fileFullPath, path.extname(fileFullPath)),
                 console: 'integratedTerminal',
                 cwd: cwd
@@ -209,7 +209,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
             coreclr: {
                 type: 'coreclr',
                 request: 'launch',
-                name: 'CMSIS-DebugMCP .NET Launch',
+                name: 'CMSIS Developer Assistant .NET Launch',
                 program: fileFullPath,
                 console: 'integratedTerminal',
                 cwd: cwd,
@@ -218,7 +218,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
             cppdbg: {
                 type: 'cppdbg',
                 request: 'launch',
-                name: 'CMSIS-DebugMCP C++ Launch',
+                name: 'CMSIS Developer Assistant C++ Launch',
                 program: fileFullPath.replace(/\.(cpp|cc|c)$/, '.exe'),
                 cwd: cwd,
                 console: 'integratedTerminal'
@@ -226,7 +226,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
             go: {
                 type: 'go',
                 request: 'launch',
-                name: 'CMSIS-DebugMCP Go Launch',
+                name: 'CMSIS Developer Assistant Go Launch',
                 mode: 'debug',
                 program: fileFullPath,
                 cwd: cwd
@@ -346,7 +346,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
                 return {
                     type: 'python',
                     request: 'launch',
-                    name: `CMSIS-DebugMCP Python Test: ${testName}`,
+                    name: `CMSIS Developer Assistant Python Test: ${testName}`,
                     module: 'unittest',
                     args: [
                         formattedTestName,
@@ -370,7 +370,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
                     return {
                         type: 'pwa-node',
                         request: 'launch',
-                        name: `CMSIS-DebugMCP Jest Test: ${testName}`,
+                        name: `CMSIS Developer Assistant Jest Test: ${testName}`,
                         program: '${workspaceFolder}/node_modules/.bin/jest',
                         args: [
                             '--testNamePattern', testName,
@@ -387,7 +387,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
                     return {
                         type: 'pwa-node',
                         request: 'launch',
-                        name: `CMSIS-DebugMCP Mocha Test: ${testName}`,
+                        name: `CMSIS Developer Assistant Mocha Test: ${testName}`,
                         program: '${workspaceFolder}/node_modules/.bin/mocha',
                         args: [
                             '--grep', testName,
@@ -406,7 +406,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
                 return {
                     type: 'java',
                     request: 'launch',
-                    name: `CMSIS-DebugMCP JUnit Test: ${testName}`,
+                    name: `CMSIS Developer Assistant JUnit Test: ${testName}`,
                     mainClass: className,
                     args: ['--tests', `${className}.${testName}`],
                     console: 'integratedTerminal',
@@ -418,7 +418,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
                 return {
                     type: 'coreclr',
                     request: 'launch',
-                    name: `CMSIS-DebugMCP .NET Test: ${testName}`,
+                    name: `CMSIS Developer Assistant .NET Test: ${testName}`,
                     program: 'dotnet',
                     args: [
                         'test',
@@ -436,7 +436,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
                 return {
                     type: language,
                     request: 'launch',
-                    name: `CMSIS-DebugMCP Launch (test filtering not supported for ${language})`,
+                    name: `CMSIS Developer Assistant Launch (test filtering not supported for ${language})`,
                     program: fileFullPath,
                     console: 'integratedTerminal',
                     cwd: cwd,

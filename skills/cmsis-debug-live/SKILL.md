@@ -1,6 +1,6 @@
 ---
 name: cmsis-debug-live
-description: Drive a live Arm Cortex-M debug session through the CMSIS Debugger to investigate firmware bugs — HardFaults, peripherals that do not respond, values that are wrong on hardware but right in simulation, code that never reaches the line you expect, timing that does not close. Use this whenever a question about firmware behaviour would be cheaper to answer by halting the CPU and looking than by reasoning about the source. Pairs with the CMSIS-DebugMCP MCP server, which exposes the breakpoint / step / memory / register / peripheral tools.
+description: Drive a live Arm Cortex-M debug session through the CMSIS Debugger to investigate firmware bugs — HardFaults, peripherals that do not respond, values that are wrong on hardware but right in simulation, code that never reaches the line you expect, timing that does not close. Use this whenever a question about firmware behaviour would be cheaper to answer by halting the CPU and looking than by reasoning about the source. Pairs with the CMSIS Developer Assistant MCP server, which exposes the breakpoint / step / memory / register / peripheral tools.
 license: MIT
 allowed-tools:
   - get_debug_instructions
@@ -49,7 +49,7 @@ allowed-tools:
   - select_debug_window
 ---
 
-# CMSIS-DebugMCP — Live Cortex-M Debugging
+# CMSIS Developer Assistant — Live Cortex-M Debugging
 
 Embedded debugging differs from host debugging in ways that change the workflow,
 not just the tool names:
@@ -63,8 +63,8 @@ not just the tool names:
 - **The probe can wedge.** A failed read may mean the memory is inaccessible,
   or that the debug link is gone. Those need different responses.
 
-> The `allowed-tools` list uses the tool names the CMSIS-DebugMCP server
-> registers. Some runtimes namespace them (`mcp__cmsis-debugmcp__read_memory`);
+> The `allowed-tools` list uses the tool names the CMSIS Developer Assistant server
+> registers. Some runtimes namespace them (`mcp__cmsis-developer-assistant__read_memory`);
 > adapt as needed.
 
 ---

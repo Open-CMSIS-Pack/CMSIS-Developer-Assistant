@@ -64,7 +64,17 @@
         "command": "cmsis-debugmcp.showAgentSelectionPopup",
         "title": "Show Agent Selection Popup",
         "category": "CMSIS-DebugMCP"
-      }
+      },
+      {
+         "command": "cmsis-debugmcp.configureAgents",
+         "title": "Configure Agents",
+         "category": "CMSIS-DebugMCP"
+       },
+       {
+         "command": "cmsis-debugmcp.resetPopupState",
+         "title": "Reset Popup State",
+         "category": "CMSIS-DebugMCP"
+       }
     ],
     "menus": {
       "commandPalette": [

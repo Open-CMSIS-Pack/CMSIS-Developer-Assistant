@@ -2,10 +2,10 @@
   "endpoint": "http://localhost:3001/mcp",
 
   "configurationName": "CMSIS Debugger: pyOCD",
-  "workingDirectory": "/Users/mather01/debug-mcp/Test/ModelNova/RockPaperScissors/AppKit-E8_USB",
+  "workingDirectory": "/path/to/your/project",
 
   "breakpoint": {
-    "fileFullPath": "/Users/mather01/debug-mcp/Test/ModelNova/RockPaperScissors/AppKit-E8_USB/algorithm/main.c",
+    "fileFullPath": "/path/to/your/project/algorithm/main.c",
     "lineContent": "int main(void)"
   },
 
@@ -14,7 +14,7 @@
   "evaluateProbe":   { "expression": "$pc" },
 
   "serial": {
-    "path": "/dev/tty.usbmodemAlif",
+    "path": "/dev/tty.example",
     "baudRate": 115200,
     "skipIfMissing": true
   },

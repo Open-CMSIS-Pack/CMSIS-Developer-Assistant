@@ -4,6 +4,15 @@ All notable changes to CMSIS-DebugMCP will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-08-18
+
+### Changed
+- **Renamed to CMSIS Developer Assistant** and relocated to the Open-CMSIS-Pack organization. The extension id, settings prefix (`cmsis-developer-assistant.*`), command namespace, MCP server name (tool namespace `mcp__cmsis-developer-assistant__*`), `mcpServerDefinitionProvider` id, resource URIs, and internal identifiers all move from `cmsis-debugmcp` to `cmsis-developer-assistant`. On activation, existing users' external agent configs (Claude Code/Desktop, Cline/Roo, Cursor, Copilot CLI, Antigravity, and the Codex TOML section) are migrated from the old key to the new one and the stale entry removed, so no dead duplicate server is left behind. Agent `autoApprove` lists pinned to the old `mcp__cmsis-debugmcp__*` tool names will need re-approving once.
+- **Detached from the Microsoft DebugMCP upstream.** Syncing has stopped; the "fork of" framing is reworded and the Microsoft governance boilerplate (CONTRIBUTING / CODE_OF_CONDUCT / SUPPORT) replaced with Open-CMSIS-Pack equivalents. Microsoft's copyright notice and the MIT license text are retained.
+
+### Added
+- **Dual-licensed under Apache-2.0 OR MIT.** `LICENSE-MIT` added beside the Apache-2.0 `LICENSE`; a `NOTICE` records provenance; every source header carries `SPDX-License-Identifier: Apache-2.0 OR MIT` with both the Microsoft and Arm copyright lines.
+
 ## [2.0.3] - 2026-08-10
 
 ### Fixed

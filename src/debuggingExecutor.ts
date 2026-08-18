@@ -123,7 +123,7 @@ export interface ExecutorDiagnostics {
 }
 
 /** Bumped in lockstep with package.json — surfaced by getDiagnostics() so the agent can confirm which build answered. */
-export const SERVER_VERSION = '2.0.3';
+export const SERVER_VERSION = '2.1.0';
 
 /**
  * Coarse classification of the debug session, exposed to MCP clients so an

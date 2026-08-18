@@ -1,8 +1,8 @@
-# Agent Guidelines for CMSIS-DebugMCP
+# Agent Guidelines for CMSIS Developer Assistant
 
 ## Project Overview
 
-CMSIS-DebugMCP is a VS Code extension (fork of microsoft/DebugMCP) that embeds an MCP (Model Context Protocol) server, enabling AI coding agents to control VS Code's debugger via DAP. It specializes in Arm Cortex-M embedded debugging through the CMSIS Debugger extension (`gdbtarget` configurations) — reading memory, core registers, peripheral registers (via SVD), and decoding Cortex-M fault status — while retaining general multi-language debugging support.
+CMSIS Developer Assistant is a VS Code extension (fork of microsoft/DebugMCP) that embeds an MCP (Model Context Protocol) server, enabling AI coding agents to control VS Code's debugger via DAP. It specializes in Arm Cortex-M embedded debugging through the CMSIS Debugger extension (`gdbtarget` configurations) — reading memory, core registers, peripheral registers (via SVD), and decoding Cortex-M fault status — while retaining general multi-language debugging support.
 
 ### Architecture
 
@@ -86,9 +86,9 @@ Include in each source file:
 ## Configuration
 
 | Setting | Default | Description |
-| ------- | ------- | ----------- |
-| `cmsis-debugmcp.serverPort` | 3001 | MCP server port |
-| `cmsis-debugmcp.timeoutInSeconds` | 180 | Operation timeout |
+|---------|---------|-------------|
+| `cmsis-developer-assistant.serverPort` | 3001 | MCP server port |
+| `cmsis-developer-assistant.timeoutInSeconds` | 180 | Operation timeout |
 
 ## Documentation Resources
 
@@ -99,10 +99,10 @@ The `docs/` folder contains two types of documentation:
 **AI Agent resources** (served via MCP at runtime):
 
 | Resource URI | Source file | Purpose |
-| ------ | --------- | --------- |
-| `cmsis-debugmcp://docs/debug_instructions` | `agent-resources/debug_instructions.md` | Core debugging workflow guide |
-| `cmsis-debugmcp://docs/cmsis-embedded-guide` | `agent-resources/cmsis-embedded-guide.md` | Cortex-M debugging expertise |
-| `cmsis-debugmcp://docs/troubleshooting/embedded` | `agent-resources/troubleshooting/embedded.md` | Embedded-specific tips |
-| `cmsis-debugmcp://docs/troubleshooting/<lang>` | `agent-resources/troubleshooting/<lang>.md` | Language-specific tips |
+|------|---------|---------|
+| `cmsis-developer-assistant://docs/debug_instructions` | `agent-resources/debug_instructions.md` | Core debugging workflow guide |
+| `cmsis-developer-assistant://docs/cmsis-embedded-guide` | `agent-resources/cmsis-embedded-guide.md` | Cortex-M debugging expertise |
+| `cmsis-developer-assistant://docs/troubleshooting/embedded` | `agent-resources/troubleshooting/embedded.md` | Embedded-specific tips |
+| `cmsis-developer-assistant://docs/troubleshooting/<lang>` | `agent-resources/troubleshooting/<lang>.md` | Language-specific tips |
 
 These resource files are loaded by `DebugMCPServer` and exposed as MCP resources that AI agents can read to learn how to use the debugging tools effectively.

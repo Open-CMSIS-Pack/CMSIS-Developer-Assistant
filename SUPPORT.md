@@ -1,21 +1,14 @@
-# TODO: The maintainer of this repo has not yet edited this file
+# Support
 
-**REPO OWNER**: Do you want Customer Service & Support (CSS) support for this product/project?
+## How to file issues and get help
 
-- **No CSS support:** Fill out this template with information about how to file issues and get help.
-- **Yes CSS support:** Fill out an intake form at [aka.ms/onboardsupport](https://aka.ms/onboardsupport). CSS will work with/help you to determine next steps.
-- **Not sure?** Fill out an intake as though the answer were "Yes". CSS will help you decide.
+This project uses **GitHub Issues** to track bugs and feature requests. Please
+search the existing issues before filing a new one to avoid duplicates; for a
+new problem, open a new Issue with steps to reproduce and relevant logs.
 
-*Then remove this first heading from this SUPPORT.MD file before publishing your repo.*
+For questions about using the extension, see the [README](README.md) and the
+[Troubleshooting](README.md#troubleshooting) section, or open a Discussion /
+Issue on the [Open-CMSIS-Pack](https://github.com/Open-CMSIS-Pack) repository.
 
-## Support
-
-### How to file issues and get help  
-
-This project uses GitHub Issues to track bugs and feature requests. Please search the existing
-issues before filing new issues to avoid duplicates.  For new issues, file your bug or
-feature request as a new Issue.
-
-For help and questions about using this project, please **REPO MAINTAINER: INSERT INSTRUCTIONS HERE
-FOR HOW TO ENGAGE REPO OWNERS OR COMMUNITY FOR HELP. COULD BE A STACK OVERFLOW TAG OR OTHER
-CHANNEL. WHERE WILL YOU HELP PEOPLE?**.
+For security vulnerabilities, do **not** open a public issue — follow
+[SECURITY.md](SECURITY.md) instead.

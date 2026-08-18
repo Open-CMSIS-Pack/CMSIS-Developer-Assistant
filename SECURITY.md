@@ -1,6 +1,6 @@
 # Open-CMSIS-Pack Security Policy  
 
-This document outlines the security procedures and policies for the Open-CMSIS-Pack CMSIS-DebugMCP project.
+This document outlines the security procedures and policies for the Open-CMSIS-Pack CMSIS Developer Assistant project.
 
 ## Table of Contents  
 
@@ -10,13 +10,13 @@ This document outlines the security procedures and policies for the Open-CMSIS-P
 
 ## Reporting a Security Issue  
 
-The Open-CMSIS-Pack CMSIS-DebugMCP maintainers take security issues seriously and appreciate responsible
+The Open-CMSIS-Pack CMSIS Developer Assistant maintainers take security issues seriously and appreciate responsible
 disclosure. Your efforts to improve project security are highly valued.  
 
 We use GitHub's [private vulnerability reporting](https://docs.github.com/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability)
 guidelines.
 To report a security issue, please click on
-[Report a vulnerability](https://github.com/Open-CMSIS-Pack/CMSIS-DebugMCP/security/advisories/new) and
+[Report a vulnerability](https://github.com/Open-CMSIS-Pack/CMSIS Developer Assistant/security/advisories/new) and
 include:  
 
 - A detailed description of the issue  

@@ -1,14 +1,14 @@
 # CMSIS Developer Assistant — AI-Driven Debugging for Arm Cortex-M Targets
 
-CMSIS Developer Assistant is an MCP server that lets an AI agent drive the VS Code debugger against Arm Cortex-M targets through the **CMSIS Debugger** extension — setting breakpoints, stepping, reading memory and core registers, decoding fault status, and inspecting peripheral registers via SVD. It also retains general multi-language debugging support (Python, JavaScript/TypeScript, Java, C#, C++, Go, Rust, PHP, Ruby) inherited from the upstream DebugMCP project.
+CMSIS Developer Assistant is an MCP server that lets an AI agent drive the VS Code debugger against Arm Cortex-M targets through the **CMSIS Debugger** extension — setting breakpoints, stepping, reading memory and core registers, decoding fault status, and inspecting peripheral registers via SVD. It also supports general multi-language debugging (Python, JavaScript/TypeScript, Java, C#, C++, Go, Rust, PHP, Ruby).
 
 Works with **GitHub Copilot**, **Claude Code**, **Claude Desktop**, **Cline**, **Cursor**, and any MCP-compatible assistant.
 
-> This project is a fork of [microsoft/DebugMCP](https://github.com/microsoft/DebugMCP) extended for Arm embedded workflows. See [CHANGELOG.md](CHANGELOG.md) for the list of embedded-specific additions.
+> Originally derived from [microsoft/DebugMCP](https://github.com/microsoft/DebugMCP) (MIT), now developed independently by Arm as part of the Open-CMSIS-Pack project. See [CHANGELOG.md](CHANGELOG.md) for the embedded-specific additions.
 
 [![License: Apache-2.0 OR MIT](https://img.shields.io/badge/License-Apache--2.0%20OR%20MIT-blue.svg)](#license)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.109.0+-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-2.0.3-green.svg)](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/releases)
+[![Version](https://img.shields.io/badge/version-2.1.0-green.svg)](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/releases)
 
 <p align="center">
   <img src="assets/DebugMCP.webp" alt="CMSIS Developer Assistant Demo" width="800">
@@ -34,7 +34,7 @@ Works with **GitHub Copilot**, **Claude Code**, **Claude Desktop**, **Cline**, *
 
 ## Overview
 
-CMSIS Developer Assistant is an MCP server that gives AI coding agents full control over the VS Code debugger. For embedded Arm Cortex-M development it delegates to the **CMSIS Debugger** extension (`arm.vscode-cmsis-debugger`) via `gdbtarget` launch configurations produced by CMSIS Solution, driving pyOCD or J-Link GDB Server against real hardware such as the Alif Semiconductor AppKit. It also retains the upstream DebugMCP behavior for general multi-language debugging. It runs 100% locally, requires no credentials, and works out of the box with any MCP-compatible AI assistant.
+CMSIS Developer Assistant is an MCP server that gives AI coding agents full control over the VS Code debugger. For embedded Arm Cortex-M development it delegates to the **CMSIS Debugger** extension (`arm.vscode-cmsis-debugger`) via `gdbtarget` launch configurations produced by CMSIS Solution, driving pyOCD or J-Link GDB Server against real hardware such as the Alif Semiconductor AppKit. It also supports general multi-language debugging. It runs 100% locally, requires no credentials, and works out of the box with any MCP-compatible AI assistant.
 
 ## Features
 
@@ -491,7 +491,7 @@ the native serial binding really enumerates ports.
 
 ## Contributing
 
-This project is a fork of [microsoft/DebugMCP](https://github.com/microsoft/DebugMCP) and contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for details. Upstream contributions that go back to DebugMCP remain governed by the upstream CLA.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## Security
 

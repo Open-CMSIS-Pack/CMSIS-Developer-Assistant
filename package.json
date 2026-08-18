@@ -4,7 +4,7 @@
   "description": "AI-driven debugging for Arm Cortex-M targets via the CMSIS Debugger. MCP server with fault analysis, memory inspection, peripheral registers, and core register reads. Fork of microsoft/DebugMCP.",
   "version": "2.0.3",
   "publisher": "arm",
-  "license": "Apache-2.0",
+  "license": "Apache-2.0 OR MIT",
   "homepage": "https://github.com/mather01/DebugMCP",
   "bugs": {
     "url": "https://github.com/mather01/DebugMCP/issues"

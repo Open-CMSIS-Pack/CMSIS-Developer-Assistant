@@ -6,7 +6,7 @@ Works with **GitHub Copilot**, **Claude Code**, **Claude Desktop**, **Cline**, *
 
 > This project is a fork of [microsoft/DebugMCP](https://github.com/microsoft/DebugMCP) extended for Arm embedded workflows. See [CHANGELOG.md](CHANGELOG.md) for the list of embedded-specific additions.
 
-[![License Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green?label=LICENSE)](https://github.com/Open-CMSIS-Pack/CMSIS-DebugMCP/blob/main/LICENSE)
+[![License: Apache-2.0 OR MIT](https://img.shields.io/badge/License-Apache--2.0%20OR%20MIT-blue.svg)](#license)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.109.0+-blue.svg)](https://code.visualstudio.com/)
 [![Version](https://img.shields.io/badge/version-2.0.3-green.svg)](https://github.com/Open-CMSIS-Pack/CMSIS-DebugMCP/releases)
 
@@ -502,4 +502,4 @@ See [SECURITY.md](SECURITY.md) for reporting guidance. Do not report security vu
 
 MIT License — see [LICENSE.txt](LICENSE) for details.
 
-Based on **DebugMCP**, originally created by **Oz Zafar**, **Ori Bar-Ilan** and **Karin Brisker** (Microsoft). CMSIS/Cortex-M embedded extensions maintained by Arm.
+Based on **DebugMCP**, originally created by **Oz Zafar**, **Ori Bar-Ilan** and **Karin Brisker** (Microsoft), used under the MIT License. CMSIS/Cortex-M embedded extensions maintained by Arm.

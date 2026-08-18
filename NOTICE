@@ -1,0 +1,24 @@
+CMSIS-DebugMCP
+Copyright 2026 Arm Limited and contributors
+
+This product is dual-licensed under either of
+
+  * Apache License, Version 2.0 ....... see LICENSE
+  * MIT License ....................... see LICENSE-MIT
+
+at your option (SPDX-License-Identifier: "Apache-2.0 OR MIT").
+
+------------------------------------------------------------------------
+Provenance / third-party attribution
+------------------------------------------------------------------------
+
+This project is derived from DebugMCP (https://github.com/microsoft/DebugMCP),
+originally created by Oz Zafar, Ori Bar-Ilan and Karin Brisker (Microsoft) and
+licensed under the MIT License:
+
+  Copyright (c) Microsoft Corporation.
+
+The MIT copyright notice and permission text (LICENSE-MIT) are retained for the
+portions of this work derived from DebugMCP, as required by the MIT License.
+Arm's CMSIS / Cortex-M embedded extensions and subsequent changes are
+contributed by Arm Limited.

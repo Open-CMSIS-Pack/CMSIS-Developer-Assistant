@@ -1,4 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright (c) Microsoft Corporation.
+// Copyright 2026 Arm Limited and contributors
 
 /**
  * Redaction of secret-looking runtime values before they leave the extension.

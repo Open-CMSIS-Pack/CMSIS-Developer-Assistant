@@ -2,21 +2,24 @@
 
 🟨 **JAVASCRIPT-SPECIFIC GUIDANCE:**
 
-## Prerequisites:
+## Prerequisites
+
 - Use Node.js debugger for server-side JS
 - Use browser debugger for client-side JS
 - Set breakpoints in `.js`, `.ts`, `.jsx`, `.tsx` files
 - Use 'pwa-node' debug configuration type
 - Check that Node.js is installed
 
-## JavaScript-Specific Best Practices:
+## JavaScript-Specific Best Practices
+
 - **Async/Await:** Be careful with asynchronous code - breakpoints in async functions
 - **Callbacks:** Set breakpoints inside callback functions to debug async operations
 - **Closures:** Watch for variable scope issues in nested functions
 - **Event Handlers:** Debug event-driven code by setting breakpoints in handlers
 - **Promises:** Use breakpoints in `.then()` and `.catch()` blocks
 
-## Common JavaScript Debug Configurations:
+## Common JavaScript Debug Configurations
+
 ```json
 {
     "type": "pwa-node",
@@ -27,7 +30,8 @@
 }
 ```
 
-## Browser Debugging:
+## Browser Debugging
+
 ```json
 {
     "type": "pwa-chrome",
@@ -38,7 +42,8 @@
 }
 ```
 
-## Debugging Tips:
+## Debugging Tips
+
 - Use `console.log()`, `console.error()`, `console.table()` for quick debugging
 - Leverage browser developer tools for client-side debugging
 - Watch for `undefined` and `null` values

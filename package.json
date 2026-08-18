@@ -129,7 +129,8 @@
     "bundle": "node esbuild.js",
     "package": "npm run build && tsx scripts/package.ts",
     "tpip:update": "tsx scripts/update-tpip docs/third-party-licenses.json",
-    "tpip:report": "tsx scripts/tpip-reporter --header docs/tpip-header.md docs/third-party-licenses.json TPIP.md"
+    "tpip:report": "tsx scripts/tpip-reporter --header docs/tpip-header.md docs/third-party-licenses.json TPIP.md",
+    "lint:md": "markdownlint **/*.md -c ./.github/markdownlint.jsonc -i ./node_modules -i ./dist -i ./coverage -i ./out -i ./docs/architecture -i CHANGELOG.md"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
@@ -152,6 +153,7 @@
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.0",
     "eslint": "^10.0.1",
+    "markdownlint-cli": "^0.49.1",
     "semver": "^7.7.4",
     "tsx": "^4.22.4",
     "typescript": "^5.9.3",
@@ -165,6 +167,9 @@
     "serialize-javascript": "^7.0.4",
     "hono": "^4.12.25",
     "path-to-regexp": "^8.4.0",
-    "body-parser": "^2.3.0"
+    "body-parser": "^2.3.0",
+    "markdownlint-cli": {
+        "minimatch": "^10.2.4"
+    }
   }
 }

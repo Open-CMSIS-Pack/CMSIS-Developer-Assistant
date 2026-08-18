@@ -6,7 +6,7 @@ CMSIS-DebugMCP is a VS Code extension (fork of microsoft/DebugMCP) that embeds a
 
 ### Architecture
 
-```
+```txt
 AI Agent (Cline/Copilot/Cursor) → MCP/HTTP → DebugMCPServer → DebuggingHandler → DebuggingExecutor → VS Code Debug API
                                                                                                        │
                                                                                             ┌──────────┴──────────┐
@@ -24,7 +24,7 @@ AI Agent (Cline/Copilot/Cursor) → MCP/HTTP → DebugMCPServer → DebuggingHan
 ### Key Components
 
 | Component | Responsibility | Docs |
-|-----------|----------------|------|
+| --------- | -------------- | ---- |
 | `DebugMCPServer` | MCP server, tool/resource registration | [docs/architecture/debugMCPServer.md](docs/architecture/debugMCPServer.md) |
 | `DebuggingHandler` | Operation orchestration, state change detection | [docs/architecture/debuggingHandler.md](docs/architecture/debuggingHandler.md) |
 | `DebuggingExecutor` | VS Code debug API calls, DAP requests | [docs/architecture/debuggingExecutor.md](docs/architecture/debuggingExecutor.md) |
@@ -35,6 +35,7 @@ AI Agent (Cline/Copilot/Cursor) → MCP/HTTP → DebugMCPServer → DebuggingHan
 ## Documentation Maintenance
 
 **IMPORTANT**: Keep `docs/*.md` files up to date when modifying components. These docs should remain high-level:
+
 - Purpose and motivation
 - Responsibility scope
 - Key concepts and patterns
@@ -45,6 +46,7 @@ Do NOT duplicate detailed implementation in docs - that information should be in
 ## File Header
 
 Include in each source file:
+
 ```typescript
 // Copyright (c) Microsoft Corporation.
 ```
@@ -52,7 +54,7 @@ Include in each source file:
 ## Build/Lint/Test Commands
 
 | Command | Description |
-|---------|-------------|
+| ------- | ----------- |
 | `npm run compile` | Compile TypeScript to `out/` |
 | `npm run lint` | Run ESLint on `src/` |
 | `npm test` | Run all tests (`src/test/*.test.ts`) |
@@ -84,7 +86,7 @@ Include in each source file:
 ## Configuration
 
 | Setting | Default | Description |
-|---------|---------|-------------|
+| ------- | ------- | ----------- |
 | `cmsis-debugmcp.serverPort` | 3001 | MCP server port |
 | `cmsis-debugmcp.timeoutInSeconds` | 180 | Operation timeout |
 
@@ -97,7 +99,7 @@ The `docs/` folder contains two types of documentation:
 **AI Agent resources** (served via MCP at runtime):
 
 | Resource URI | Source file | Purpose |
-|------|---------|---------|
+| ------ | --------- | --------- |
 | `cmsis-debugmcp://docs/debug_instructions` | `agent-resources/debug_instructions.md` | Core debugging workflow guide |
 | `cmsis-debugmcp://docs/cmsis-embedded-guide` | `agent-resources/cmsis-embedded-guide.md` | Cortex-M debugging expertise |
 | `cmsis-debugmcp://docs/troubleshooting/embedded` | `agent-resources/troubleshooting/embedded.md` | Embedded-specific tips |

@@ -6,7 +6,7 @@ Works with **GitHub Copilot**, **Claude Code**, **Claude Desktop**, **Cline**, *
 
 > This project is a fork of [microsoft/DebugMCP](https://github.com/microsoft/DebugMCP) extended for Arm embedded workflows. See [CHANGELOG.md](CHANGELOG.md) for the list of embedded-specific additions.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green?label=LICENSE)](https://github.com/Open-CMSIS-Pack/CMSIS-DebugMCP/blob/main/LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.109.0+-blue.svg)](https://code.visualstudio.com/)
 [![Version](https://img.shields.io/badge/version-2.0.3-green.svg)](https://github.com/Open-CMSIS-Pack/CMSIS-DebugMCP/releases)
 
@@ -15,6 +15,7 @@ Works with **GitHub Copilot**, **Claude Code**, **Claude Desktop**, **Cline**, *
 </p>
 
 ## Table of Contents
+
 - [Overview](#overview)
 - [Features](#features)
 - [Installation](#installation)
@@ -205,7 +206,9 @@ The extension runs an MCP server automatically. It will pop up a message to auto
 ### Manual MCP Server Registration (Optional)
 
 #### Cline
+
 Add to your Cline settings or `cline_mcp_settings.json`:
+
 ```json
 {
   "mcpServers": {
@@ -219,7 +222,9 @@ Add to your Cline settings or `cline_mcp_settings.json`:
 ```
 
 #### GitHub Copilot
+
 Add to your VS Code settings (`settings.json`):
+
 ```json
 {
   "mcp": {
@@ -235,7 +240,9 @@ Add to your VS Code settings (`settings.json`):
 ```
 
 #### Cursor
+
 Add to Cursor's MCP settings:
+
 ```json
 {
   "mcpServers": {
@@ -249,11 +256,15 @@ Add to Cursor's MCP settings:
 ```
 
 #### Claude Code
+
 Either use the agent selection popup, or register from a terminal:
+
 ```bash
 claude mcp add --transport http --scope user cmsis-debugmcp http://localhost:3001/mcp
 ```
+
 This writes a user-scoped entry to the top-level `mcpServers` of `~/.claude.json`:
+
 ```json
 {
   "mcpServers": {
@@ -266,7 +277,9 @@ This writes a user-scoped entry to the top-level `mcpServers` of `~/.claude.json
 ```
 
 #### Claude Desktop
+
 Claude Desktop only supports stdio MCP servers, so the extension registers an `mcp-remote` bridge (requires Node.js/`npx` on PATH) in `claude_desktop_config.json`:
+
 ```json
 {
   "mcpServers": {
@@ -277,6 +290,7 @@ Claude Desktop only supports stdio MCP servers, so the extension registers an `m
   }
 }
 ```
+
 Config file location: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), `%APPDATA%\Claude\claude_desktop_config.json` (Windows), `~/.config/Claude/claude_desktop_config.json` (Linux).
 
 ### Extension Settings
@@ -309,7 +323,6 @@ The router picks the target from a file path when the tool has one (`add_breakpo
 When **two windows are debugging at once** it refuses to guess and names both. Reading the wrong board's memory looks exactly like a firmware bug, so an error is cheaper. Use `list_debug_windows` and `select_debug_window` to pin one for the session.
 
 > Before v2.0.0 each window ran its own server on a fallback port and the last window to start overwrote the shared agent config — which is precisely how an agent ended up driving a window that did not hold the board.
-
 
 ## FAQ
 
@@ -364,13 +377,15 @@ Make sure CMSIS-DebugMCP is registered in your AI assistant's MCP settings. The 
 ### Common Issues
 
 #### MCP Server Not Starting
+
 - **Symptom**: AI assistant can't connect to CMSIS-DebugMCP
-- **Solution**: 
+- **Solution**:
   - Check if port 3001 is available
   - Restart VSCode
   - Verify extension is installed and activated
 
 #### CMSIS `gdbtarget` Session Fails to Launch
+
 - **Symptom**: `start_debugging` returns an error when `configurationName` is a `gdbtarget` config
 - **Solution**:
   - Verify the named configuration exists in `.vscode/launch.json`
@@ -382,7 +397,7 @@ Make sure CMSIS-DebugMCP is registered in your AI assistant's MCP settings. The 
 
 ### Architecture
 
-```
+```text
 AI Agent ──MCP/HTTP──► :3001  VS Code window A  (router)
                                 │
                                 ├── runs the tool here, or forwards it ──┐
@@ -415,12 +430,12 @@ publishes itself — workspace folders, whether it is debugging, its CMSIS
 solution — to a shared registry under the OS temp directory.
 
 ### Launch Configuration Integration
+
 The extension handles debug configurations intelligently:
 
 - **Named configuration passthrough**: When `start_debugging` is called with `configurationName`, CMSIS-DebugMCP resolves the entry from `.vscode/launch.json` and passes it directly to `vscode.debug.startDebugging()` — no language detection, no config rewriting. This is how `gdbtarget`/CMSIS configs are launched.
 - **Existing launch.json**: If a `.vscode/launch.json` exists and no `configurationName` is given, a matching configuration is chosen based on the source file's language.
 - **Default configuration**: If no launch.json exists and no `configurationName` is given, an appropriate default configuration is synthesized per language based on file-extension detection.
-
 
 ## Requirements
 
@@ -485,6 +500,6 @@ See [SECURITY.md](SECURITY.md) for reporting guidance. Do not report security vu
 
 ## License
 
-MIT License — see [LICENSE.txt](LICENSE.txt) for details.
+MIT License — see [LICENSE.txt](LICENSE) for details.
 
 Based on **DebugMCP**, originally created by **Oz Zafar**, **Ori Bar-Ilan** and **Karin Brisker** (Microsoft). CMSIS/Cortex-M embedded extensions maintained by Arm.

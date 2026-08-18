@@ -1,13 +1,13 @@
 # cmsis-debug-live
 
-The Agent Skill that ships with CMSIS-DebugMCP. It encodes the *workflow* for
+The Agent Skill that ships with CMSIS Developer Assistant. It encodes the *workflow* for
 driving a live Cortex-M debug session; the MCP server itself only exposes tools
 with short behavioural descriptions.
 
 Install location follows the [Agent Skills](https://agentskills.io) convention:
 the extension copies this directory to `~/.agents/skills/cmsis-debug-live/`, and
 also to `~/.copilot/skills/cmsis-debug-live/` when a Copilot home exists. That
-happens automatically when you register CMSIS-DebugMCP with an agent.
+happens automatically when you register CMSIS Developer Assistant with an agent.
 
 Invoke it as `/cmsis-debug-live` in harnesses that support skills.
 

@@ -17,7 +17,7 @@ export class Logger {
     private logLevel: LogLevel = LogLevel.INFO;
 
     private constructor() {
-        this.outputChannel = vscode.window.createOutputChannel('CMSIS-DebugMCP', { log: true });
+        this.outputChannel = vscode.window.createOutputChannel('CMSIS Developer Assistant', { log: true });
     }
 
     public static getInstance(): Logger {

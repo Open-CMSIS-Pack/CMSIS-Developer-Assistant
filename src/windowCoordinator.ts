@@ -108,7 +108,7 @@ export class WindowCoordinator {
             await server.start();
             this.mcpServer = server;
             this.stopPromotionPolling();
-            logger.info(`This window is the CMSIS-DebugMCP router on ${this.getEndpoint()}`);
+            logger.info(`This window is the CMSIS Developer Assistant router on ${this.getEndpoint()}`);
         } catch (error) {
             if (error instanceof PortInUseError) {
                 logger.info('Another window is the router; this window is a worker.');

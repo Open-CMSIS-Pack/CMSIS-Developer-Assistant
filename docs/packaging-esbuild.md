@@ -33,7 +33,7 @@ artifact, not the workspace:
 ```sh
 npm run package                                   # check-types + esbuild
 npx --yes @vscode/vsce package --allow-star-activation
-node test/transport/packaged-vsix.js cmsis-debugmcp-<version>.vsix
+node test/transport/packaged-vsix.js cmsis-developer-assistant-<version>.vsix
 ```
 
 That harness unpacks the VSIX and loads from it the way VS Code would: the

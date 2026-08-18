@@ -62,7 +62,7 @@ export function isLoopbackOrigin(origin: string): boolean {
  */
 export class PortInUseError extends Error {
     constructor(public readonly port: number) {
-        super(`Port ${port} is already in use by another CMSIS-DebugMCP window`);
+        super(`Port ${port} is already in use by another CMSIS Developer Assistant window`);
         this.name = 'PortInUseError';
     }
 }
@@ -173,7 +173,7 @@ export class DebugMCPServer {
      */
     private createMcpServer(): McpServer {
         const mcpServer = new McpServer({
-            name: 'cmsis-debugmcp',
+            name: 'cmsis-developer-assistant',
             version: SERVER_VERSION,
         });
         const handlers = this.handlerFactory();
@@ -220,7 +220,7 @@ export class DebugMCPServer {
                 '\n\nUSE THIS WHEN debugging a code-side bug (wrong values, null/undefined, unexpected behavior, ' +
                 'failing tests).' +
                 '\n\n⚠️ CRITICAL: Before using this tool, first call get_debug_instructions or read ' +
-                'cmsis-debugmcp://docs/debug_instructions resource!',
+                'cmsis-developer-assistant://docs/debug_instructions resource!',
             inputSchema: {
                 fileFullPath: z.string().optional().describe('Full path to the source code file to debug. Optional when configurationName is provided (e.g. for embedded/CMSIS gdbtarget configs).'),
                 workingDirectory: z.string().describe('Working directory for the debug session'),
@@ -825,8 +825,8 @@ export class DebugMCPServer {
      */
     private setupResources(mcpServer: McpServer) {
         // Add MCP resources for debugging documentation
-        mcpServer.registerResource('Debugging Instructions Guide', 'cmsis-debugmcp://docs/debug_instructions', {
-            description: 'Step-by-step instructions for debugging with CMSIS-DebugMCP',
+        mcpServer.registerResource('Debugging Instructions Guide', 'cmsis-developer-assistant://docs/debug_instructions', {
+            description: 'Step-by-step instructions for debugging with CMSIS Developer Assistant',
             mimeType: 'text/markdown',
         }, async (uri: URL) => {
             const content = await this.loadMarkdownFile('agent-resources/debug_instructions.md');
@@ -851,7 +851,7 @@ export class DebugMCPServer {
         languages.forEach(language => {
             mcpServer.registerResource(
                 languageTitles[language],
-                `cmsis-debugmcp://docs/troubleshooting/${language}`,
+                `cmsis-developer-assistant://docs/troubleshooting/${language}`,
                 {
                     description: `Debugging tips specific to ${language}`,
                     mimeType: 'text/markdown',
@@ -872,7 +872,7 @@ export class DebugMCPServer {
         // Add CMSIS embedded debugging guide resource
         mcpServer.registerResource(
             'CMSIS Embedded Debugging Guide',
-            'cmsis-debugmcp://docs/cmsis-embedded-guide',
+            'cmsis-developer-assistant://docs/cmsis-embedded-guide',
             {
                 description: 'Comprehensive guide for debugging Cortex-M embedded targets using CMSIS tools, including fault analysis, peripheral inspection, and memory layout.',
                 mimeType: 'text/markdown',
@@ -892,7 +892,7 @@ export class DebugMCPServer {
         // Add embedded troubleshooting resource
         mcpServer.registerResource(
             'Embedded Debugging Tips',
-            'cmsis-debugmcp://docs/troubleshooting/embedded',
+            'cmsis-developer-assistant://docs/troubleshooting/embedded',
             {
                 description: 'Troubleshooting tips for embedded Cortex-M debugging, HardFault analysis, and peripheral issues.',
                 mimeType: 'text/markdown',
@@ -937,7 +937,7 @@ export class DebugMCPServer {
      */
     async start(): Promise<void> {
         try {
-            logger.info(`Starting CMSIS-DebugMCP server (preferred port ${this.port})...`);
+            logger.info(`Starting CMSIS Developer Assistant server (preferred port ${this.port})...`);
 
             const app = express();
 
@@ -1078,7 +1078,7 @@ export class DebugMCPServer {
             // down the extension host.
             this.httpServer.on('error', (err) => logger.error('MCP HTTP server error', err));
 
-            logger.info(`CMSIS-DebugMCP server started successfully on 127.0.0.1:${this.actualPort}`);
+            logger.info(`CMSIS Developer Assistant server started successfully on 127.0.0.1:${this.actualPort}`);
 
         } catch (error) {
             if ((error as NodeJS.ErrnoException)?.code === 'EADDRINUSE') {
@@ -1088,8 +1088,8 @@ export class DebugMCPServer {
                 logger.info(`Port ${this.port} is already served — this window will be a worker`);
                 throw new PortInUseError(this.port);
             }
-            logger.error(`Failed to start CMSIS-DebugMCP server`, error);
-            throw new Error(`Failed to start CMSIS-DebugMCP server: ${error}`);
+            logger.error(`Failed to start CMSIS Developer Assistant server`, error);
+            throw new Error(`Failed to start CMSIS Developer Assistant server: ${error}`);
         }
     }
 
@@ -1156,7 +1156,7 @@ export class DebugMCPServer {
             await new Promise<void>((resolve) => server.close(() => resolve()));
         }
 
-        logger.info('CMSIS-DebugMCP server stopped');
+        logger.info('CMSIS Developer Assistant server stopped');
     }
 
     /**

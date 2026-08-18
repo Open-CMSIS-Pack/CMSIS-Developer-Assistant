@@ -1,4 +1,4 @@
-# CMSIS-DebugMCP improvement notes & roadmap
+# CMSIS Developer Assistant improvement notes & roadmap
 
 Field notes collected from real hardware sessions (ModelNova, Alif AppKit-E8 /
 Ensemble E8) whenever the agent had to **leave the MCP tool surface** and drive

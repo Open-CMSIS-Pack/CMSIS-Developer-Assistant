@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// Real-board test driver for the cmsis-debugmcp MCP server.
+// Real-board test driver for the cmsis-developer-assistant MCP server.
 //
 // Connects to the running MCP server (over its Streamable HTTP endpoint),
 // then exercises every tool against the live debug target. Built-in safety:

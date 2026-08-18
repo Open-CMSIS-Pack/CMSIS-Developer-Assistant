@@ -98,7 +98,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     private noTargetMessage(pathHint?: string): string {
         const windows = this.registry.list();
         if (windows.length === 0) {
-            return 'No CMSIS-DebugMCP-enabled VS Code window is currently registered. ' +
+            return 'No CMSIS Developer Assistant-enabled VS Code window is currently registered. ' +
                 'Open your project in VS Code and wait for the extension to activate.';
         }
 
@@ -154,7 +154,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
                 headers: {
                     'Content-Type': 'application/json',
                     'Content-Length': Buffer.byteLength(payload),
-                    'x-cmsis-debugmcp-token': target.controlToken,
+                    'x-cmsis-developer-assistant-token': target.controlToken,
                 },
                 timeout,
             }, (res) => {
@@ -191,7 +191,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     public listDebugWindows(): string {
         const windows = this.registry.list();
         if (windows.length === 0) {
-            return 'No CMSIS-DebugMCP-enabled VS Code windows are currently registered.';
+            return 'No CMSIS Developer Assistant-enabled VS Code windows are currently registered.';
         }
         const current = this.target;
         const lines = windows.map((w) => {

@@ -11,7 +11,7 @@ import { customRequestWithTimeout, HardwareTimeoutError } from '../utils/timeout
 
 /**
  * Per-DAP-request timeout for peripheral reads. Matches the default
- * `cmsis-debugmcp.dapRequestTimeoutMs` setting so a stalled probe cannot
+ * `cmsis-developer-assistant.dapRequestTimeoutMs` setting so a stalled probe cannot
  * hang peripheral dumps indefinitely.
  */
 const PERIPHERAL_DAP_TIMEOUT_MS = 10000;

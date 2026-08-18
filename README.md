@@ -1,6 +1,6 @@
-# CMSIS-DebugMCP — AI-Driven Debugging for Arm Cortex-M Targets
+# CMSIS Developer Assistant — AI-Driven Debugging for Arm Cortex-M Targets
 
-CMSIS-DebugMCP is an MCP server that lets an AI agent drive the VS Code debugger against Arm Cortex-M targets through the **CMSIS Debugger** extension — setting breakpoints, stepping, reading memory and core registers, decoding fault status, and inspecting peripheral registers via SVD. It also retains general multi-language debugging support (Python, JavaScript/TypeScript, Java, C#, C++, Go, Rust, PHP, Ruby) inherited from the upstream DebugMCP project.
+CMSIS Developer Assistant is an MCP server that lets an AI agent drive the VS Code debugger against Arm Cortex-M targets through the **CMSIS Debugger** extension — setting breakpoints, stepping, reading memory and core registers, decoding fault status, and inspecting peripheral registers via SVD. It also retains general multi-language debugging support (Python, JavaScript/TypeScript, Java, C#, C++, Go, Rust, PHP, Ruby) inherited from the upstream DebugMCP project.
 
 Works with **GitHub Copilot**, **Claude Code**, **Claude Desktop**, **Cline**, **Cursor**, and any MCP-compatible assistant.
 
@@ -8,10 +8,10 @@ Works with **GitHub Copilot**, **Claude Code**, **Claude Desktop**, **Cline**, *
 
 [![License: Apache-2.0 OR MIT](https://img.shields.io/badge/License-Apache--2.0%20OR%20MIT-blue.svg)](#license)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.109.0+-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-2.0.3-green.svg)](https://github.com/Open-CMSIS-Pack/CMSIS-DebugMCP/releases)
+[![Version](https://img.shields.io/badge/version-2.0.3-green.svg)](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/releases)
 
 <p align="center">
-  <img src="assets/DebugMCP.webp" alt="CMSIS-DebugMCP Demo" width="800">
+  <img src="assets/DebugMCP.webp" alt="CMSIS Developer Assistant Demo" width="800">
 </p>
 
 ## Table of Contents
@@ -34,7 +34,7 @@ Works with **GitHub Copilot**, **Claude Code**, **Claude Desktop**, **Cline**, *
 
 ## Overview
 
-CMSIS-DebugMCP is an MCP server that gives AI coding agents full control over the VS Code debugger. For embedded Arm Cortex-M development it delegates to the **CMSIS Debugger** extension (`arm.vscode-cmsis-debugger`) via `gdbtarget` launch configurations produced by CMSIS Solution, driving pyOCD or J-Link GDB Server against real hardware such as the Alif Semiconductor AppKit. It also retains the upstream DebugMCP behavior for general multi-language debugging. It runs 100% locally, requires no credentials, and works out of the box with any MCP-compatible AI assistant.
+CMSIS Developer Assistant is an MCP server that gives AI coding agents full control over the VS Code debugger. For embedded Arm Cortex-M development it delegates to the **CMSIS Debugger** extension (`arm.vscode-cmsis-debugger`) via `gdbtarget` launch configurations produced by CMSIS Solution, driving pyOCD or J-Link GDB Server against real hardware such as the Alif Semiconductor AppKit. It also retains the upstream DebugMCP behavior for general multi-language debugging. It runs 100% locally, requires no credentials, and works out of the box with any MCP-compatible AI assistant.
 
 ## Features
 
@@ -101,16 +101,16 @@ CMSIS-DebugMCP is an MCP server that gives AI coding agents full control over th
 
 ### 📚 MCP Resources
 
-- `cmsis-debugmcp://docs/debug_instructions` — general debugging workflow guide
-- `cmsis-debugmcp://docs/cmsis-embedded-guide` — Cortex-M debugging expertise (fault decode recipes, memory map, key system registers, RTOS tips)
-- `cmsis-debugmcp://docs/troubleshooting/embedded` — embedded-specific troubleshooting
-- `cmsis-debugmcp://docs/troubleshooting/<language>` — language-specific troubleshooting (python, java, csharp, …)
+- `cmsis-developer-assistant://docs/debug_instructions` — general debugging workflow guide
+- `cmsis-developer-assistant://docs/cmsis-embedded-guide` — Cortex-M debugging expertise (fault decode recipes, memory map, key system registers, RTOS tips)
+- `cmsis-developer-assistant://docs/troubleshooting/embedded` — embedded-specific troubleshooting
+- `cmsis-developer-assistant://docs/troubleshooting/<language>` — language-specific troubleshooting (python, java, csharp, …)
 
 > **Note:** The `get_debug_instructions` tool is particularly useful for AI clients like GitHub Copilot that don't support MCP resources. It provides the same debugging guide content that is also available as an MCP resource.
 
 ### 🎯 Debugging Best Practices
 
-CMSIS-DebugMCP follows systematic debugging practices for effective issue resolution:
+CMSIS Developer Assistant follows systematic debugging practices for effective issue resolution:
 
 - **Start with Entry Points**: Begin debugging at function entry points or main execution paths
 - **Follow the Execution Flow**: Use step-by-step execution to understand code flow
@@ -135,10 +135,10 @@ These are engineering invariants the agent can rely on — see [CHANGES-VS-UPSTR
 
 ### From the GitHub release (recommended)
 
-Download the latest `cmsis-debugmcp-<version>.vsix` from <https://github.com/Open-CMSIS-Pack/CMSIS-DebugMCP/releases>, then:
+Download the latest `cmsis-developer-assistant-<version>.vsix` from <https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/releases>, then:
 
 ```bash
-code --install-extension cmsis-debugmcp-<version>.vsix
+code --install-extension cmsis-developer-assistant-<version>.vsix
 ```
 
 Reload the VS Code window after install. Copilot picks the server up automatically via the registered `McpServerDefinitionProvider` — no `mcp.json` edits required.
@@ -146,11 +146,11 @@ Reload the VS Code window after install. Copilot picks the server up automatical
 ### From source
 
 ```bash
-git clone https://github.com/Open-CMSIS-Pack/CMSIS-DebugMCP.git
-cd CMSIS-DebugMCP
+git clone https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant.git
+cd CMSIS Developer Assistant
 npm install
 npm run package
-code --install-extension cmsis-debugmcp-<target>-<version>.vsix --force
+code --install-extension cmsis-developer-assistant-<target>-<version>.vsix --force
 ```
 
 `npm run package` type-checks the project, builds the production esbuild
@@ -160,20 +160,20 @@ The extension activates on startup. One VS Code window binds `http://localhost:3
 
 ### Recommended companion extensions
 
-For embedded Arm Cortex-M workflows, install the following alongside CMSIS-DebugMCP:
+For embedded Arm Cortex-M workflows, install the following alongside CMSIS Developer Assistant:
 
 - **Arm CMSIS Debugger** (`arm.vscode-cmsis-debugger`) — provides the `gdbtarget` launch configuration provider and ships pyOCD.
 - **CDT GDB Debug Adapter** (`eclipse-cdt.cdt-gdb-vscode`) — DAP-to-GDB-MI adapter used by `gdbtarget` sessions.
 - **Peripheral Inspector** (`eclipse-cdt.peripheral-inspector`) — optional, used by `read_peripheral_register` when available (falls back to SVD parsing + `readMemory`).
 - **Arm CMSIS Solution** (`arm.cmsis-csolution`) — generates `launch.json` entries of type `gdbtarget` from a csolution project.
 
-> **💡 Tip**: Enable auto-approval for all CMSIS-DebugMCP tools in your AI assistant to create seamless debugging workflows without constant approval interruptions.
+> **💡 Tip**: Enable auto-approval for all CMSIS Developer Assistant tools in your AI assistant to create seamless debugging workflows without constant approval interruptions.
 
 ## Quick Start — CMSIS Target
 
 1. Open a CMSIS Solution project that produces a `.vscode/launch.json` with a `gdbtarget` configuration (e.g., `"CMSIS Debugger: pyOCD"` or `"CMSIS Debugger: J-LINK"`).
-2. Ensure the AI assistant has CMSIS-DebugMCP registered as an MCP server (the extension offers auto-registration on first launch).
-3. Ask your agent: *"Start debugging using configuration 'CMSIS Debugger: pyOCD'"* — the agent calls `start_debugging` with `configurationName` set, and CMSIS-DebugMCP passes the named config straight through to `vscode.debug.startDebugging()`.
+2. Ensure the AI assistant has CMSIS Developer Assistant registered as an MCP server (the extension offers auto-registration on first launch).
+3. Ask your agent: *"Start debugging using configuration 'CMSIS Debugger: pyOCD'"* — the agent calls `start_debugging` with `configurationName` set, and CMSIS Developer Assistant passes the named config straight through to `vscode.debug.startDebugging()`.
 4. After the target halts at `main`, ask the agent to read core registers, inspect memory, decode faults, or read peripheral registers.
 
 ## Quick Start — General Languages
@@ -212,10 +212,10 @@ Add to your Cline settings or `cline_mcp_settings.json`:
 ```json
 {
   "mcpServers": {
-    "cmsis-debugmcp": {
+    "cmsis-developer-assistant": {
       "type": "streamableHttp",
       "url": "http://localhost:3001/mcp",
-      "description": "CMSIS-DebugMCP - AI-driven Cortex-M debugging"
+      "description": "CMSIS Developer Assistant - AI-driven Cortex-M debugging"
     }
   }
 }
@@ -229,10 +229,10 @@ Add to your VS Code settings (`settings.json`):
 {
   "mcp": {
     "servers": {
-      "cmsis-debugmcp": {
+      "cmsis-developer-assistant": {
         "type": "http",
         "url": "http://localhost:3001/mcp",
-        "description": "CMSIS-DebugMCP - Cortex-M and multi-language debugging"
+        "description": "CMSIS Developer Assistant - Cortex-M and multi-language debugging"
       }
     }
   }
@@ -246,10 +246,10 @@ Add to Cursor's MCP settings:
 ```json
 {
   "mcpServers": {
-    "cmsis-debugmcp": {
+    "cmsis-developer-assistant": {
       "type": "streamableHttp",
       "url": "http://localhost:3001/mcp",
-      "description": "CMSIS-DebugMCP - Debugging tools for AI assistants"
+      "description": "CMSIS Developer Assistant - Debugging tools for AI assistants"
     }
   }
 }
@@ -260,7 +260,7 @@ Add to Cursor's MCP settings:
 Either use the agent selection popup, or register from a terminal:
 
 ```bash
-claude mcp add --transport http --scope user cmsis-debugmcp http://localhost:3001/mcp
+claude mcp add --transport http --scope user cmsis-developer-assistant http://localhost:3001/mcp
 ```
 
 This writes a user-scoped entry to the top-level `mcpServers` of `~/.claude.json`:
@@ -268,7 +268,7 @@ This writes a user-scoped entry to the top-level `mcpServers` of `~/.claude.json
 ```json
 {
   "mcpServers": {
-    "cmsis-debugmcp": {
+    "cmsis-developer-assistant": {
       "type": "http",
       "url": "http://localhost:3001/mcp"
     }
@@ -283,7 +283,7 @@ Claude Desktop only supports stdio MCP servers, so the extension registers an `m
 ```json
 {
   "mcpServers": {
-    "cmsis-debugmcp": {
+    "cmsis-developer-assistant": {
       "command": "npx",
       "args": ["-y", "mcp-remote", "http://localhost:3001/mcp"]
     }
@@ -295,20 +295,20 @@ Config file location: `~/Library/Application Support/Claude/claude_desktop_confi
 
 ### Extension Settings
 
-Configure CMSIS-DebugMCP behavior in VSCode settings:
+Configure CMSIS Developer Assistant behavior in VSCode settings:
 
 ```json
 {
-  "cmsis-debugmcp.serverPort": 3001,
-  "cmsis-debugmcp.timeoutInSeconds": 180
+  "cmsis-developer-assistant.serverPort": 3001,
+  "cmsis-developer-assistant.timeoutInSeconds": 180
 }
 ```
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `cmsis-debugmcp.serverPort` | `3001` | Port for the MCP server. One window binds it and routes to the others; there is no per-window fallback port. |
-| `cmsis-debugmcp.timeoutInSeconds` | `180` | Timeout for debugging operations |
-| `cmsis-debugmcp.redactSecrets` | `true` | Withhold variable/expression values that look like credentials. Numeric scalars and raw target reads (`read_memory`, registers, peripherals, `-exec`) are never withheld. |
+| `cmsis-developer-assistant.serverPort` | `3001` | Port for the MCP server. One window binds it and routes to the others; there is no per-window fallback port. |
+| `cmsis-developer-assistant.timeoutInSeconds` | `180` | Timeout for debugging operations |
+| `cmsis-developer-assistant.redactSecrets` | `true` | Withhold variable/expression values that look like credentials. Numeric scalars and raw target reads (`read_memory`, registers, peripherals, `-exec`) are never withheld. |
 
 Changing `serverPort` requires a window reload; the extension will offer to do it for you.
 
@@ -329,47 +329,47 @@ When **two windows are debugging at once** it refuses to guess and names both. R
 <details>
 <summary><b>Which AI assistants are supported?</b></summary>
 
-CMSIS-DebugMCP works with any MCP-compatible AI assistant, including **GitHub Copilot**, **Claude Code**, **Claude Desktop**, **Cline**, **Cursor**, **Roo Code**, **Windsurf**, and others. If your assistant supports the Model Context Protocol, it can use CMSIS-DebugMCP.
+CMSIS Developer Assistant works with any MCP-compatible AI assistant, including **GitHub Copilot**, **Claude Code**, **Claude Desktop**, **Cline**, **Cursor**, **Roo Code**, **Windsurf**, and others. If your assistant supports the Model Context Protocol, it can use CMSIS Developer Assistant.
 </details>
 
 <details>
 <summary><b>Does it work with VS Code Remote SSH / Codespaces / WSL?</b></summary>
 
-Yes. CMSIS-DebugMCP runs as a VS Code extension with `extensionKind: workspace`, so it activates in the remote environment where your code lives. The MCP server runs on `localhost` within that remote context.
+Yes. CMSIS Developer Assistant runs as a VS Code extension with `extensionKind: workspace`, so it activates in the remote environment where your code lives. The MCP server runs on `localhost` within that remote context.
 </details>
 
 <details>
 <summary><b>Do I need to configure launch.json?</b></summary>
 
-For CMSIS / `gdbtarget` sessions — yes. Generate one via the CMSIS Solution extension and pass its name as `configurationName` to `start_debugging`. CMSIS-DebugMCP passes named configurations straight through to `vscode.debug.startDebugging()` without modification.
+For CMSIS / `gdbtarget` sessions — yes. Generate one via the CMSIS Solution extension and pass its name as `configurationName` to `start_debugging`. CMSIS Developer Assistant passes named configurations straight through to `vscode.debug.startDebugging()` without modification.
 
-For other languages — no. CMSIS-DebugMCP can auto-generate a debug configuration based on file extension. If you have a `launch.json`, it will use matching configurations from there.
+For other languages — no. CMSIS Developer Assistant can auto-generate a debug configuration based on file extension. If you have a `launch.json`, it will use matching configurations from there.
 </details>
 
 <details>
 <summary><b>Is my code sent to any external service?</b></summary>
 
-No. CMSIS-DebugMCP runs 100% locally. The MCP server runs on `localhost`, and no code, variables, or debug data is sent to any external service. The AI assistant communicates with the MCP server entirely within your local machine.
+No. CMSIS Developer Assistant runs 100% locally. The MCP server runs on `localhost`, and no code, variables, or debug data is sent to any external service. The AI assistant communicates with the MCP server entirely within your local machine.
 </details>
 
 <details>
 <summary><b>What if port 3001 is already in use?</b></summary>
 
-If it is held by **another CMSIS-DebugMCP window**, that is normal and nothing is wrong: one window is the router and serves every window, including this one. The extension log will say `this window is a worker`.
+If it is held by **another CMSIS Developer Assistant window**, that is normal and nothing is wrong: one window is the router and serves every window, including this one. The extension log will say `this window is a worker`.
 
-If it is held by an unrelated process, change the port in VS Code settings: `"cmsis-debugmcp.serverPort": 3002` (or any free port), reload, and update your AI assistant's MCP configuration to match. Set it in **User** settings so every window agrees — windows configured with different ports cannot see each other and each becomes its own isolated router.
+If it is held by an unrelated process, change the port in VS Code settings: `"cmsis-developer-assistant.serverPort": 3002` (or any free port), reload, and update your AI assistant's MCP configuration to match. Set it in **User** settings so every window agrees — windows configured with different ports cannot see each other and each becomes its own isolated router.
 </details>
 
 <details>
 <summary><b>Can I debug unit tests?</b></summary>
 
-Yes. Pass the `testName` parameter to `start_debugging` to debug a specific test method. CMSIS-DebugMCP will configure the debug session to run and pause at breakpoints within that test.
+Yes. Pass the `testName` parameter to `start_debugging` to debug a specific test method. CMSIS Developer Assistant will configure the debug session to run and pause at breakpoints within that test.
 </details>
 
 <details>
 <summary><b>Why is my AI assistant not using the debug tools?</b></summary>
 
-Make sure CMSIS-DebugMCP is registered in your AI assistant's MCP settings. The extension should auto-detect and offer to register itself. If not, see the [Manual MCP Server Registration](#manual-mcp-server-registration-optional) section. Also enable auto-approval for CMSIS-DebugMCP tools for a smoother workflow.
+Make sure CMSIS Developer Assistant is registered in your AI assistant's MCP settings. The extension should auto-detect and offer to register itself. If not, see the [Manual MCP Server Registration](#manual-mcp-server-registration-optional) section. Also enable auto-approval for CMSIS Developer Assistant tools for a smoother workflow.
 </details>
 
 ## Troubleshooting
@@ -377,9 +377,8 @@ Make sure CMSIS-DebugMCP is registered in your AI assistant's MCP settings. The 
 ### Common Issues
 
 #### MCP Server Not Starting
-
-- **Symptom**: AI assistant can't connect to CMSIS-DebugMCP
-- **Solution**:
+- **Symptom**: AI assistant can't connect to CMSIS Developer Assistant
+- **Solution**: 
   - Check if port 3001 is available
   - Restart VSCode
   - Verify extension is installed and activated
@@ -433,7 +432,7 @@ solution — to a shared registry under the OS temp directory.
 
 The extension handles debug configurations intelligently:
 
-- **Named configuration passthrough**: When `start_debugging` is called with `configurationName`, CMSIS-DebugMCP resolves the entry from `.vscode/launch.json` and passes it directly to `vscode.debug.startDebugging()` — no language detection, no config rewriting. This is how `gdbtarget`/CMSIS configs are launched.
+- **Named configuration passthrough**: When `start_debugging` is called with `configurationName`, CMSIS Developer Assistant resolves the entry from `.vscode/launch.json` and passes it directly to `vscode.debug.startDebugging()` — no language detection, no config rewriting. This is how `gdbtarget`/CMSIS configs are launched.
 - **Existing launch.json**: If a `.vscode/launch.json` exists and no `configurationName` is given, a matching configuration is chosen based on the source file's language.
 - **Default configuration**: If no launch.json exists and no `configurationName` is given, an appropriate default configuration is synthesized per language based on file-extension detection.
 

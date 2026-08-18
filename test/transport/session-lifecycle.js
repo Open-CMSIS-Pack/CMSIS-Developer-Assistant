@@ -1,4 +1,4 @@
-// Streamable-HTTP session lifecycle check for the CMSIS-DebugMCP server.
+// Streamable-HTTP session lifecycle check for the CMSIS Developer Assistant server.
 //
 // Drives the real server over HTTP with a stubbed `vscode` module, covering:
 //   1. POST initialize mints an mcp-session-id

@@ -15,10 +15,10 @@ let agentConfigManager: AgentConfigurationManager | null = null;
 
 export async function activate(context: vscode.ExtensionContext) {
     // Initialize logging first
-    logger.info('CMSIS-DebugMCP extension is now active!');
+    logger.info('CMSIS Developer Assistant extension is now active!');
     logger.logSystemInfo();
 
-    const config = vscode.workspace.getConfiguration('cmsis-debugmcp');
+    const config = vscode.workspace.getConfiguration('cmsis-developer-assistant');
     const timeoutInSeconds = config.get<number>('timeoutInSeconds', 60);
     const serverPort = config.get<number>('serverPort', 3001);
     const dapRequestTimeoutMs = config.get<number>('dapRequestTimeoutMs', 10000);
@@ -62,7 +62,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // well-known port. Exactly one window wins and serves MCP; the rest execute
     // work forwarded to them.
     try {
-        logger.info('Starting CMSIS-DebugMCP window coordinator...');
+        logger.info('Starting CMSIS Developer Assistant window coordinator...');
 
         coordinator = new WindowCoordinator({
             port: serverPort,
@@ -83,9 +83,9 @@ export async function activate(context: vscode.ExtensionContext) {
         agentConfigManager.updatePort(serverPort);
 
         const role = coordinator.isRouter() ? 'router' : 'worker';
-        logger.info(`CMSIS-DebugMCP is up as ${role}; agents should use ${endpoint}`);
+        logger.info(`CMSIS Developer Assistant is up as ${role}; agents should use ${endpoint}`);
         if (coordinator.isRouter()) {
-            vscode.window.showInformationMessage(`CMSIS-DebugMCP server running on ${endpoint}`);
+            vscode.window.showInformationMessage(`CMSIS Developer Assistant server running on ${endpoint}`);
         }
 
         // Register as a VS Code MCP server definition provider so Copilot
@@ -94,11 +94,11 @@ export async function activate(context: vscode.ExtensionContext) {
         // so in-window Copilot routes exactly like an external agent.
         const mcpUri = vscode.Uri.parse(`${endpoint}/mcp`);
         context.subscriptions.push(
-            vscode.lm.registerMcpServerDefinitionProvider('cmsis-debugmcp', {
+            vscode.lm.registerMcpServerDefinitionProvider('cmsis-developer-assistant', {
                 provideMcpServerDefinitions() {
                     return [
                         new vscode.McpHttpServerDefinition(
-                            'CMSIS-DebugMCP',
+                            'CMSIS Developer Assistant',
                             mcpUri,
                             undefined,
                             SERVER_VERSION,
@@ -127,12 +127,12 @@ export async function activate(context: vscode.ExtensionContext) {
     // leaving them with a setting that silently does nothing.
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(async (event) => {
-            if (!event.affectsConfiguration('cmsis-debugmcp.serverPort')) {
+            if (!event.affectsConfiguration('cmsis-developer-assistant.serverPort')) {
                 return;
             }
             const reload = 'Reload Window';
             const choice = await vscode.window.showInformationMessage(
-                'CMSIS-DebugMCP: the server port setting changed. Reload the window to restart the MCP server on the new port.',
+                'CMSIS Developer Assistant: the server port setting changed. Reload the window to restart the MCP server on the new port.',
                 reload,
             );
             if (choice === reload) {
@@ -155,16 +155,16 @@ export async function activate(context: vscode.ExtensionContext) {
         }
     }, 2000);
 
-    logger.info('CMSIS-DebugMCP extension activated successfully');
+    logger.info('CMSIS Developer Assistant extension activated successfully');
 }
 
 /**
  * Register extension commands
  */
 function registerCommands(context: vscode.ExtensionContext) {
-    // Command to manually configure CMSIS-DebugMCP for agents
+    // Command to manually configure CMSIS Developer Assistant for agents
     const configureAgentsCommand = vscode.commands.registerCommand(
-        'cmsis-debugmcp.configureAgents',
+        'cmsis-developer-assistant.configureAgents',
         async () => {
             if (agentConfigManager) {
                 await agentConfigManager.showManualConfiguration();
@@ -174,7 +174,7 @@ function registerCommands(context: vscode.ExtensionContext) {
 
     // Command to show agent selection popup again
     const showPopupCommand = vscode.commands.registerCommand(
-        'cmsis-debugmcp.showAgentSelectionPopup',
+        'cmsis-developer-assistant.showAgentSelectionPopup',
         async () => {
             if (agentConfigManager) {
                 await agentConfigManager.showAgentSelectionPopup();
@@ -184,11 +184,11 @@ function registerCommands(context: vscode.ExtensionContext) {
 
     // Command to reset popup state (for development/testing)
     const resetPopupCommand = vscode.commands.registerCommand(
-        'cmsis-debugmcp.resetPopupState',
+        'cmsis-developer-assistant.resetPopupState',
         async () => {
             if (agentConfigManager) {
                 await agentConfigManager.resetPopupState();
-                vscode.window.showInformationMessage('CMSIS-DebugMCP popup state has been reset.');
+                vscode.window.showInformationMessage('CMSIS Developer Assistant popup state has been reset.');
             }
         }
     );
@@ -201,17 +201,17 @@ function registerCommands(context: vscode.ExtensionContext) {
 }
 
 export async function deactivate() {
-    logger.info('CMSIS-DebugMCP extension deactivating...');
+    logger.info('CMSIS Developer Assistant extension deactivating...');
 
     // Awaited, unlike before: the coordinator has to remove this window from
     // the shared registry before the host goes away, or other windows keep
     // forwarding to a dead control port until the entry goes stale.
     if (coordinator) {
         await coordinator.dispose().catch(error => {
-            logger.error('Error stopping CMSIS-DebugMCP window coordinator', error);
+            logger.error('Error stopping CMSIS Developer Assistant window coordinator', error);
         });
         coordinator = null;
     }
 
-    logger.info('CMSIS-DebugMCP extension deactivated');
+    logger.info('CMSIS Developer Assistant extension deactivated');
 }

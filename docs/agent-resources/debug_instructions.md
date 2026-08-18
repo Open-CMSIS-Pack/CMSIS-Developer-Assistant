@@ -1,4 +1,4 @@
-# CMSIS-DebugMCP - Debugging Instructions Guide
+# CMSIS Developer Assistant - Debugging Instructions Guide
 
 ⚠️  **CRITICAL INSTRUCTIONS - FOLLOW THESE STEPS:**
 
@@ -246,7 +246,7 @@ Software breakpoints (which Flash patches without a comparator) are *not* an opt
 
 ### Secret redaction
 
-Values whose name or content looks like a credential are withheld before leaving the extension (`<redacted: possible secret>`), controlled by `cmsis-debugmcp.redactSecrets` (default on).
+Values whose name or content looks like a credential are withheld before leaving the extension (`<redacted: possible secret>`), controlled by `cmsis-developer-assistant.redactSecrets` (default on).
 
 This is tuned for firmware and should rarely get in your way:
 

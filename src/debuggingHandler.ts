@@ -139,7 +139,7 @@ export class DebuggingHandler implements IDebuggingHandler {
      */
     private redactor(): ((name: string, value: string) => { value: string; redacted: boolean }) | undefined {
         const enabled = vscode.workspace
-            .getConfiguration('cmsis-debugmcp')
+            .getConfiguration('cmsis-developer-assistant')
             .get<boolean>('redactSecrets', true);
         if (!enabled) { return undefined; }
         return (name, value) => redactVariableValue(name, value);

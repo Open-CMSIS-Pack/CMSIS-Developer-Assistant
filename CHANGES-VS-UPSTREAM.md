@@ -42,7 +42,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 ### New files (features that did not exist upstream)
 
 | File | Purpose |
-|---|---|
+| -- | --- |
 | [`src/core/faultDecoder.ts`](src/core/faultDecoder.ts) | Cortex-M fault register decoder. CFSR/HFSR/DFSR/MMFAR/BFAR/AFSR → human-readable analysis. Exports `FAULT_REGISTER_ADDRESSES` (SCS memory-mapped addresses at `0xE000ED28` …). |
 | [`src/core/peripheralReader.ts`](src/core/peripheralReader.ts) | Peripheral register reader. Strategy 1: call the Peripheral Inspector extension's public API (`eclipse-cdt.peripheral-inspector`). Strategy 2: locate the SVD referenced by the active CMSIS `cbuild-run.yml`, parse it, and read via DAP `readMemory` / GDB `evaluate`. Per-call timeout via `withTimeout`. |
 | [`src/core/svdParser.ts`](src/core/svdParser.ts) | Minimal SVD XML parser. Resolves `derivedFrom`, computes field ranges, exposes `listPeripheralNames()` / `findPeripheral()` / `findRegister()` / `decodeFields()`. |
@@ -63,7 +63,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 ### Heavily modified files
 
 | File | What changed |
-|---|---|
+| ---- | ------------ |
 | [`src/debugMCPServer.ts`](src/debugMCPServer.ts) | Registers **all** new tools (`cmsis_action`, `pause_execution`, `get_call_stack`, `get_threads`, `get_frame_variables`, `serial_*`, `get_session_status`, `check_target_connection` + the original 5 embedded tools). Per-request `McpServer` + transport pair (was: shared instance with `close`/`reconnect` race). `setupTools(mcpServer)` and `setupResources(mcpServer)` take the per-request server as a parameter. `serialController.close()` + `serialMonitorBridge.unsubscribe()` on shutdown. |
 | [`src/debuggingHandler.ts`](src/debuggingHandler.ts) | Handlers for every new tool. `ensureStoppedSession(operation)` gates all inspection tools and surfaces state-aware errors. `handleStartDebugging` and `handleCmsisCommand` pre-check for an active session and refuse duplicates. `withHandlerTimeout` wraps every hardware-touching handler so it returns within the requested cap. `attemptRecoveryAfterTimeout` powers the 🩹 auto-heal on motion timeout. |
 | [`src/debuggingExecutor.ts`](src/debuggingExecutor.ts) | `startDebuggingByName()` for `gdbtarget`. New DAP-backed methods: `pause`, `getThreads`, `getCallStack`, `getVariablesForFrame`, `waitForStop`, `writeMemoryWord` (DAP `writeMemory` + read-back verify), `resetTarget` (monitor-command reset with PC-vs-reset-vector verification), `readCycleCounter`, plus the original `readMemory` / `readCoreRegisters` / `readPeripheralRegister` / `getFaultInfo` / `getDeviceInfo`. Per-method `timeoutMs` parameter capped to 60 s. Stepping via DAP `next` / `stepIn` / `stepOut` with UI fallback. `getSessionStatus()` 5-state classifier. `checkTargetConnection()` for the lightweight liveness probe. |
@@ -80,7 +80,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 ## 3. Renames (reference table)
 
 | Kind | Upstream | Fork |
-|---|---|---|
+| ---- | -------- | ---- |
 | npm `name` | `debugmcpextension` | `cmsis-debugmcp` |
 | `displayName` | `DebugMCP` | `CMSIS-DebugMCP` |
 | `publisher` | `ozzafar` | `mather01` |
@@ -99,10 +99,12 @@ All paths are relative to the extension root (`DebugMCP/`).
 ### Tools
 
 **CMSIS Solution panel control:**
+
 - `cmsis_action(action, timeoutMs?)` — `build` / `load` / `erase` / `load_and_run` / `load_and_debug` / `attach` / `detach` / `stop_run`. ⭐ Preferred entry point for embedded.
 - `flash(cbuildRunFile?, timeoutMs?)` — `pyocd load --cbuild-run` as a synchronous operation: bytes programmed + structured flash error; refuses under an active session.
 
 **Session lifecycle & state:**
+
 - `pause_execution(timeoutMs?)` — DAP pause, state-aware
 - `wait_for_stop(timeoutMs?)` — block on the raw DAP `stopped` event; returns stop reason + state, or a structured timeout
 - `reset(method?, halt?, timeoutMs?)` — in-session target reset via GDB monitor commands, verified PC-vs-reset-vector; honest "did NOT reset" reporting
@@ -110,6 +112,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 - `check_target_connection()` — fast DAP `threads` liveness probe
 
 **Inspection:**
+
 - `read_memory(address, length, format, timeoutMs?)` — DAP `readMemory` with GDB fallback
 - `read_core_registers(timeoutMs?)` — R0–R15, xPSR, MSP, PSP, CONTROL, FAULTMASK, BASEPRI, PRIMASK
 - `read_cycle_counter(timeoutMs?)` — DWT CYCCNT with trace/counter enable, NOCYCCNT detection, wrap/halt/WFE caveats
@@ -121,6 +124,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 - `get_frame_variables(frameId, scope?, timeoutMs?)` — inspect any frame by id
 
 **Serial:**
+
 - `serial_list_ports()` — MS Serial Monitor API → `serialport` fallback
 - `serial_open(path, baudRate?, dataBits?, parity?, stopBits?, rtscts?)` — OWNED port
 - `serial_close()` / `serial_status()` / `serial_clear_buffer(from?)` / `serial_write(data, encoding?, appendNewline?)` / `serial_read(maxBytes?, waitMs?, consume?, format?, from?)`
@@ -179,7 +183,7 @@ This fork is **not** intended to be merged back as-is — the embedded surface (
 Synced against upstream v2.3.0. These are the changes that were considered and rejected, with the reason — so the next sync does not re-litigate them.
 
 | Upstream change | Why not |
-|---|---|
+| --- | --- |
 | **`get_variables_values` requires `variableNames`** (2.3.0, breaking) | Taken as an *optional* filter instead, alongside the new `list_variable_names`. Embedded frames are small, so the full dump is usually what you want; making it mandatory would break every existing agent prompt for no gain here. |
 | **`src/utils/withTimeout.ts`** | The fork's `src/utils/timeout.ts` is a strict superset — it also carries `customRequestWithTimeout` and `HardwareTimeoutError`. Porting it would mean two timeout utilities. |
 | **`debugTestAtCursor` / VS Code Testing API test debugging** | No meaning for `gdbtarget` firmware. There is no test runner on the target. |

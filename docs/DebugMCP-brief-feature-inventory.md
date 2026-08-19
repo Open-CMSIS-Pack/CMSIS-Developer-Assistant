@@ -1,9 +1,8 @@
 # CMSIS-DebugMCP — Feature Inventory & Agent-Usage Priority
 
-**Product brief · Arm Keil MDK integration**
+## Product brief: Arm Keil MDK integration
 
 The MCP debug surface selected for direct integration into the Keil MDK toolchain — what it inherits from Microsoft's DebugMCP, what the CMSIS fork adds for Cortex-M, and which tools an AI agent actually reaches for, derived from a simulated driver-bring-up debug run.
-
 
 ---
 

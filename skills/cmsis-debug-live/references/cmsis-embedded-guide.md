@@ -6,7 +6,7 @@
 
 **For CMSIS projects (preferred):** call `cmsis_action` with `action="load_and_debug"`. This is the same flow as the **Debug** button in the CMSIS Solution panel — it builds (if needed), flashes the target, and attaches in one step, using the configuration the user selected via *Manage Solution → Debugger*.
 
-```
+```text
 cmsis_action {"action": "load_and_debug", "timeoutMs": 45000}
 ```
 
@@ -26,6 +26,7 @@ If the firmware is in a free run and you need to know where it is:
 4. `continue_execution` to resume — or set a breakpoint at the location of interest and continue.
 
 ### When the Target Hits a HardFault
+
 1. Call `get_fault_info` to read and decode CFSR/HFSR/BFAR/MMFAR/DFSR/AFSR.
 2. Check the call stack with `get_call_stack` to find where the fault occurred. Capture a `frameId` of interest.
 3. `get_frame_variables` at that `frameId` to see locals at the fault site.
@@ -37,18 +38,21 @@ If the firmware is in a free run and you need to know where it is:
    - DIVBYZERO: Only faults if DIV_0_TRP is set in CCR (0xE000ED14)
 
 ### Inspecting Peripheral State
+
 - Use `read_peripheral_register` with the peripheral name (e.g., "GPIOA")
 - Peripheral names come from the SVD file; common ones: GPIOx, UART, SPI, I2C, TIM, RCC, NVIC
 - To check if a clock is enabled: read RCC registers (RCC.AHBxENR, RCC.APBxENR)
 - To check interrupt configuration: read NVIC registers (NVIC.ISER, NVIC.ISPR, NVIC.IPR)
 
 ### Memory Layout (Cortex-M typical)
+
 - 0x00000000 - 0x1FFFFFFF: Code (Flash)
 - 0x20000000 - 0x3FFFFFFF: SRAM
 - 0x40000000 - 0x5FFFFFFF: Peripheral registers
 - 0xE0000000 - 0xE00FFFFF: System (SCS, NVIC, SysTick, MPU, FPU)
 
 ### Key System Registers
+
 - VTOR (0xE000ED08): Vector Table Offset Register
 - AIRCR (0xE000ED0C): Application Interrupt and Reset Control
 - SCR (0xE000ED10): System Control Register
@@ -58,12 +62,14 @@ If the firmware is in a free run and you need to know where it is:
 - SHCSR (0xE000ED24): System Handler Control and State Register
 
 ### Stack Overflow Detection
+
 1. Read MSP and PSP with `read_core_registers`
 2. Compare against known stack boundaries (from linker script / .map file)
 3. If SP is outside the valid stack region, stack overflow occurred
 4. Check if stack canary value at bottom of stack is corrupted
 
 ### Debugging Tips
+
 - After a fault, the stacked PC (at SP+24 for basic frame, SP+104 for FP frame) shows the faulting instruction
 - Use `evaluate_expression` with GDB commands: e.g., `info registers`
 - For RTOS-aware debugging: `get_threads` enumerates FreeRTOS / RTX / ThreadX tasks (when the GDB server has an RTOS plugin); pass any thread's id to `get_call_stack` to inspect a specific task

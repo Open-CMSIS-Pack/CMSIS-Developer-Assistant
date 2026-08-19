@@ -41,3 +41,7 @@ node_modules/**
 !node_modules/node-gyp-build/**
 !node_modules/debug/**
 !node_modules/ms/**
+coverage/**
+.qlty/**
+.github/**
+.npmrc

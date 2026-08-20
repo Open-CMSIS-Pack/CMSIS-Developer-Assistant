@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Debug Access Knowledge"
+  short_description: "Verify reusable CMSIS debug access facts."
+  default_prompt: "Use $debug-access-knowledge to document the CMSIS debug access topology for this device."

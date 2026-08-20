@@ -1,0 +1,118 @@
+<!-- CMSIS-Pack TPIU template. Replace __INSTANCE_INDEX__ with the stable numeric instance suffix. -->
+<cmsis-pack-trace-snippet component="TPIU">
+  <debugvars>
+    // TPIU
+    __var TPIU___INSTANCE_INDEX___ADDRESS     = 0xE0040000;  // Default TPIU Location for single-core systems
+    __var TPIU___INSTANCE_INDEX___AP          = 0x00000000;
+    __var TPIU___INSTANCE_INDEX___PRESCALER   = 0x00000000;  // Zero derives the prescaler from the trace clocks
+  </debugvars>
+  <sequence name="CS_TPIU___INSTANCE_INDEX___Configure">
+    <block>
+      __var swoTrace    = __traceout &amp; 0x1;
+      __var syncTrace   = __traceout &amp; 0x2;
+      __var bufferTrace = __traceout &amp; 0x4;
+      __var tracePortWidth = (__traceout &gt;&gt; 16) &amp; 0x3F; // Parallel trace port size
+      __var clockRatio  = __traceclockout / __traceclockin &gt;= 1 ? (__traceclockout / __traceclockin) : 1;
+      __var prescaler   = TPIU___INSTANCE_INDEX___PRESCALER &gt; 0 ? TPIU___INSTANCE_INDEX___PRESCALER : clockRatio - 1;
+
+      // Helper variables
+      __var ffcrValue = 0x00000000;
+      __var LAR_KEY   = 0xC5ACCE55;
+      __var savedAP = __ap;
+
+      Message(0, "Begin CS_TPIU___INSTANCE_INDEX_____INSTANCE_INDEX___Configure @0x%08X, AP 0x%08X", TPIU___INSTANCE_INDEX___ADDRESS, TPIU___INSTANCE_INDEX___AP);
+
+      __ap = TPIU___INSTANCE_INDEX___AP; // Set AP
+    </block>
+    <control if="swoTrace != 0">
+      <block>
+        Write32(TPIU___INSTANCE_INDEX___ADDRESS + 0xFB0, LAR_KEY);     // TPIU Lock Access Register: Unlock TPIU
+        Write32(TPIU___INSTANCE_INDEX___ADDRESS + 0x010, prescaler);   // TPIU Asynchronous Clock Prescaler Register: No prescaling
+        Write32(TPIU___INSTANCE_INDEX___ADDRESS + 0x0F0, 0x00000002);  // TPIU Selected Pin Protocol Register: Select SWO
+      </block>
+    </control>
+    <control if="syncTrace != 0">
+      <block>
+        Write32(TPIU___INSTANCE_INDEX___ADDRESS + 0xFB0, LAR_KEY);       // TPIU Lock Access Register: Unlock TPIU
+        Write32(TPIU___INSTANCE_INDEX___ADDRESS + 0x010, 2*prescaler);   // TPIU Asynchronous Clock Prescaler Register: No prescaling
+        Write32(TPIU___INSTANCE_INDEX___ADDRESS + 0x004, 1 &lt;&lt; (tracePortWidth - 1));  // TPIU Current Synchronous Port Width
+        Write32(TPIU___INSTANCE_INDEX___ADDRESS + 0x0F0, 0x00000000);    // TPIU Selected Pin Protocol Register: Select Sync Trace Port
+        ffcrValue  = Read32(TPIU___INSTANCE_INDEX___ADDRESS + 0x304);
+        ffcrValue |= 0x00000002;                      // Enable formatter
+        Write32(TPIU___INSTANCE_INDEX___ADDRESS + 0x304, ffcrValue);     // TPIU FFCR
+      </block>
+    </control>
+    <block>
+      __ap = savedAP;
+      Message(0, "End CS_TPIU___INSTANCE_INDEX_____INSTANCE_INDEX___Configure @0x%08X, AP 0x%08X", TPIU___INSTANCE_INDEX___ADDRESS, TPIU___INSTANCE_INDEX___AP);
+    </block>
+  </sequence>
+  <sequence name="CS_TPIU___INSTANCE_INDEX___Capture">
+    <block>
+      // Helper variables
+      __var LAR_KEY   = 0xC5ACCE55;
+      __var savedAP = __ap;
+      __var ffcrValue = 0x00000000;
+
+      Message(0, "Begin CS_TPIU___INSTANCE_INDEX_____INSTANCE_INDEX___Capture @0x%08X, AP 0x%08X", TPIU___INSTANCE_INDEX___ADDRESS, TPIU___INSTANCE_INDEX___AP);
+
+      // Ensure involved components are in a well-defined state.
+      Sequence("DoTraceFlush");
+
+      // Configure TPIU if needed and enable formatter
+      __ap = TPIU___INSTANCE_INDEX___AP; // Set AP
+      ffcrValue  = Read32(TPIU___INSTANCE_INDEX___ADDRESS + 0x304);
+      ffcrValue |= 0x00000002;                                // Enable formatter
+      Write32(TPIU___INSTANCE_INDEX___ADDRESS + 0x304, ffcrValue);                  // TPIU FFCR
+      __ap = savedAP;
+      Message(0, "End CS_TPIU___INSTANCE_INDEX_____INSTANCE_INDEX___Capture @0x%08X, AP 0x%08X", TPIU___INSTANCE_INDEX___ADDRESS, TPIU___INSTANCE_INDEX___AP);
+    </block>
+  </sequence>
+  <sequence name="CS_TPIU___INSTANCE_INDEX___Flush">
+    <block>
+      // Helper variables
+      __var savedAP     = __ap;
+      __var ffcrValue   = 0x00000000;
+      __var ffsrValue   = 0x00000000;
+
+      Message(0, "Begin CS_TPIU___INSTANCE_INDEX_____INSTANCE_INDEX___Flush @0x%08X, AP 0x%08X", TPIU___INSTANCE_INDEX___ADDRESS, TPIU___INSTANCE_INDEX___AP);
+
+      __ap = TPIU___INSTANCE_INDEX___AP;  // Set AP
+    </block>
+    <block>
+      // Configure "local" TPIU for Sync Trace
+      ffsrValue = Read32(TPIU___INSTANCE_INDEX___ADDRESS + 0x300);
+    </block>
+    <control if="ffsrValue &amp; 0x2 == 0" info="Formatter not stopped, do it now">
+      <block>
+        // Flush the TPIU formatter so pending packets leave the trace port.
+        ffcrValue = Read32(TPIU___INSTANCE_INDEX___ADDRESS + 0x304);
+        ffcrValue &amp;= ~(0x00001040); // Clear StopOnFlush and FlushOnManual
+        ffcrValue |= 0x00001000;    // Stop after the manual flush completes
+        Write32(TPIU___INSTANCE_INDEX___ADDRESS + 0x304, ffcrValue);
+        ffcrValue |= 0x00000040;    // Trigger manual flush
+        Write32(TPIU___INSTANCE_INDEX___ADDRESS + 0x304, ffcrValue);
+      </block>
+      <block>
+        ffcrValue = Read32(TPIU___INSTANCE_INDEX___ADDRESS + 0x304);
+      </block>
+      <control while="(ffcrValue &amp; 0x40) != 0" info="Wait for TPIU manual flush to complete" timeout="100">
+        <block>
+          ffcrValue = Read32(TPIU___INSTANCE_INDEX___ADDRESS + 0x304);
+        </block>
+      </control>
+      <block>
+        ffsrValue = Read32(TPIU___INSTANCE_INDEX___ADDRESS + 0x300);
+      </block>
+      <control while="(ffsrValue &amp; 0x1) != 0" info="Wait for TPIU flush in progress to clear" timeout="100">
+        <block>
+          ffsrValue = Read32(TPIU___INSTANCE_INDEX___ADDRESS + 0x300);
+        </block>
+      </control>
+    </control>
+    <block>
+      __ap = savedAP;
+      Message(0, "End CS_TPIU___INSTANCE_INDEX_____INSTANCE_INDEX___Flush @0x%08X, AP 0x%08X", TPIU___INSTANCE_INDEX___ADDRESS, TPIU___INSTANCE_INDEX___AP);
+    </block>
+  </sequence>
+</cmsis-pack-trace-snippet>

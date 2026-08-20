@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Resolve Official Device Documentation"
+  short_description: "Recover authoritative vendor device documentation."
+  default_prompt: "Use $resolve-official-device-documentation to find the current official source for this unavailable device document."

@@ -1,0 +1,38 @@
+# Template for a CMSIS solution that delegates the application build to west.
+# Replace every placeholder before using this file.
+solution:
+  created-for: CMSIS-Toolbox@2.14.0
+  compiler: __COMPILER__
+
+  packs:
+    # Remove the following entry when DFP and BSP are the same pack.
+    - pack: __DEVICE_SUPPORT_PACK__
+    # Remove the following entry when no BSP exists.
+    - pack: __BOARD_SUPPORT_PACK__
+
+  target-types:
+    - type: __TARGET_TYPE__
+      # Remove board: when there is no BSP.
+      board: __CMSIS_BOARD__
+      device: __CMSIS_DEVICE__
+      variables:
+        - west-board: __WEST_BOARD__
+      target-set:
+        - set:
+          images:
+            - project-context: blinky.Debug
+
+  build-types:
+    - type: Debug
+      west-defs:
+        - CONFIG_DEBUG: y
+        - CONFIG_DEBUG_THREAD_INFO: y
+        - CONFIG_THREAD_STACK_INFO: n
+        - CONFIG_DEBUG_OPTIMIZATIONS: y
+    - type: Release
+      west-defs:
+        - CONFIG_SIZE_OPTIMIZATIONS: y
+
+  projects:
+    - west:
+        app-path: ./blinky

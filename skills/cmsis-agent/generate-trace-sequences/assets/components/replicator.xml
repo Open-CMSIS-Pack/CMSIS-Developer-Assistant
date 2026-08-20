@@ -1,0 +1,28 @@
+<!-- CMSIS-Pack TraceReplicator template. Replace __INSTANCE_INDEX__ with the stable numeric instance suffix. -->
+<cmsis-pack-trace-snippet component="TraceReplicator">
+  <debugvars>
+    // Replicator
+    __var REPLICATOR___INSTANCE_INDEX___ADDRESS    = 0x00000000;
+    __var REPLICATOR___INSTANCE_INDEX___AP         = 0x00000000;
+    __var REPLICATOR___INSTANCE_INDEX___ID_FILTER0 = 0x00000000; // Default: all pass to output 0
+    __var REPLICATOR___INSTANCE_INDEX___ID_FILTER1 = 0x00000000; // Default: all pass to output 1
+  </debugvars>
+  <sequence name="CS_REPLICATOR___INSTANCE_INDEX___Configure">
+    <block>
+      // Helper variables
+      __var savedAP    = __ap;
+      __var value      = 0x00000000;
+
+      Message(0, "Begin CS_REPLICATOR___INSTANCE_INDEX_____INSTANCE_INDEX___Configure @0x%08X, AP 0x%08X", REPLICATOR___INSTANCE_INDEX___ADDRESS, REPLICATOR___INSTANCE_INDEX___AP);
+
+      __ap = REPLICATOR___INSTANCE_INDEX___AP; // Set AP
+
+      Write32(REPLICATOR___INSTANCE_INDEX___ADDRESS + 0x000, REPLICATOR___INSTANCE_INDEX___ID_FILTER0);
+      Write32(REPLICATOR___INSTANCE_INDEX___ADDRESS + 0x004, REPLICATOR___INSTANCE_INDEX___ID_FILTER1);
+
+      __ap = savedAP;
+      Message(0, "End CS_REPLICATOR___INSTANCE_INDEX_____INSTANCE_INDEX___Configure @0x%08X, AP 0x%08X", REPLICATOR___INSTANCE_INDEX___ADDRESS, REPLICATOR___INSTANCE_INDEX___AP);
+    </block>
+  </sequence>
+</cmsis-pack-trace-snippet>
+

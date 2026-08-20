@@ -1,0 +1,41 @@
+<!-- CMSIS-Pack TraceFunnel template. Replace __INSTANCE_INDEX__ with the stable numeric instance suffix. -->
+<cmsis-pack-trace-snippet component="TraceFunnel">
+  <debugvars>
+    // Funnel
+    __var FUNNEL___INSTANCE_INDEX___ADDRESS    = 0xE0043000;
+    __var FUNNEL___INSTANCE_INDEX___AP         = 0x00000000;
+    __var FUNNEL___INSTANCE_INDEX___INPUT_MASK = 0x00000003; // Mask of trace inputs connected to funnel, enable all valid inputs by default.
+  </debugvars>
+  <sequence name="CS_FUNNEL___INSTANCE_INDEX___Configure">
+    <block>
+      __var swoTrace    = __traceout &amp; 0x1;
+      __var syncTrace   = __traceout &amp; 0x2;
+      __var bufferTrace = __traceout &amp; 0x4;
+
+      // Helper variables
+      __var savedAP    = __ap;
+      __var funnelMask = 0x00000000;
+      __var value      = 0x00000000;
+
+      Message(0, "Begin ConfigureFunnel @0x%08X, AP 0x%08X", FUNNEL___INSTANCE_INDEX___ADDRESS, FUNNEL___INSTANCE_INDEX___AP);
+    </block>
+    <control if="syncTrace != 0 || bufferTrace != 0">
+      <block>
+        funnelMask = FUNNEL___INSTANCE_INDEX___INPUT_MASK;
+      </block>
+    </control>
+    <block>
+      __ap = FUNNEL___INSTANCE_INDEX___AP; // Set AP
+
+      value = Read32(FUNNEL___INSTANCE_INDEX___ADDRESS + 0x000);
+      value &amp;= ~0xFF;              // Clear existing funnel input enables, keep hold time
+      value |= FUNNEL___INSTANCE_INDEX___INPUT_MASK;  // Keep hold time as is for now, could be made configurable if needed
+    </block>
+    <block>
+      Write32(FUNNEL___INSTANCE_INDEX___ADDRESS + 0x000, value); // Configure CoreSight Trace Funnel to enable selected trace sources
+
+      __ap = savedAP;
+      Message(0, "End CS_FUNNEL___INSTANCE_INDEX_____INSTANCE_INDEX___Configure @0x%08X, AP 0x%08X", FUNNEL___INSTANCE_INDEX___ADDRESS, FUNNEL___INSTANCE_INDEX___AP);
+    </block>
+  </sequence>
+</cmsis-pack-trace-snippet>

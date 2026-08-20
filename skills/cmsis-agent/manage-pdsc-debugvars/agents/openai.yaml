@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Manage PDSC Debug Variables"
+  short_description: "Design and safely integrate PDSC debug variables"
+  default_prompt: "Use $manage-pdsc-debugvars to add or revise documented PDSC debug variables."

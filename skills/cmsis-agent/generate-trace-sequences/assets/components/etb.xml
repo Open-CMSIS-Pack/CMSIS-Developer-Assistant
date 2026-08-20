@@ -1,0 +1,117 @@
+<!-- CMSIS-Pack ETB template. Replace __INSTANCE_INDEX__ with the stable numeric instance suffix. -->
+<cmsis-pack-trace-snippet component="ETB">
+  <debugvars>
+    // ETB
+    __var ETB___INSTANCE_INDEX___ADDRESS       = 0xE0042000;
+    __var ETB___INSTANCE_INDEX___AP            = 0x00000000;
+    __var ETB___INSTANCE_INDEX___TRIGGER_COUNT = 0x0;
+  </debugvars>
+  <sequence name="CS_ETB___INSTANCE_INDEX___Configure">
+    <block>
+      // Helper variables
+      __var savedAP = __ap;
+      __var ffcrValue = 0x00000000;
+      __var etbStatus = 0x00000000;
+
+      Message(0, "Begin CS_ETB___INSTANCE_INDEX_____INSTANCE_INDEX___Configure @0x%08X, AP 0x%08X", ETB___INSTANCE_INDEX___ADDRESS, ETB___INSTANCE_INDEX___AP);
+      __ap = ETB___INSTANCE_INDEX___AP; // Set AP
+
+      // Configure ETB
+      Write32(ETB___INSTANCE_INDEX___ADDRESS + 0x020, 0x00000000);  // Disable ETB before configuring
+      etbStatus = Read32(ETB___INSTANCE_INDEX___ADDRESS + 0x00C);
+    </block>
+    <control while="(etbStatus &amp; 0x4) == 0" info="Wait for AcqComp" timeout="100">
+      <block>
+        etbStatus = Read32(ETB___INSTANCE_INDEX___ADDRESS + 0x00C);
+      </block>
+    </control>
+    <block>
+      // Configure
+      Write32(ETB___INSTANCE_INDEX___ADDRESS + 0x304, 0x00000003);  // FFCR: Enable Formatter and Trigger Insertion
+      Write32(ETB___INSTANCE_INDEX___ADDRESS + 0x01C, ETB___INSTANCE_INDEX___TRIGGER_COUNT); // TRG: Number of words to capture after trigger
+      Write32(ETB___INSTANCE_INDEX___ADDRESS + 0x018, 0x00000000);  // Init RwP
+      Write32(ETB___INSTANCE_INDEX___ADDRESS + 0x014, 0x00000000);  // Init RRP
+
+      Write32(ETB___INSTANCE_INDEX___ADDRESS + 0x020, 0x00000001);  // Enable ETB
+    </block>
+    <block>
+      __ap = savedAP;
+      Message(0, "End CS_ETB___INSTANCE_INDEX_____INSTANCE_INDEX___Configure @0x%08X, AP 0x%08X", ETB___INSTANCE_INDEX___ADDRESS, ETB___INSTANCE_INDEX___AP);
+    </block>
+  </sequence>
+  <sequence name="CS_ETB___INSTANCE_INDEX___Capture">
+    <block>
+      // Helper variables
+      __var ffcrValue = 0x00000000;
+      __var savedAP = __ap;
+
+      Message(0, "Begin CS_ETB___INSTANCE_INDEX_____INSTANCE_INDEX___Capture @0x%08X, AP 0x%08X", ETB___INSTANCE_INDEX___ADDRESS, ETB___INSTANCE_INDEX___AP);
+
+      // Ensure involved components are in a well-defined state.
+      Sequence("DoTraceFlush");
+
+      __ap = ETB___INSTANCE_INDEX___AP; // Set AP
+      ffcrValue  = Read32(ETB___INSTANCE_INDEX___ADDRESS + 0x304);
+      ffcrValue |= 0x00000002;               // FFCR: Enable Formatter
+      Write32(ETB___INSTANCE_INDEX___ADDRESS + 0x304, ffcrValue);
+      Write32(ETB___INSTANCE_INDEX___ADDRESS + 0x01C, ETB___INSTANCE_INDEX___TRIGGER_COUNT); // TRG: Number of words to capture after trigger
+      Write32(ETB___INSTANCE_INDEX___ADDRESS + 0x018, 0x00000000);  // Init RwP
+      Write32(ETB___INSTANCE_INDEX___ADDRESS + 0x014, 0x00000000);  // Init RRP
+      Write32(ETB___INSTANCE_INDEX___ADDRESS + 0x020, 0x00000001);  // Enable ETB
+      __ap = savedAP;
+
+      Message(0, "End CS_ETB___INSTANCE_INDEX_____INSTANCE_INDEX___Capture @0x%08X, AP 0x%08X", ETB___INSTANCE_INDEX___ADDRESS, ETB___INSTANCE_INDEX___AP);
+    </block>
+  </sequence>
+  <sequence name="CS_ETB___INSTANCE_INDEX___Flush">
+    <block>
+      // Helper variables
+      __var savedAP     = __ap;
+      __var ffcrValue   = 0x00000000;
+      __var etbStatus   = 0x00000000;
+
+      Message(0, "Begin CS_ETB___INSTANCE_INDEX_____INSTANCE_INDEX___Flush @0x%08X, AP 0x%08X", ETB___INSTANCE_INDEX___ADDRESS, ETB___INSTANCE_INDEX___AP);
+
+      __ap = ETB___INSTANCE_INDEX___AP; // Set AP
+    </block>
+    <block>
+      // Flush ETB first
+      ffcrValue = Read32(ETB___INSTANCE_INDEX___ADDRESS + 0x304);
+      ffcrValue &amp;= ~(0x00001040); // Clear StopOnFlush and FlushOnManual
+      ffcrValue |= 0x00001000;    // Stop after the manual flush completes
+      Write32(ETB___INSTANCE_INDEX___ADDRESS + 0x304, ffcrValue);
+      ffcrValue |= 0x00000040;    // Trigger manual flush
+      Write32(ETB___INSTANCE_INDEX___ADDRESS + 0x304, ffcrValue);
+    </block>
+    <block>
+      ffcrValue = Read32(ETB___INSTANCE_INDEX___ADDRESS + 0x304);
+    </block>
+    <control while="(ffcrValue &amp; 0x40) != 0" info="Wait for ETB manual flush to complete" timeout="100">
+      <block>
+        ffcrValue = Read32(ETB___INSTANCE_INDEX___ADDRESS + 0x304);
+      </block>
+    </control>
+    <block>
+      etbStatus = Read32(ETB___INSTANCE_INDEX___ADDRESS + 0x00C);
+    </block>
+    <control while="(etbStatus &amp; 0x4) == 0" info="Wait for ETB to become ready" timeout="100">
+      <block>
+        etbStatus = Read32(ETB___INSTANCE_INDEX___ADDRESS + 0x00C);
+      </block>
+    </control>
+    <block>
+      // Disable ETB after flush until next run/step
+      Write32(ETB___INSTANCE_INDEX___ADDRESS + 0x020, 0x00000000);
+      etbStatus = Read32(ETB___INSTANCE_INDEX___ADDRESS + 0x00C);
+    </block>
+    <control while="(etbStatus &amp; 0x4) == 0" info="Wait for AcqComp" timeout="100">
+      <block>
+        etbStatus = Read32(ETB___INSTANCE_INDEX___ADDRESS + 0x00C);
+      </block>
+    </control>
+    <block>
+      __ap = savedAP;
+      Message(0, "End CS_ETB___INSTANCE_INDEX_____INSTANCE_INDEX___Flush @0x%08X, AP 0x%08X", ETB___INSTANCE_INDEX___ADDRESS, ETB___INSTANCE_INDEX___AP);
+    </block>
+  </sequence>
+</cmsis-pack-trace-snippet>

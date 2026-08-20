@@ -28,6 +28,13 @@
         "license": "https://github.com/serialport/node-serialport/blob/master/LICENSE"
     },
     {
+        "name": "cmsis-agent (generic-mcu-skills, vendored under skills/cmsis-agent)",
+        "version": "3fb5e0f",
+        "spdx": "Apache-2.0",
+        "url": "https://github.com/Open-CMSIS-Pack/cmsis-agent",
+        "license": "https://github.com/Open-CMSIS-Pack/cmsis-agent/blob/main/LICENSE"
+    },
+    {
         "name": "zod",
         "version": "3.25.76",
         "spdx": "MIT",

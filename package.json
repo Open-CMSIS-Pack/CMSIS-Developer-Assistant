@@ -60,26 +60,26 @@
     ],
     "commands": [
       {
-        "command": "cmsis-developer-assistant.showAgentSelectionPopup",
-        "title": "Show Agent Selection Popup",
+        "command": "cmsis-developer-assistant.configure",
+        "title": "Configure Agents and Skills",
         "category": "CMSIS Developer Assistant"
       },
       {
-         "command": "cmsis-developer-assistant.configureAgents",
-         "title": "Configure Agents",
-         "category": "CMSIS Developer Assistant"
-       },
-       {
-         "command": "cmsis-developer-assistant.resetPopupState",
-         "title": "Reset Popup State",
-         "category": "CMSIS Developer Assistant"
-       }
+        "command": "cmsis-developer-assistant.selectSkills",
+        "title": "Select Agent Skills",
+        "category": "CMSIS Developer Assistant"
+      },
+      {
+        "command": "cmsis-developer-assistant.resetPopupState",
+        "title": "Reset Popup State",
+        "category": "CMSIS Developer Assistant"
+      }
     ],
     "menus": {
       "commandPalette": [
         {
-          "command": "cmsis-developer-assistant.showAgentSelectionPopup",
-          "when": "true"
+          "command": "cmsis-developer-assistant.resetPopupState",
+          "when": "false"
         }
       ]
     },
@@ -96,10 +96,22 @@
           "default": 3001,
           "description": "Port number for the CMSIS Developer Assistant server"
         },
+        "cmsis-developer-assistant.installedSkills": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true,
+          "default": [
+            "cmsis-debug-live"
+          ],
+          "scope": "application",
+          "markdownDescription": "Agent Skills from the bundled catalog (the extension's own `cmsis-debug-live` plus the Open-CMSIS-Pack [cmsis-agent](https://github.com/Open-CMSIS-Pack/cmsis-agent) skills) that are copied into your personal skills directories: `~/.agents/skills` always, `~/.claude/skills` when Claude Code is installed, `$COPILOT_HOME/skills` when that variable is set. Pick them with **CMSIS Developer Assistant: Select Agent Skills**. A per-category entry point (`cmsis-project`, `cmsis-bring-up`, `cmsis-pack`) gives the agent one slash command for the whole category; skills a selected skill depends on are installed too, hidden from the slash menu. Deselected skills that this extension installed are removed; skills you installed yourself are never touched."
+        },
         "cmsis-developer-assistant.redactSecrets": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Withhold variable and expression values whose name or content looks like a credential (API key, token, password, connection string) before they are sent to an AI agent. Numeric scalars are never withheld, so firmware flags and counters named `auth`, `token` or `key` stay readable. Raw target reads \u2014 `read_memory`, `read_core_registers`, `read_peripheral_register`, `get_fault_info`, and `-exec` GDB passthrough \u2014 are never redacted."
+          "markdownDescription": "Withhold variable and expression values whose name or content looks like a credential (API key, token, password, connection string) before they are sent to an AI agent. Numeric scalars are never withheld, so firmware flags and counters named `auth`, `token` or `key` stay readable. Raw target reads — `read_memory`, `read_core_registers`, `read_peripheral_register`, `get_fault_info`, and `-exec` GDB passthrough — are never redacted."
         },
         "cmsis-developer-assistant.dapRequestTimeoutMs": {
           "type": "number",
@@ -128,9 +140,10 @@
     "test:skill-trigger-agent": "tsx scripts/test-skill-trigger.ts",
     "bundle": "node esbuild.js",
     "package": "npm run build && tsx scripts/package.ts",
+    "skills:sync": "tsx scripts/sync-skills.ts",
     "tpip:update": "tsx scripts/update-tpip docs/third-party-licenses.json",
     "tpip:report": "tsx scripts/tpip-reporter --header docs/tpip-header.md docs/third-party-licenses.json TPIP.md",
-    "lint:md": "markdownlint **/*.md -c ./.github/markdownlint.jsonc -i ./node_modules -i ./dist -i ./coverage -i ./out -i ./docs/architecture -i CHANGELOG.md"
+    "lint:md": "markdownlint **/*.md -c ./.github/markdownlint.jsonc -i ./node_modules -i ./dist -i ./coverage -i ./out -i ./docs/architecture -i ./skills/cmsis-agent -i CHANGELOG.md"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
@@ -169,7 +182,7 @@
     "path-to-regexp": "^8.4.0",
     "body-parser": "^2.3.0",
     "markdownlint-cli": {
-        "minimatch": "^10.2.4"
+      "minimatch": "^10.2.4"
     }
   }
 }

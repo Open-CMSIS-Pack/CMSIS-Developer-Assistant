@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Board Debug Knowledge"
+  short_description: "Document board-level debug and trace knowledge."
+  default_prompt: "Use $board-debug-knowledge to document supported board routing and debug choices."

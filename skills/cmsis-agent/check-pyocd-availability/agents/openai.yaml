@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Check pyOCD Availability"
+  short_description: "Find pyOCD or the CMSIS Debugger bundle."
+  default_prompt: "Use $check-pyocd-availability to locate an available pyOCD installation."

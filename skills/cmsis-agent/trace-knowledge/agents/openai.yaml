@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Trace Knowledge"
+  short_description: "Document SoC CoreSight trace topology"
+  default_prompt: "Use $trace-knowledge to document the CoreSight trace paths for this device."

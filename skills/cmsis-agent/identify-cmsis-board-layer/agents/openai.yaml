@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Identify Board Layer"
+  short_description: "Find compatible packaged CMSIS board layers"
+  default_prompt: "Use $identify-cmsis-board-layer to find compatible board layers for my CMSIS target."

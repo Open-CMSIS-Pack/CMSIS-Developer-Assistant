@@ -22,3 +22,9 @@ The MIT copyright notice and permission text (LICENSE-MIT) are retained for the
 portions of this work derived from DebugMCP, as required by the MIT License.
 Arm's CMSIS / Cortex-M embedded extensions and subsequent changes are
 contributed by Arm Limited.
+
+The Agent Skills under skills/cmsis-agent/ are vendored unmodified from
+Open-CMSIS-Pack/cmsis-agent (https://github.com/Open-CMSIS-Pack/cmsis-agent),
+licensed under the Apache License, Version 2.0; the licence text ships as
+skills/cmsis-agent/LICENSE and the pinned commit is recorded in
+skills/cmsis-agent.lock.json.

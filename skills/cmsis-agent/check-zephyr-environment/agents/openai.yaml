@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Check Zephyr Environment"
+  short_description: "Verify a local Zephyr west environment"
+  default_prompt: "Use $check-zephyr-environment to verify my Zephyr workspace and virtual environment."

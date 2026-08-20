@@ -1,0 +1,32 @@
+%% Architecture of the CMSIS Developer Assistant.
+%% Export to assets/architecture.svg after editing, e.g. with
+%%   npx -y @mermaid-js/mermaid-cli -i assets/architecture.mmd -o assets/architecture.svg -b transparent
+flowchart LR
+    agent["AI Agent<br/>(Copilot, Claude Code, Cursor, …)"]
+    agent -- "MCP over HTTP<br/>localhost:3001" --> srvA
+
+    subgraph router["VS Code window A — router"]
+        direction TB
+        srvA["MCP server"]
+        srvA -- "runs the tool locally" --> dbgA["Debug pipeline"]
+    end
+
+    srvA -- "forwards the tool call<br/>127.0.0.1 + token" --> srvB
+
+    subgraph worker["VS Code window B — worker"]
+        direction TB
+        srvB["Control server"]
+        srvB --> dbgB["Debug pipeline"]
+    end
+
+    subgraph pipeline["Debug pipeline (per window)"]
+        direction TB
+        api["vscode.debug API"] --> cdt["CDT GDB Debug Adapter<br/>(gdbtarget)"]
+        cdt --> gdb["arm-none-eabi-gdb"]
+        gdb --> server["pyOCD / J-Link GDB Server"]
+        server -- "SWD / JTAG" --> target["Cortex-M target"]
+        api -.-> svd["Peripheral Inspector API /<br/>SVD parser"]
+    end
+
+    dbgA -.-> pipeline
+    dbgB -.-> pipeline

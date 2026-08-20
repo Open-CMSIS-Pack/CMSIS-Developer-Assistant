@@ -1,0 +1,213 @@
+<!-- CMSIS-Pack ETF template. Replace __INSTANCE_INDEX__ with the stable numeric instance suffix. -->
+<cmsis-pack-trace-snippet component="ETF">
+  <debugvars>
+    // ETF
+    __var ETF___INSTANCE_INDEX___ADDRESS       = 0xE0042000;
+    __var ETF___INSTANCE_INDEX___AP            = 0x00000000;
+  </debugvars>
+  <sequence name="CS_ETF___INSTANCE_INDEX___Configure_HWFIFO">
+    <block>
+      // Helper variables
+      __var savedAP = __ap;
+      __var ffcrValue = 0x00000000;
+      __var etfStatus = 0x00000000;
+
+      Message(0, "Begin CS_ETF___INSTANCE_INDEX_____INSTANCE_INDEX___Configure_HWFIFO @0x%08X, AP 0x%08X", ETF___INSTANCE_INDEX___ADDRESS, ETF___INSTANCE_INDEX___AP);
+      __ap = ETF___INSTANCE_INDEX___AP; // Set AP
+
+      // Configure ETF to HW FIFO for Sync Trace
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x020, 0x00000000);  // Disable ETF before configuring
+      etfStatus = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x00C);
+    </block>
+    <control while="(etfStatus &amp; 0x4) == 0" info="Wait for TMCReady" timeout="100">
+      <block>
+        etfStatus = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x00C);
+      </block>
+    </control>
+    <block>
+      // Configure
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x028, 0x00000002); // Set HW FIFO Mode
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x034, 0x00000000); // Watermark: Set threshold vacancy to 0 to use full buffer
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x304, 0x00000003); // FFCR: Enable Formatter and Trigger Insertion
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x308, 0x00000000); // Clear PSCR, use other components for periodic sync requests
+
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x020, 0x00000001); // Enable ETF
+    </block>
+    <block>
+      __ap = savedAP;
+      Message(0, "End CS_ETF___INSTANCE_INDEX_____INSTANCE_INDEX___Configure_HWFIFO @0x%08X, AP 0x%08X", ETF___INSTANCE_INDEX___ADDRESS, ETF___INSTANCE_INDEX___AP);
+    </block>
+  </sequence>
+  <sequence name="CS_ETF___INSTANCE_INDEX___Configure_CircularBuffer">
+    <block>
+      // Helper variables
+      __var savedAP = __ap;
+      __var ffcrValue = 0x00000000;
+      __var etfStatus = 0x00000000;
+      __var traceBufferSyncCnt = 0xA;
+
+      Message(0, "Begin CS_ETF___INSTANCE_INDEX_____INSTANCE_INDEX___Configure_CircularBuffer @0x%08X, AP 0x%08X", ETF___INSTANCE_INDEX___ADDRESS, ETF___INSTANCE_INDEX___AP);
+      __ap = ETF___INSTANCE_INDEX___AP; // Set AP
+
+      // Configure ETF to HW FIFO for Sync Trace
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x020, 0x00000000);  // Disable ETF before configuring
+      etfStatus = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x00C);
+    </block>
+    <control while="(etfStatus &amp; 0x4) == 0" info="Wait for TMCReady" timeout="100">
+      <block>
+        etfStatus = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x00C);
+      </block>
+    </control>
+    <block>
+      // Configure
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x028, 0x00000000);  // Set Circular Buffer mode
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x034, 0x00000000);  // Watermark: Set threshold vacancy to 0 to use full buffer
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x304, 0x00000003);  // FFCR: Enable Formatter and Trigger Insertion
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x308, traceBufferSyncCnt); // Set PSCR
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x018, 0x00000000);  // Init RwP
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x014, 0x00000000);  // Init RRP
+
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x020, 0x00000001);  // Enable ETF
+    </block>
+    <block>
+      __ap = savedAP;
+      Message(0, "End CS_ETF___INSTANCE_INDEX_____INSTANCE_INDEX___Configure_CircularBuffer @0x%08X, AP 0x%08X", ETF___INSTANCE_INDEX___ADDRESS, ETF___INSTANCE_INDEX___AP);
+    </block>
+  </sequence>
+  <sequence name="CS_ETF___INSTANCE_INDEX___Capture_CircularBuffer">
+    <block>
+      // Helper variables
+      __var ffcrValue = 0x00000000;
+      __var savedAP = __ap;
+      __var traceBufferSyncCnt = 0xA;
+
+      Message(0, "Begin CS_ETF___INSTANCE_INDEX_____INSTANCE_INDEX___Capture_CircularBuffer @0x%08X, AP 0x%08X", ETF___INSTANCE_INDEX___ADDRESS, ETF___INSTANCE_INDEX___AP);
+
+      // Ensure involved components are in a well-defined state.
+      Sequence("DoTraceFlush");
+
+      __ap = ETF___INSTANCE_INDEX___AP; // Set AP
+      ffcrValue  = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x304);
+      ffcrValue |= 0x00000002;               // FFCR: Enable Formatter
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x304, ffcrValue);
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x308, traceBufferSyncCnt); // Set PSCR
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x018, 0x00000000);  // Init RwP
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x014, 0x00000000);  // Init RRP
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x020, 0x00000001);  // Enable ETF
+      __ap = savedAP;
+
+      Message(0, "End CS_ETF___INSTANCE_INDEX_____INSTANCE_INDEX___Capture_CircularBuffer @0x%08X, AP 0x%08X", ETF___INSTANCE_INDEX___ADDRESS, ETF___INSTANCE_INDEX___AP);
+    </block>
+  </sequence>
+  <sequence name="CS_ETF___INSTANCE_INDEX___Flush">
+    <block>
+      // Helper variables
+      __var savedAP     = __ap;
+      __var ffcrValue   = 0x00000000;
+      __var etfStatus   = 0x00000000;
+
+      Message(0, "Begin CS_ETF___INSTANCE_INDEX_____INSTANCE_INDEX___Flush @0x%08X, AP 0x%08X", ETF___INSTANCE_INDEX___ADDRESS, ETF___INSTANCE_INDEX___AP);
+
+      __ap = ETF___INSTANCE_INDEX___AP; // Set AP
+    </block>
+    <block>
+      // Flush ETF first so the HW FIFO drains towards the TPIU.
+      ffcrValue = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x304);
+      ffcrValue &amp;= ~(0x00001040); // Clear StopOnFlush and FlushOnManual
+      ffcrValue |= 0x00001000;    // Stop after the manual flush completes
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x304, ffcrValue);
+      ffcrValue |= 0x00000040;    // Trigger manual flush
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x304, ffcrValue);
+    </block>
+    <block>
+      ffcrValue = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x304);
+    </block>
+    <control while="(ffcrValue &amp; 0x40) != 0" info="Wait for ETF manual flush to complete" timeout="100">
+      <block>
+        ffcrValue = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x304);
+      </block>
+    </control>
+    <block>
+      etfStatus = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x00C);
+    </block>
+    <control while="(etfStatus &amp; 0x4) == 0" info="Wait for ETF to become ready" timeout="100">
+      <block>
+        etfStatus = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x00C);
+      </block>
+    </control>
+    <block>
+      // Disable ETF after flush until next run/step
+      Write32(ETF___INSTANCE_INDEX___ADDRESS + 0x020, 0x00000000);
+      etfStatus = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x00C);
+    </block>
+    <control while="(etfStatus &amp; 0x4) == 0" info="Wait for TMCReady" timeout="100">
+      <block>
+        etfStatus = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x00C);
+      </block>
+    </control>
+    <block>
+      __ap = savedAP;
+      Message(0, "End CS_ETF___INSTANCE_INDEX_____INSTANCE_INDEX___Flush @0x%08X, AP 0x%08X", ETF___INSTANCE_INDEX___ADDRESS, ETF___INSTANCE_INDEX___AP);
+    </block>
+  </sequence>
+  <sequence name="CS_ETF___INSTANCE_INDEX___ReadBuffer">
+    <block>
+      // Helper variables
+      __var savedAP       = __ap;
+      __var etfStatus     = 0x00000000;
+      __var bufferSize    = 0x00000000;
+      __var readPointer   = 0x00000000;
+      __var writePointer  = 0x00000000;
+      __var bytesToRead   = 0x00000000;
+      __var bytesStreamed = 0x00000000;
+
+      Message(0, "Begin CS_ETF___INSTANCE_INDEX_____INSTANCE_INDEX___ReadBuffer @0x%08X, AP 0x%08X", ETF___INSTANCE_INDEX___ADDRESS, ETF___INSTANCE_INDEX___AP);
+
+      __ap = ETF___INSTANCE_INDEX___AP; // Set AP
+
+      // TMC RSZ is expressed in 32-bit words. RRP and RWP are byte offsets.
+      bufferSize   = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x004) * 4;
+      etfStatus    = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x00C);
+      readPointer  = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x014);
+      writePointer = Read32(ETF___INSTANCE_INDEX___ADDRESS + 0x018);
+    </block>
+    <control if="bufferSize != 0">
+      <control if="(etfStatus &amp; 0x00000001) != 0">
+        <block>
+          // STS.Full distinguishes a wrapped/full buffer from an empty buffer
+          // when the read and write pointers are equal.
+          bytesToRead = bufferSize;
+        </block>
+      </control>
+      <control if="(etfStatus &amp; 0x00000001) == 0">
+        <control if="writePointer &gt;= readPointer">
+          <block>
+            bytesToRead = writePointer - readPointer;
+          </block>
+        </control>
+        <control if="writePointer &lt; readPointer">
+          <block>
+            bytesToRead = (bufferSize - readPointer) + writePointer;
+          </block>
+        </control>
+      </control>
+      <control if="bytesToRead != 0">
+        <block>
+          // Read repeatedly from the TMC RRD register. The TMC advances RRP.
+          BufferRead(0, 0, ETF___INSTANCE_INDEX___ADDRESS + 0x010, bytesToRead, 32);
+          bytesStreamed = BufferStreamOut(0, 0, bytesToRead, ".trace/TraceBufferOutput.TB.raw", 0, 0);
+          Message(0, "Streamed %d of %d ETF trace bytes", bytesStreamed, bytesToRead);
+        </block>
+      </control>
+      <control if="bytesToRead == 0">
+        <block>
+          Message(1, "ETF trace buffer is empty");
+        </block>
+      </control>
+    </control>
+    <block>
+      __ap = savedAP;
+      Message(0, "End CS_ETF___INSTANCE_INDEX_____INSTANCE_INDEX___ReadBuffer @0x%08X, AP 0x%08X", ETF___INSTANCE_INDEX___ADDRESS, ETF___INSTANCE_INDEX___AP);
+    </block>
+  </sequence>
+</cmsis-pack-trace-snippet>

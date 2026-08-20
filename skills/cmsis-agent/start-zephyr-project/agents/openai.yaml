@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Start Zephyr Project"
+  short_description: "Create a CMSIS solution for a Zephyr board"
+  default_prompt: "Use $start-zephyr-project to create an initial CMSIS solution for my Zephyr-supported board."

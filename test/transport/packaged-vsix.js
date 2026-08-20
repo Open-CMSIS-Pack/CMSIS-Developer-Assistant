@@ -107,8 +107,26 @@ check('the bundle keeps serialport external',
     /require\(["']serialport["']\)/.test(bundle),
     'bundle require()s serialport at runtime rather than inlining it');
 
-// 7. The skill ships, since agent registration copies it out of the extension.
+// 7. The skills ship, since activation copies the selected ones out of the
+//    extension: the bundled debugging skill, the catalog that drives the
+//    picker, the upstream lock, and every SKILL.md the catalog points at.
 check('the agent skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-debug-live', 'SKILL.md')));
+check('the skill catalog ships', fs.existsSync(path.join(root, 'skills', 'catalog.json')));
+check('the upstream skill lock ships', fs.existsSync(path.join(root, 'skills', 'cmsis-agent.lock.json')));
+let catalogOk = false;
+let catalogDetail = '';
+try {
+    const catalog = JSON.parse(fs.readFileSync(path.join(root, 'skills', 'catalog.json'), 'utf8'));
+    const missing = catalog.skills
+        .filter(entry => !fs.existsSync(path.join(root, entry.path, 'SKILL.md')))
+        .map(entry => entry.name);
+    catalogOk = catalog.skills.length > 1 && missing.length === 0;
+    catalogDetail = missing.length ? `missing: ${missing.join(', ')}` : `${catalog.skills.length} skills present`;
+} catch (err) {
+    catalogDetail = err.message;
+}
+check('every catalog skill ships', catalogOk, catalogDetail);
+check('the upstream licence ships', fs.existsSync(path.join(root, 'skills', 'cmsis-agent', 'LICENSE')));
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);

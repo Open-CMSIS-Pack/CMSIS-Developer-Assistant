@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Apply Confirmed PDSC Proposal"
+  short_description: "Apply and validate a confirmed PDSC proposal"
+  default_prompt: "Use $apply-confirmed-pdsc-proposal to apply this confirmed PDSC sequence proposal."

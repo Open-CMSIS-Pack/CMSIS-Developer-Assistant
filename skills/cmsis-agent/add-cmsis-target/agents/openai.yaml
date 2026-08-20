@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Add Target"
+  short_description: "Add a verified target and packaged board layer"
+  default_prompt: "Use $add-cmsis-target to add my board or device to an existing CMSIS solution."

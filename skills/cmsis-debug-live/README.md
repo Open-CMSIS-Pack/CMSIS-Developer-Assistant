@@ -5,9 +5,12 @@ driving a live Cortex-M debug session; the MCP server itself only exposes tools
 with short behavioural descriptions.
 
 Install location follows the [Agent Skills](https://agentskills.io) convention:
-the extension copies this directory to `~/.agents/skills/cmsis-debug-live/`, and
-also to `~/.copilot/skills/cmsis-debug-live/` when a Copilot home exists. That
-happens automatically when you register CMSIS Developer Assistant with an agent.
+the extension copies this directory to `~/.agents/skills/cmsis-debug-live/`, to
+`~/.claude/skills/cmsis-debug-live/` when a Claude home exists, and to
+`$COPILOT_HOME/skills/` when that variable is set. That happens on every
+activation for every skill selected in the `installedSkills` setting — this
+one is selected by default. The other skills in the catalog are described in
+[`../README.md`](../README.md).
 
 Invoke it as `/cmsis-debug-live` in harnesses that support skills.
 

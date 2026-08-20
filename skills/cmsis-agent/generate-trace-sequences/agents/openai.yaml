@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Generate Trace Sequences"
+  short_description: "Generate CoreSight trace PDSC sequences"
+  default_prompt: "Use $generate-trace-sequences to add verified CoreSight trace sequences to this PDSC."

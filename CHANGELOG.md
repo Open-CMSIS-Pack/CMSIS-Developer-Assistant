@@ -6,17 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-08-20
+
 ### Added
+- **The Open-CMSIS-Pack/cmsis-agent skills ship in the extension, opt-in.** The 21 skills of [cmsis-agent](https://github.com/Open-CMSIS-Pack/cmsis-agent) (project setup, device debug/trace knowledge, CMSIS-Pack debug authoring) are vendored verbatim under `skills/cmsis-agent/` at a commit pinned in `skills/cmsis-agent.lock.json` (`npm run skills:sync`; upstream has no tags or releases), listed in a generated `skills/catalog.json`, and installed only when selected — the new setting `cmsis-developer-assistant.installedSkills` (application scope, default `["cmsis-debug-live"]`) holds the picks, the new command **Select Agent Skills** (also step 2 of the first-run setup) edits them. The selection is applied on activation and whenever the setting changes, so it follows Settings Sync.
+- **One slash command per category instead of 21.** Generated router skills `cmsis-project`, `cmsis-bring-up` and `cmsis-pack` dispatch to their member skills; picking a router installs the members with `user-invocable: false`, which keeps them out of the `/` menu in Claude Code, VS Code and Copilot CLI while the model can still invoke them by description. The `$name` cross-references in each skill are recorded as dependencies and installed (hidden) alongside whatever is picked, so a skill never arrives without the skills it hands over to.
+- **Skills are now written to `~/.claude/skills/` as well**, when a Claude home exists — Claude Code reads only its own directory, not `~/.agents/skills/`, so earlier releases' skill was invisible to it. `$COPILOT_HOME/skills/` is written only when that variable is set (the Copilot CLI then ignores `~/.agents/skills`); the unconditional `~/.copilot/skills/` copy is no longer written and the old one is cleaned up.
+- **Skill directories are marked and replaced, not merged.** Every directory the extension installs carries `.cmsis-developer-assistant.json`; only marked directories (or the pre-marker `cmsis-debug-live`) are ever replaced or removed, a user's own skill of the same name is left alone and reported, and a re-sync replaces the directory so files dropped from the bundle do not linger. `src/test/skillCatalog.test.ts` pins the catalog to the directories on disk and the lock's content hash; `src/test/skillInstaller.test.ts` covers the marker rules in temp directories.
 - **MCP `instructions` at `initialize`.** The server now tells clients up front that these tools drive a live Cortex-M session and that a runtime investigation should start by invoking the `cmsis-debug-live` Agent Skill — target awareness, the session-status gate, breakpoint strategy, step-and-inspect, fault decode, root cause — or `get_debug_instructions` in harnesses that do not load skills. `start_debugging` says the same in one sentence. (Upstream #129.)
 - **Debugger-first rule** in the skill and in the `get_debug_instructions` guide. Do not start a runtime investigation by adding `printf` over UART/ITM, LED toggles or trace macros — on a Cortex-M that is a rebuild, a reflash and a reset per hypothesis, and it moves the timing you are observing. Halt and inspect instead; reach for `add_logpoint` only knowing it still stops the core per hit. The skill description gained the trigger vocabulary (runtime bugs, faults, crashes, hangs, failing tests, wrong/null values, unexpected output) so skill-aware harnesses pick it for the right prompts. (Upstream #129.)
 - **Contract tests for that guidance** (`src/test/debugSkillGuidance.test.ts`): the trigger words, the debugger-first wording, and that the skill, the MCP instructions and the instructions guide stay consistent. (Upstream #130.)
 - **Opt-in live trigger evaluation**, `npm run test:skill-trigger-agent`: runs a real Copilot CLI session in a scratch worktree carrying only the skill, with an embedded prompt, and asserts `cmsis-debug-live` is its first tool call. Deliberately outside `npm test` — needs an authenticated Copilot CLI, spends credits, and a model's first move is not deterministic. (Upstream #130.)
 
-### Fixed
-- **The first-run agent setup picker came back on every activation until something was selected.** Dismissing it (Esc, focus loss) now counts as an answer; manual setup stays available via the *Show Agent Selection Popup* command. (Upstream #115.)
-
 ### Changed
+- **Commands consolidated.** *Configure Agents and Skills* (`cmsis-developer-assistant.configure`) runs the two-step flow — agents, then skills — that the first-run prompt shows; *Select Agent Skills* runs step 2 alone. *Show Agent Selection Popup* and *Configure Agents* are removed; *Reset Popup State* stays but is hidden from the palette. The first-run flag moved to `popupShown.v3` so existing users see the skills step once.
 - `scripts/**` no longer ships in the VSIX.
+
+### Fixed
+- **The first-run agent setup picker came back on every activation until something was selected.** Dismissing it (Esc, focus loss) now counts as an answer; manual setup stays available via *Configure Agents and Skills*. (Upstream #115.)
 
 ## [2.1.0] - 2026-08-18
 

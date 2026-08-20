@@ -83,16 +83,16 @@ All paths are relative to the extension root (`DebugMCP/`).
 
 | Kind | Upstream | Fork |
 | ---- | -------- | ---- |
-| npm `name` | `debugmcpextension` | `cmsis-debugmcp` |
-| `displayName` | `DebugMCP` | `CMSIS-DebugMCP` |
-| `publisher` | `ozzafar` | `mather01` |
-| Config section | `debugmcp.*` | `cmsis-debugmcp.*` |
-| Command ids | `debugmcp.showAgentSelectionPopup` etc. | `cmsis-debugmcp.showAgentSelectionPopup` etc. |
-| Output channel | `DebugMCP` | `CMSIS-DebugMCP` |
-| MCP server `name` | `debugmcp` | `cmsis-debugmcp` |
-| MCP resource URIs | `debugmcp://docs/…` | `cmsis-debugmcp://docs/…` |
-| globalState key | `debugmcp.popupShown` | `cmsis-debugmcp.popupShown` |
-| Generated launch-config prefix | `DebugMCP:` | `CMSIS-DebugMCP:` |
+| npm `name` | `debugmcpextension` | `cmsis-developer-assistant` |
+| `displayName` | `DebugMCP` | `CMSIS Developer Assistant` |
+| `publisher` | `ozzafar` | `arm` |
+| Config section | `debugmcp.*` | `cmsis-developer-assistant.*` |
+| Command ids | `debugmcp.showAgentSelectionPopup` etc. | `cmsis-developer-assistant.showAgentSelectionPopup` etc. |
+| Output channel | `DebugMCP` | `CMSIS Developer Assistant` |
+| MCP server `name` | `debugmcp` | `cmsis-developer-assistant` |
+| MCP resource URIs | `debugmcp://docs/…` | `cmsis-developer-assistant://docs/…` |
+| globalState key | `debugmcp.popupShown` | `cmsis-developer-assistant.popupShown.v2` |
+| Generated launch-config prefix | `DebugMCP ...` | `CMSIS Developer Assistant ...` |
 
 ---
 

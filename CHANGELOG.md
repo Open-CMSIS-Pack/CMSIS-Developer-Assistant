@@ -4,6 +4,20 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **MCP `instructions` at `initialize`.** The server now tells clients up front that these tools drive a live Cortex-M session and that a runtime investigation should start by invoking the `cmsis-debug-live` Agent Skill — target awareness, the session-status gate, breakpoint strategy, step-and-inspect, fault decode, root cause — or `get_debug_instructions` in harnesses that do not load skills. `start_debugging` says the same in one sentence. (Upstream #129.)
+- **Debugger-first rule** in the skill and in the `get_debug_instructions` guide. Do not start a runtime investigation by adding `printf` over UART/ITM, LED toggles or trace macros — on a Cortex-M that is a rebuild, a reflash and a reset per hypothesis, and it moves the timing you are observing. Halt and inspect instead; reach for `add_logpoint` only knowing it still stops the core per hit. The skill description gained the trigger vocabulary (runtime bugs, faults, crashes, hangs, failing tests, wrong/null values, unexpected output) so skill-aware harnesses pick it for the right prompts. (Upstream #129.)
+- **Contract tests for that guidance** (`src/test/debugSkillGuidance.test.ts`): the trigger words, the debugger-first wording, and that the skill, the MCP instructions and the instructions guide stay consistent. (Upstream #130.)
+- **Opt-in live trigger evaluation**, `npm run test:skill-trigger-agent`: runs a real Copilot CLI session in a scratch worktree carrying only the skill, with an embedded prompt, and asserts `cmsis-debug-live` is its first tool call. Deliberately outside `npm test` — needs an authenticated Copilot CLI, spends credits, and a model's first move is not deterministic. (Upstream #130.)
+
+### Fixed
+- **The first-run agent setup picker came back on every activation until something was selected.** Dismissing it (Esc, focus loss) now counts as an answer; manual setup stays available via the *Show Agent Selection Popup* command. (Upstream #115.)
+
+### Changed
+- `scripts/**` no longer ships in the VSIX.
+
 ## [2.1.0] - 2026-08-18
 
 ### Changed

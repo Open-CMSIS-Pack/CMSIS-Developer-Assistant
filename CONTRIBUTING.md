@@ -7,8 +7,9 @@ Contributions and suggestions are welcome.
   a clear description of what changed and why.
 - Make sure the build and tests pass locally (`npm run compile`, `npm run lint`,
   and the test suites) before requesting review.
-- By contributing, you agree that your contributions are licensed under the
-  project's dual license (**Apache-2.0 OR MIT**; see [NOTICE](NOTICE)).
+- Newly contributed files are expected to be licensed under **Apache-2.0** and
+  include the appropriate SPDX license identifier; see [LICENSE](LICENSE) and
+  [NOTICE](NOTICE) for the project's licensing and provenance requirements.
 
 This project is part of [Open-CMSIS-Pack](https://github.com/Open-CMSIS-Pack);
 please follow the org's contribution and sign-off requirements where they apply.

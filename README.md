@@ -499,6 +499,6 @@ See [SECURITY.md](SECURITY.md) for reporting guidance. Do not report security vu
 
 ## License
 
-MIT License — see [LICENSE.txt](LICENSE) for details.
+Dual-licensed under either of **Apache License, Version 2.0** ([LICENSE](LICENSE)) or the **MIT License** ([LICENSE-MIT](LICENSE-MIT)). See [NOTICE](NOTICE) for provenance and attribution.
 
 Based on **DebugMCP**, originally created by **Oz Zafar**, **Ori Bar-Ilan** and **Karin Brisker** (Microsoft), used under the MIT License. CMSIS/Cortex-M embedded extensions maintained by Arm.

@@ -1,0 +1,38 @@
+<!-- CMSIS-Pack SWO template. Replace __INSTANCE_INDEX__ with the stable numeric instance suffix. -->
+<cmsis-pack-trace-snippet component="SWO">
+  <debugvars>
+    // SWO
+    __var SWO___INSTANCE_INDEX___ADDRESS     = 0xE0040000;  // Default TPIU Location for single-core systems
+    __var SWO___INSTANCE_INDEX___AP          = 0x00000000;
+  </debugvars>
+  <sequence name="CS_SWO___INSTANCE_INDEX___Configure">
+    <block>
+      // Helper variables
+      __var savedAP   = __ap;
+      __var prescaler =    0;
+      __var swoMode   =    2;                    // Fixed SWO-UART for now
+
+      Message(0, "Begin CS_SWO___INSTANCE_INDEX_____INSTANCE_INDEX___Configure @0x%08X, AP 0x%08X", SWO___INSTANCE_INDEX___ADDRESS, SWO___INSTANCE_INDEX___AP);
+    </block>
+    <control if="__traceclockout != 0">
+      <control if="__traceclockin &lt; __traceclockout">
+        <block>
+          Message(2, "Error: __traceclockin (0x%08X) is less than __traceclockout (0x%08X)", __traceclockin, __traceclockout);
+        </block>
+      </control>
+      <block>
+        // Calculate SWO prescaler value based on provided trace clock frequencies.
+        prescaler = (__traceclockin / __traceclockout) - 1;
+        Message(0, "Calculated SWO prescaler value: %d", prescaler);
+      </block>
+    </control>
+    <block>
+      __ap = SWO___INSTANCE_INDEX___AP;
+      Write32(SWO___INSTANCE_INDEX___ADDRESS + 0x010, prescaler);   // Prescaler
+      Write32(SWO___INSTANCE_INDEX___ADDRESS + 0x0F0, swoMode);     // Enable SWO-UART
+      __ap = savedAP;
+      Message(0, "End CS_SWO___INSTANCE_INDEX_____INSTANCE_INDEX___Configure @0x%08X, AP 0x%08X", SWO___INSTANCE_INDEX___ADDRESS, SWO___INSTANCE_INDEX___AP);
+    </block>
+  </sequence>
+</cmsis-pack-trace-snippet>
+

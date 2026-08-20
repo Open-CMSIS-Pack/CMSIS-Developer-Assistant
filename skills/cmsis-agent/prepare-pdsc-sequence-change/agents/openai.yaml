@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Prepare PDSC Sequence Change"
+  short_description: "Prepare evidence-backed PDSC sequence proposals"
+  default_prompt: "Use $prepare-pdsc-sequence-change to scope and propose this PDSC sequence change."

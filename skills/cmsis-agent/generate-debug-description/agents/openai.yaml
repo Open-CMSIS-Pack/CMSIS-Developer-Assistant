@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Generate Debug Description"
+  short_description: "Add verified CMSIS-Pack debug definitions"
+  default_prompt: "Use $generate-debug-description to add verified non-sequence debug definitions to this PDSC."

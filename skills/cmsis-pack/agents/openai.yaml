@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Pack Debug Authoring"
+  short_description: "Author, validate and apply PDSC debug and trace sequences and debugvars"
+  default_prompt: "Use $cmsis-pack to author, validate and apply PDSC debug and trace sequences and debugvars."

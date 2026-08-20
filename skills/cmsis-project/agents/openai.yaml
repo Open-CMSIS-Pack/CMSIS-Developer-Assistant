@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Project Setup"
+  short_description: "Create, extend or retarget CMSIS csolution and Zephyr projects"
+  default_prompt: "Use $cmsis-project to create, extend or retarget CMSIS csolution and Zephyr projects."

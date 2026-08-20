@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Check Environment"
+  short_description: "Verify CMSIS build tools and compiler toolchains"
+  default_prompt: "Use $check-cmsis-environment to verify my CMSIS-Toolbox build environment and compilers."

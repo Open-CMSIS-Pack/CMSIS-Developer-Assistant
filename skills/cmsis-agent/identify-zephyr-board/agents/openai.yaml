@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Identify Zephyr Board"
+  short_description: "Resolve a physical board to a Zephyr target"
+  default_prompt: "Use $identify-zephyr-board to find the exact Zephyr target for my board."

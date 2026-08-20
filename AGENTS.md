@@ -30,7 +30,8 @@ AI Agent (Cline/Copilot/Cursor) → MCP/HTTP → DebugMCPServer → DebuggingHan
 | `DebuggingExecutor` | VS Code debug API calls, DAP requests | [docs/architecture/debuggingExecutor.md](docs/architecture/debuggingExecutor.md) |
 | `DebugState` | Debug session state model | [docs/architecture/debugState.md](docs/architecture/debugState.md) |
 | `DebugConfigurationManager` | Launch configs, language detection | [docs/architecture/debugConfigurationManager.md](docs/architecture/debugConfigurationManager.md) |
-| `AgentConfigurationManager` | AI agent auto-configuration | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
+| `AgentConfigurationManager` | AI agent auto-configuration and agent-skill installation | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
+| `skills/` | Bundled Agent Skills: `cmsis-debug-live`, the vendored Open-CMSIS-Pack/cmsis-agent skills, per-category routers, `catalog.json` | [skills/README.md](skills/README.md) |
 
 ## Documentation Maintenance
 
@@ -59,6 +60,7 @@ Include in each source file:
 | `npm run lint` | Run ESLint on `src/` |
 | `npm test` | Run all tests (`src/test/*.test.ts`) |
 | `npm run watch` | Compile in watch mode |
+| `npm run skills:sync` | Re-vendor the cmsis-agent skills at the pinned commit and regenerate `skills/catalog.json` + routers (`-- --update` moves the pin to upstream `main`) |
 
 ## Code Style & Conventions
 
@@ -89,6 +91,7 @@ Include in each source file:
 |---------|---------|-------------|
 | `cmsis-developer-assistant.serverPort` | 3001 | MCP server port |
 | `cmsis-developer-assistant.timeoutInSeconds` | 180 | Operation timeout |
+| `cmsis-developer-assistant.installedSkills` | `["cmsis-debug-live"]` | Agent skills from `skills/catalog.json` to copy into the user's skills directories (application scope) |
 
 ## Documentation Resources
 

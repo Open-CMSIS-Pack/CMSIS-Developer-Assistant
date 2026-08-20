@@ -42,18 +42,15 @@ export async function activate(context: vscode.ExtensionContext) {
     // Initialize Agent Configuration Manager
     agentConfigManager = new AgentConfigurationManager(context, timeoutInSeconds, serverPort);
 
-    // Put the bundled agent skill where skills-aware harnesses look for it.
-    // Done here rather than only on agent registration: the skill is
-    // agent-independent, and a user who registered their agents in an earlier
-    // release never opens that dialog again — so gating it there meant every
-    // upgrading user silently got no skill.
+    // Put the selected agent skills where skills-aware harnesses look for
+    // them. Done on every activation, not only from the setup dialog: the
+    // selection lives in a setting, so it has to be applied on a machine that
+    // received it via Settings Sync and after an upgrade that changed the
+    // bundled content — neither of which reopens the dialog.
     try {
-        const skillPath = await agentConfigManager.installCmsisDebugSkill();
-        logger.info(skillPath
-            ? `Installed the cmsis-debug-live agent skill at ${skillPath}`
-            : 'No agent skill was installed (bundle missing or skills dir unwritable)');
+        await agentConfigManager.syncSkills('activation');
     } catch (error) {
-        logger.error('Error installing the agent skill', error);
+        logger.error('Error installing agent skills', error);
     }
 
     // Start this window's coordinator: it always runs a control server and
@@ -126,6 +123,11 @@ export async function activate(context: vscode.ExtensionContext) {
     // leaving them with a setting that silently does nothing.
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(async (event) => {
+            // The skill selection is applied live — whether it changed in the
+            // picker, in settings.json, or arrived through Settings Sync.
+            if (event.affectsConfiguration('cmsis-developer-assistant.installedSkills') && agentConfigManager) {
+                await agentConfigManager.syncSkills('setting changed');
+            }
             if (!event.affectsConfiguration('cmsis-developer-assistant.serverPort')) {
                 return;
             }
@@ -147,7 +149,7 @@ export async function activate(context: vscode.ExtensionContext) {
     setTimeout(async () => {
         try {
             if (agentConfigManager && await agentConfigManager.shouldShowPopup()) {
-                await agentConfigManager.showAgentSelectionPopup();
+                await agentConfigManager.runSetupFlow();
             }
         } catch (error) {
             logger.error('Error showing post-install popup', error);
@@ -161,22 +163,23 @@ export async function activate(context: vscode.ExtensionContext) {
  * Register extension commands
  */
 function registerCommands(context: vscode.ExtensionContext) {
-    // Command to manually configure CMSIS Developer Assistant for agents
-    const configureAgentsCommand = vscode.commands.registerCommand(
-        'cmsis-developer-assistant.configureAgents',
+    // The two-step setup: agents to register the MCP server with, then the
+    // agent skills to install. Same flow as the first-run prompt.
+    const configureCommand = vscode.commands.registerCommand(
+        'cmsis-developer-assistant.configure',
         async () => {
             if (agentConfigManager) {
-                await agentConfigManager.showManualConfiguration();
+                await agentConfigManager.runSetupFlow();
             }
         }
     );
 
-    // Command to show agent selection popup again
-    const showPopupCommand = vscode.commands.registerCommand(
-        'cmsis-developer-assistant.showAgentSelectionPopup',
+    // Just the skills step.
+    const selectSkillsCommand = vscode.commands.registerCommand(
+        'cmsis-developer-assistant.selectSkills',
         async () => {
             if (agentConfigManager) {
-                await agentConfigManager.showAgentSelectionPopup();
+                await agentConfigManager.showSkillSelectionDialog();
             }
         }
     );
@@ -193,10 +196,10 @@ function registerCommands(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
-        configureAgentsCommand,
-        showPopupCommand,
+        configureCommand,
+        selectSkillsCommand,
         resetPopupCommand
-        );
+    );
 }
 
 export async function deactivate() {

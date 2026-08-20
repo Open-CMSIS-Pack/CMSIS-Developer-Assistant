@@ -1,0 +1,50 @@
+{
+  "$comment": "Hand-authored input for scripts/sync-skills.ts. Router descriptions are what skills-aware harnesses use to auto-invoke the category entry point — keep them trigger-rich and under 1024 characters. Workflow lines become the 'Typical workflow' section of the generated router SKILL.md.",
+  "bundled": [
+    { "name": "cmsis-debug-live", "category": "debug" }
+  ],
+  "categories": [
+    {
+      "id": "project",
+      "label": "CMSIS project setup",
+      "router": "cmsis-project",
+      "displayName": "CMSIS: Project Setup",
+      "shortDescription": "Create, extend or retarget CMSIS csolution and Zephyr projects",
+      "description": "Set up and extend CMSIS csolution projects and Zephyr-based CMSIS solutions: verify the CMSIS-Toolbox, CMake, Ninja and compiler environment or a Zephyr west workspace; resolve a fuzzy board or device name to its exact CMSIS identity and BSP/DFP, or to its Zephyr board target; add a verified target to an existing *.csolution.yml; find compatible packaged board layers; or create an initial west-integrated CMSIS Zephyr Blinky solution. Use when the user wants to create, extend or retarget a csolution, check their build tools, or identify board, device and pack identifiers; this skill routes to the specialised project skills installed next to it. Not for debugging a running target (cmsis-debug-live) or for PDSC authoring (cmsis-pack).",
+      "workflow": [
+        "`$check-cmsis-environment` (or `$check-zephyr-environment`) to confirm the toolchain before anything is created or built.",
+        "`$identify-cmsis-board-support` (or `$identify-zephyr-board`) to resolve the hardware to exactly one verified identity and its BSP/DFP.",
+        "`$add-cmsis-target` to extend the solution, then `$identify-cmsis-board-layer` for a packaged board layer — or `$start-zephyr-project` for a new west-integrated solution."
+      ]
+    },
+    {
+      "id": "bring-up",
+      "label": "Device debug and trace knowledge",
+      "router": "cmsis-bring-up",
+      "displayName": "CMSIS: Debug Knowledge",
+      "shortDescription": "Establish verifiable device debug and trace facts from documentation",
+      "description": "Establish documentation-led, verifiable device debug and trace facts for an SoC or board before CMSIS-Pack debug content is authored: the debug access topology (processor association, debug-port and access-port path, protocol, dormant state), reset, unlock, authentication, boot, flash and low-power debug behaviour, CoreSight trace paths and components, board connector, jumper and pin-routing choices, supplementary pyOCD topology scans, pyOCD availability, and recovery of moved or broken vendor documentation URLs. Use when the user asks how a device is debugged, what its debug or trace topology is, wants a debug or trace knowledge record (.agent-artifacts) built or refreshed, or before generating PDSC debug or trace sequences; this skill routes to the specialised bring-up skills installed next to it. No live target connection is required; for a live session use cmsis-debug-live.",
+      "workflow": [
+        "`$debug-access-knowledge` first — the access topology every other record builds on.",
+        "`$debug-knowledge` and/or `$trace-knowledge` for behaviour and trace facts; `$board-debug-knowledge` only for an explicitly board-specific question.",
+        "`$check-pyocd-availability`, then `$pyocd-detect-debug-topology`, when documentation leaves a required observation open.",
+        "`$resolve-official-device-documentation` whenever a vendor document link is dead or has moved."
+      ]
+    },
+    {
+      "id": "pack",
+      "label": "CMSIS-Pack debug authoring",
+      "router": "cmsis-pack",
+      "displayName": "CMSIS: Pack Debug Authoring",
+      "shortDescription": "Author, validate and apply PDSC debug and trace sequences and debugvars",
+      "description": "Author and maintain CMSIS-Pack Debug Description content in a Device Family Pack PDSC: device-specific debug sequences (unlock, debug-port setup, reset, bootloader, flash, debug authentication, multi-core start, sleep and low-power), CoreSight trace sequences (TraceStart, TraceCapture, TraceFlush, TraceStop), <debugvars> runtime variables, and the non-sequence <debug>, <debugconfig>, debug-port and access-port definitions — each evidence-backed, validated, and applied only after the user confirms. Use when the user wants to add, change, review, validate or apply PDSC debug or trace sequences or debugvars for a device; this skill routes to the specialised pack-authoring skills installed next to it. Not for a live debug session (cmsis-debug-live) or for first establishing a device's debug facts (cmsis-bring-up).",
+      "workflow": [
+        "Facts first: `$debug-access-knowledge`, then `$debug-knowledge` and/or `$trace-knowledge` (bring-up) must have produced their knowledge records.",
+        "`$prepare-pdsc-sequence-change` to scope the change, check inherited definitions and choose shared-versus-leaf placement.",
+        "`$generate-debug-description`, `$generate-debug-sequences`, `$generate-trace-sequences` or `$manage-pdsc-debugvars` for the content itself.",
+        "`$validate-pdsc-sequence-xml` on the proposal.",
+        "`$apply-confirmed-pdsc-proposal` only after the user has explicitly confirmed the edits."
+      ]
+    }
+  ]
+}

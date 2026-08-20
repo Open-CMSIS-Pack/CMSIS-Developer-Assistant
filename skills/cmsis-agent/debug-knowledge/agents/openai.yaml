@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Debug Knowledge"
+  short_description: "Document reset and low-power debug behavior."
+  default_prompt: "Use $debug-knowledge to document reset, unlock, and low-power debug behavior for this device."

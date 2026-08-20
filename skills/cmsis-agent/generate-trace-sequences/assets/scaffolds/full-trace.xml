@@ -1,0 +1,230 @@
+<cmsis-pack-trace-scaffold use-case="full-trace">
+  <sequences traceSetup="full">
+    <sequence name="TraceStart">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <!-- CMSIS-PACK-TRACE: ADD-DEVICE-SPECIFIC-HERE BEGIN -->
+      <!-- Add verified device-specific setup here, including migrated legacy setup when applicable. -->
+      <!-- CMSIS-PACK-TRACE: ADD-DEVICE-SPECIFIC-HERE END -->
+      <control if="swoTrace">
+        <block>
+          Sequence("DoTraceStart_SWO");
+        </block>
+      </control>
+      <control if="syncTrace">
+        <block>
+          Sequence("DoTraceStart_Sync");
+        </block>
+      </control>
+      <control if="bufferTrace">
+        <block>
+          Sequence("DoTraceStart_Buffer");
+        </block>
+      </control>
+    </sequence>
+    <sequence name="TraceCapture">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <!-- CMSIS-PACK-TRACE: ADD-DEVICE-SPECIFIC-HERE BEGIN -->
+      <!-- Add verified device-specific capture work here, including migrated legacy setup when applicable. -->
+      <!-- CMSIS-PACK-TRACE: ADD-DEVICE-SPECIFIC-HERE END -->
+      <control if="swoTrace">
+        <block>
+          Sequence("DoTraceCapture_SWO");
+        </block>
+      </control>
+      <control if="syncTrace">
+        <block>
+          Sequence("DoTraceCapture_Sync");
+        </block>
+      </control>
+      <control if="bufferTrace">
+        <block>
+          Sequence("DoTraceCapture_Buffer");
+        </block>
+      </control>
+    </sequence>
+    <sequence name="DoTraceFlush">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <control if="swoTrace">
+        <block>
+          Sequence("DoTraceFlush_SWO");
+        </block>
+      </control>
+      <control if="syncTrace">
+        <block>
+          Sequence("DoTraceFlush_Sync");
+        </block>
+      </control>
+      <control if="bufferTrace">
+        <block>
+          Sequence("DoTraceFlush_Buffer");
+        </block>
+      </control>
+    </sequence>
+    <sequence name="TraceFlush">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <block>
+        Sequence("DoTraceFlush");
+      </block>
+      <control if="bufferTrace">
+        <block>
+          Sequence("DoTraceRead_Buffer");
+        </block>
+      </control>
+      <!-- CMSIS-PACK-TRACE: ADD-DEVICE-SPECIFIC-HERE BEGIN -->
+      <!-- Add verified device-specific post-flush work here, including migrated legacy setup when applicable. -->
+      <!-- CMSIS-PACK-TRACE: ADD-DEVICE-SPECIFIC-HERE END -->
+    </sequence>
+    <sequence name="TraceStop">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <control if="swoTrace">
+        <block>
+          Sequence("DoTraceStop_SWO");
+        </block>
+      </control>
+      <control if="syncTrace">
+        <block>
+          Sequence("DoTraceStop_Sync");
+        </block>
+      </control>
+      <control if="bufferTrace">
+        <block>
+          Sequence("DoTraceStop_Buffer");
+        </block>
+      </control>
+      <!-- CMSIS-PACK-TRACE: ADD-DEVICE-SPECIFIC-HERE BEGIN -->
+      <!-- Add verified device-specific shutdown work here, including migrated legacy setup when applicable. -->
+      <!-- CMSIS-PACK-TRACE: ADD-DEVICE-SPECIFIC-HERE END -->
+    </sequence>
+    <sequence name="DoTraceStart_SWO">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <!-- CMSIS-PACK-TRACE: INSERT-CORESIGHT-SNIPPET-CALLS-HERE -->
+    </sequence>
+    <sequence name="DoTraceStart_Sync">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <!-- CMSIS-PACK-TRACE: INSERT-CORESIGHT-SNIPPET-CALLS-HERE -->
+    </sequence>
+    <sequence name="DoTraceStart_Buffer">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <!-- CMSIS-PACK-TRACE: INSERT-CORESIGHT-SNIPPET-CALLS-HERE -->
+    </sequence>
+    <sequence name="DoTraceCapture_SWO">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <!-- No trace operation is required for this mode. -->
+      <!-- CMSIS-PACK-TRACE: INSERT-CORESIGHT-SNIPPET-CALLS-HERE -->
+    </sequence>
+    <sequence name="DoTraceCapture_Sync">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <!-- CMSIS-PACK-TRACE: INSERT-CORESIGHT-SNIPPET-CALLS-HERE -->
+    </sequence>
+    <sequence name="DoTraceCapture_Buffer">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <!-- CMSIS-PACK-TRACE: INSERT-CORESIGHT-SNIPPET-CALLS-HERE -->
+    </sequence>
+    <sequence name="DoTraceFlush_SWO">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <!-- No trace operation is required for this mode. -->
+      <!-- CMSIS-PACK-TRACE: INSERT-CORESIGHT-SNIPPET-CALLS-HERE -->
+    </sequence>
+    <sequence name="DoTraceFlush_Sync">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <!-- CMSIS-PACK-TRACE: INSERT-CORESIGHT-SNIPPET-CALLS-HERE -->
+      <!-- Actual component flush calls only. Do not read a trace buffer here. -->
+    </sequence>
+    <sequence name="DoTraceFlush_Buffer">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <!-- CMSIS-PACK-TRACE: INSERT-CORESIGHT-SNIPPET-CALLS-HERE -->
+      <!-- Actual component flush calls only. Do not read a trace buffer here. -->
+    </sequence>
+    <sequence name="DoTraceRead_Buffer">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <!-- CMSIS-PACK-TRACE: INSERT-CORESIGHT-SNIPPET-CALLS-HERE -->
+    </sequence>
+    <sequence name="DoTraceStop_SWO">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <!-- No trace operation is required for this mode. -->
+      <!-- CMSIS-PACK-TRACE: INSERT-CORESIGHT-SNIPPET-CALLS-HERE -->
+    </sequence>
+    <sequence name="DoTraceStop_Sync">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <!-- No trace operation is required for this mode. -->
+      <!-- CMSIS-PACK-TRACE: INSERT-CORESIGHT-SNIPPET-CALLS-HERE -->
+    </sequence>
+    <sequence name="DoTraceStop_Buffer">
+      <block>
+        __var swoTrace = __traceout &amp; 0x1;
+        __var syncTrace = __traceout &amp; 0x2;
+        __var bufferTrace = __traceout &amp; 0x4;
+      </block>
+      <!-- No trace operation is required for this mode. -->
+      <!-- CMSIS-PACK-TRACE: INSERT-CORESIGHT-SNIPPET-CALLS-HERE -->
+    </sequence>
+  </sequences>
+</cmsis-pack-trace-scaffold>

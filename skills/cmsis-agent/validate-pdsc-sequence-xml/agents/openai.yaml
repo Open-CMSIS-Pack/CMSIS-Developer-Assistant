@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Validate PDSC Sequence XML"
+  short_description: "Validate PDSC sequence XML and block formatting"
+  default_prompt: "Use $validate-pdsc-sequence-xml to validate this PDSC sequence change."

@@ -5,6 +5,18 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { logger } from './logger';
+import {
+    DEFAULT_INSTALLED_SKILLS,
+    INSTALLED_SKILLS_SETTING,
+    SKILL_CATEGORY_LABELS,
+    SkillCatalog,
+    SkillCatalogEntry,
+    groupByCategory,
+    loadSkillCatalog,
+    resolveDesiredSkills,
+} from './skillCatalog';
+import { SkillInstaller, SkillSyncReport, getSkillInstallRoots, summarizeSkillSync } from './skillInstaller';
 
 export interface BaseAgentInfo {
     id: string;
@@ -126,31 +138,28 @@ function isCodexServerSectionHeader(line: string, key: string): boolean {
     return new RegExp(`^\\s*\\[mcp_servers\\.${escaped}\\]\\s*(?:#.*)?$`).test(line);
 }
 
-/**
- * Directory name of the bundled Agent Skill, under `skills/` in the extension
- * and under the personal skills directories once installed.
- *
- * Not upstream's `debug-live`: both extensions can be installed at once, and
- * they would otherwise fight over the same directory — leaving whichever
- * registered last in place, with a workflow written for the wrong kind of
- * target. For the same reason no legacy-name cleanup is done here; removing a
- * `debug-live` directory would delete upstream's skill.
- */
-const SKILL_NAME = 'cmsis-debug-live';
+/** Longest `detail` line the skill picker shows per entry. */
+const PICKER_DETAIL_LENGTH = 140;
 
 export class AgentConfigurationManager {
     private context: vscode.ExtensionContext;
-    // Versioned so the popup re-appears once when new agents are added to
-    // the roster (v2: Claude Code + Claude Desktop).
-    private readonly POPUP_SHOWN_KEY = 'cmsis-developer-assistant.popupShown.v2';
+    // Versioned so the first-run setup re-appears once when it gains a step
+    // (v2: Claude Code + Claude Desktop agents; v3: the agent-skills step).
+    private readonly POPUP_SHOWN_KEY = 'cmsis-developer-assistant.popupShown.v3';
     private readonly timeoutInSeconds: number;
     private serverPort: number;
-    
+    private catalog: SkillCatalog | null | undefined;
+    private readonly skillInstaller: SkillInstaller;
+    // Overlapping syncs (activation, a setting change, the picker) are
+    // serialised so two of them never stage into the same directory at once.
+    private skillSyncChain: Promise<unknown> = Promise.resolve();
 
     constructor(context: vscode.ExtensionContext, timeoutInSeconds: number, serverPort: number) {
         this.context = context;
         this.timeoutInSeconds = timeoutInSeconds;
         this.serverPort = serverPort;
+        const version = (context.extension?.packageJSON as { version?: string } | undefined)?.version ?? 'unknown';
+        this.skillInstaller = new SkillInstaller(context.extensionPath, version, getSkillInstallRoots());
     }
 
     /**
@@ -183,18 +192,24 @@ export class AgentConfigurationManager {
     }
 
     /**
-     * Show the agent selection popup
+     * The setup flow: step 1 picks the agents to register the MCP server
+     * with, step 2 picks the agent skills to install. Shown once on first
+     * run and on demand from the *Configure Agents and Skills* command.
+     *
+     * Dismissing either step counts as an answer — without that the
+     * first-run prompt came back on every activation until the user picked
+     * something. Both steps stay reachable from the command palette.
      */
-    public async showAgentSelectionPopup(): Promise<void> {
+    public async runSetupFlow(): Promise<void> {
         try {
             const agents = await this.getSupportedAgents();
-
-            // Show selection popup for all agents
             await this.showAgentSelectionDialog(agents);
-            
+            await this.showSkillSelectionDialog();
         } catch (error) {
-            console.error('Error showing agent selection popup:', error);
-            vscode.window.showErrorMessage(`Failed to show agent selection popup: ${error}`);
+            console.error('Error running the setup flow:', error);
+            vscode.window.showErrorMessage(`Failed to show the CMSIS Developer Assistant setup: ${error}`);
+        } finally {
+            await this.context.globalState.update(this.POPUP_SHOWN_KEY, true);
         }
     }
 
@@ -203,31 +218,6 @@ export class AgentConfigurationManager {
      */
     public async resetPopupState(): Promise<void> {
         await this.context.globalState.update(this.POPUP_SHOWN_KEY, false);
-    }
-
-    /**
-     * Show manual configuration options via command palette
-     */
-    public async showManualConfiguration(): Promise<void> {
-        const agents = await this.getSupportedAgents();
-
-        const items: vscode.QuickPickItem[] = agents.map(agent => ({
-            label: agent.displayName,
-            description: 'Configure CMSIS Developer Assistant for this agent',
-            detail: `Add CMSIS Developer Assistant server configuration to ${agent.displayName}`
-        }));
-
-        const selected = await vscode.window.showQuickPick(items, {
-            title: 'Configure CMSIS Developer Assistant for AI Agent',
-            placeHolder: 'Select an AI agent to configure with CMSIS Developer Assistant'
-        });
-
-        if (selected) {
-            const agent = agents.find(a => a.displayName === selected.label);
-            if (agent) {
-                await this.configureAgent(agent);
-            }
-        }
     }
 
     /**
@@ -637,63 +627,199 @@ export class AgentConfigurationManager {
         }
     }
 
-    /** Show the actual agent selection dialog */
-    private async showAgentSelectionDialog(agents: AgentInfo[]): Promise<void> {
-        const items: vscode.QuickPickItem[] = [];
+    /**
+     * Step 1: the agent selection dialog. Resolves once the picker is gone,
+     * with `true` when the user accepted a selection (even an empty one).
+     */
+    private showAgentSelectionDialog(agents: AgentInfo[]): Promise<boolean> {
+        const items: vscode.QuickPickItem[] = agents.map(agent => ({
+            label: `$(add) Configure ${agent.displayName}`,
+            description: 'Add CMSIS Developer Assistant server to this agent',
+            detail: agent.displayName,
+            picked: false,
+        }));
 
-        // Add all agents as selectable items
-        agents.forEach(agent => {
-            items.push({
-                label: `$(add) Configure ${agent.displayName}`,
-                description: 'Add CMSIS Developer Assistant server to this agent',
-                detail: agent.displayName,
-                picked: false
-            });
-        });
+        return new Promise<boolean>(resolve => {
+            const quickPick = vscode.window.createQuickPick();
+            quickPick.title = 'CMSIS Developer Assistant Setup (1/2) - Choose AI Agents to Configure';
+            quickPick.placeholder = 'Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)';
+            quickPick.items = items;
+            quickPick.canSelectMany = true;
+            quickPick.ignoreFocusOut = true;
 
+            let accepted = false;
 
-        const quickPick = vscode.window.createQuickPick();
-        quickPick.title = 'CMSIS Developer Assistant Setup - Choose AI Agent to Configure';
-        quickPick.placeholder = 'Select an AI agent to configure with CMSIS Developer Assistant';
-        quickPick.items = items;
-        quickPick.canSelectMany = true;
-        quickPick.ignoreFocusOut = true;
+            quickPick.onDidAccept(async () => {
+                accepted = true;
+                const selectedItems = quickPick.selectedItems;
+                quickPick.hide();
 
-        // Dismissing the picker (Esc, focus loss) counts as an answer too:
-        // without this the first-run prompt came back on every activation
-        // until the user picked something. Manual setup stays reachable via
-        // the showAgentSelectionPopup command.
-        let accepted = false;
-
-        quickPick.onDidAccept(async () => {
-            accepted = true;
-            const selectedItems = quickPick.selectedItems;
-            quickPick.hide();
-
-            // Configure all selected agents
-            for (const selectedItem of selectedItems) {
-                if (selectedItem && selectedItem.label.includes('Configure')) {
-                    // User selected an agent to configure
-                    const agentDisplayName = selectedItem.detail;
-                    const agent = agents.find(a => a.displayName === agentDisplayName);
-                    
+                for (const selectedItem of selectedItems) {
+                    const agent = agents.find(a => a.displayName === selectedItem.detail);
                     if (agent) {
                         await this.configureAgent(agent);
                     }
                 }
-            }
-            
-            // Mark popup as shown after user interacts with it
-            await this.context.globalState.update(this.POPUP_SHOWN_KEY, true);
-        });
+                resolve(true);
+            });
 
-        quickPick.onDidHide(async () => {
-            quickPick.dispose();
-            if (!accepted) {
-                await this.context.globalState.update(this.POPUP_SHOWN_KEY, true);
-            }
+            quickPick.onDidHide(() => {
+                quickPick.dispose();
+                if (!accepted) {
+                    resolve(false);
+                }
+            });
+            quickPick.show();
         });
-        quickPick.show();
+    }
+
+    // ------------------------------------------------------------------
+    // Agent skills
+    // ------------------------------------------------------------------
+
+    /** The catalog shipped in the VSIX; `null` when it cannot be read. */
+    private getCatalog(): SkillCatalog | null {
+        if (this.catalog === undefined) {
+            try {
+                this.catalog = loadSkillCatalog(this.context.extensionPath);
+            } catch (error) {
+                logger.error('Could not load the bundled skill catalog', error);
+                this.catalog = null;
+            }
+        }
+        return this.catalog;
+    }
+
+    private getConfiguredSkills(): string[] {
+        const configured = vscode.workspace
+            .getConfiguration('cmsis-developer-assistant')
+            .get<string[]>(INSTALLED_SKILLS_SETTING, [...DEFAULT_INSTALLED_SKILLS]);
+        return Array.isArray(configured) ? configured.filter((name): name is string => typeof name === 'string') : [];
+    }
+
+    /**
+     * Bring the personal skills directories in line with the
+     * `installedSkills` setting: install the picks (visible) and their
+     * dependency closure (hidden from the slash menu), remove what this
+     * extension installed earlier and is no longer wanted. Best-effort — a
+     * failure is logged, never thrown.
+     */
+    public syncSkills(reason: string): Promise<SkillSyncReport | null> {
+        const run = async (): Promise<SkillSyncReport | null> => {
+            const catalog = this.getCatalog();
+            if (!catalog) {
+                return null;
+            }
+            const desired = resolveDesiredSkills(catalog, this.getConfiguredSkills());
+            if (desired.unknown.length > 0) {
+                logger.warn(`Ignoring unknown skills in the ${INSTALLED_SKILLS_SETTING} setting: ${desired.unknown.join(', ')}`);
+            }
+            const report = await this.skillInstaller.sync(catalog, desired.explicit, desired.implied);
+            logger.info(`Agent skills synced (${reason}): ${summarizeSkillSync(report)}; ` +
+                `visible [${desired.explicit.join(', ')}], hidden [${desired.implied.join(', ')}]`);
+            for (const failure of report.failed) {
+                logger.warn(`Skill ${failure.name ?? '(root)'} at ${failure.root}: ${failure.error}`);
+            }
+            for (const foreign of report.skippedForeign) {
+                logger.warn(`Skill ${foreign.name} at ${foreign.root} was not installed by this extension; left untouched`);
+            }
+            return report;
+        };
+        const next = this.skillSyncChain.then(run, run);
+        this.skillSyncChain = next.catch(() => undefined);
+        return next;
+    }
+
+    /**
+     * Step 2: the skill picker. Entries are grouped by category with the
+     * category's router skill first — picking the router gives the agent one
+     * slash command for the whole category and installs the members hidden.
+     * Resolves with `true` when the user accepted.
+     */
+    public showSkillSelectionDialog(): Promise<boolean> {
+        const catalog = this.getCatalog();
+        if (!catalog) {
+            vscode.window.showErrorMessage('CMSIS Developer Assistant: the bundled skill catalog could not be loaded.');
+            return Promise.resolve(false);
+        }
+
+        type SkillItem = vscode.QuickPickItem & { entry?: SkillCatalogEntry };
+        const byName = new Map(catalog.skills.map(entry => [entry.name, entry]));
+        const current = new Set(resolveDesiredSkills(catalog, this.getConfiguredSkills()).explicit);
+        const items: SkillItem[] = [];
+
+        for (const [category, entries] of groupByCategory(catalog)) {
+            items.push({ label: SKILL_CATEGORY_LABELS[category], kind: vscode.QuickPickItemKind.Separator });
+            for (const entry of entries) {
+                const dependencies = entry.dependsOn.filter(name => byName.has(name));
+                const isRouter = entry.kind === 'router';
+                const summary = truncate(entry.shortDescription ?? entry.description, PICKER_DETAIL_LENGTH);
+                items.push({
+                    label: `${isRouter ? '$(list-tree) ' : ''}${entry.displayName ?? entry.name}`,
+                    description: isRouter
+                        ? `/${entry.name} — one command for the whole category, ${dependencies.length} member skills installed hidden`
+                        : `/${entry.name}`,
+                    detail: dependencies.length > 0 && !isRouter
+                        ? `${summary}  ·  also installs (hidden): ${dependencies.join(', ')}`
+                        : summary,
+                    picked: current.has(entry.name),
+                    entry,
+                });
+            }
+        }
+
+        return new Promise<boolean>(resolve => {
+            const quickPick = vscode.window.createQuickPick<SkillItem>();
+            quickPick.title = 'CMSIS Developer Assistant Setup (2/2) - Choose Agent Skills to Install';
+            quickPick.placeholder = 'Select the agent skills to install into your personal skills directories (Esc keeps the current selection)';
+            quickPick.items = items;
+            quickPick.selectedItems = items.filter(item => item.picked);
+            quickPick.canSelectMany = true;
+            quickPick.ignoreFocusOut = true;
+            quickPick.matchOnDescription = true;
+            quickPick.matchOnDetail = true;
+
+            let accepted = false;
+
+            quickPick.onDidAccept(async () => {
+                accepted = true;
+                const explicit = quickPick.selectedItems
+                    .map(item => item.entry?.name)
+                    .filter((name): name is string => typeof name === 'string');
+                quickPick.hide();
+
+                try {
+                    await vscode.workspace
+                        .getConfiguration('cmsis-developer-assistant')
+                        .update(INSTALLED_SKILLS_SETTING, explicit, vscode.ConfigurationTarget.Global);
+                    // The configuration-change listener syncs too; running it
+                    // here as well makes the toast below reflect the result.
+                    const report = await this.syncSkills('selection');
+                    const desired = resolveDesiredSkills(catalog, explicit);
+                    if (report) {
+                        const roots = [...new Set(report.installed.map(record => record.root))];
+                        const where = roots.length > 0 ? ` into ${roots.map(shortenHome).join(', ')}` : '';
+                        vscode.window.showInformationMessage(
+                            `CMSIS Developer Assistant: ${desired.explicit.length} skill(s)` +
+                            (desired.implied.length > 0 ? ` (+${desired.implied.length} required, hidden)` : '') +
+                            ` installed${where}; ${report.removed.length} removed.` +
+                            (report.failed.length > 0 ? ` ${report.failed.length} failed — see the output log.` : ''));
+                    }
+                } catch (error) {
+                    logger.error('Error saving the skill selection', error);
+                    vscode.window.showErrorMessage(`Failed to save the skill selection: ${error}`);
+                }
+                resolve(true);
+            });
+
+            quickPick.onDidHide(() => {
+                quickPick.dispose();
+                if (!accepted) {
+                    resolve(false);
+                }
+            });
+            quickPick.show();
+        });
     }
 
     /**
@@ -704,18 +830,9 @@ export class AgentConfigurationManager {
             const success = await this.addDebugMCPToAgent(agent);
 
             if (success) {
-                // The skill is agent-independent — one shared location per the
-                // Agent Skills standard — but registering an agent is the point
-                // at which the user has said they want to use this, so it is
-                // also the right moment to put the skill where that agent will
-                // find it. Best-effort: a skill that fails to install must not
-                // fail the registration.
-                const skillPath = await this.installCmsisDebugSkill();
-
                 const openConfigButton = 'Open Config';
                 const result = await vscode.window.showInformationMessage(
-                    `✅ CMSIS Developer Assistant successfully configured for ${agent.displayName}` +
-                    (skillPath ? ' (skill /cmsis-debug-live installed)' : ''),
+                    `✅ CMSIS Developer Assistant successfully configured for ${agent.displayName}`,
                     openConfigButton
                 );
 
@@ -731,67 +848,14 @@ export class AgentConfigurationManager {
         }
     }
 
-    /**
-     * Where the bundled skill gets installed, per the Agent Skills open
-     * standard (agentskills.io). `~/.agents/skills/` is the cross-agent
-     * location skills-compatible harnesses honour; `~/.copilot/skills/` is
-     * added when a Copilot home exists.
-     */
-    private getSkillInstallTargets(): string[] {
-        const home = os.homedir();
-        const targets = [path.join(home, '.agents', 'skills', SKILL_NAME)];
-        const copilotHome = process.env.COPILOT_HOME || path.join(home, '.copilot');
-        if (fs.existsSync(copilotHome)) {
-            targets.push(path.join(copilotHome, 'skills', SKILL_NAME));
-        }
-        return targets;
-    }
+}
 
-    /** The skill directory shipped inside the extension. */
-    private getBundledSkillPath(): string {
-        return path.join(this.context.extensionPath, 'skills', SKILL_NAME);
-    }
+function truncate(text: string, length: number): string {
+    const oneLine = text.replace(/\s+/g, ' ').trim();
+    return oneLine.length <= length ? oneLine : `${oneLine.slice(0, length - 1).trimEnd()}…`;
+}
 
-    /**
-     * Copy the bundled skill into the standard personal skills directories.
-     *
-     * Called on every activation, not just on agent registration. The skill is
-     * agent-independent — it lives in one shared location per the Agent Skills
-     * standard — so gating it on "the user picked an agent from the popup"
-     * meant an existing user upgrading the extension never received it: they
-     * already registered their agents releases ago and never open that dialog
-     * again.
-     *
-     * Overwrites unconditionally so the skill tracks the installed extension
-     * version rather than drifting behind it. It is five files, ~24 KB.
-     *
-     * Returns the primary destination, or null when nothing was installed.
-     * Every failure is logged and skipped: not being able to write a skill file
-     * must never take activation (or an agent registration) down with it.
-     */
-    public async installCmsisDebugSkill(): Promise<string | null> {
-        const bundledSkillPath = this.getBundledSkillPath();
-
-        if (!fs.existsSync(bundledSkillPath)) {
-            console.warn(`Bundled skill not found at ${bundledSkillPath}; skipping skill install`);
-            return null;
-        }
-
-        let primaryDestination: string | null = null;
-        for (const destination of this.getSkillInstallTargets()) {
-            const skillsDir = path.dirname(destination);
-            try {
-                await fs.promises.mkdir(skillsDir, { recursive: true });
-                await fs.promises.cp(bundledSkillPath, destination, { recursive: true, force: true });
-                console.log(`Installed ${SKILL_NAME} skill at ${destination}`);
-                if (!primaryDestination) {
-                    primaryDestination = destination;
-                }
-            } catch (error) {
-                console.warn(`Failed to install ${SKILL_NAME} skill at ${destination}:`, error);
-            }
-        }
-
-        return primaryDestination;
-    }
+function shortenHome(directory: string): string {
+    const home = os.homedir();
+    return directory.startsWith(home) ? `~${directory.slice(home.length)}` : directory;
 }

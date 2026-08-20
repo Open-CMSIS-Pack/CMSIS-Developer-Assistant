@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Generate Debug Sequences"
+  short_description: "Generate verified device debug sequences"
+  default_prompt: "Use $generate-debug-sequences to add verified non-trace debug sequences to this PDSC."

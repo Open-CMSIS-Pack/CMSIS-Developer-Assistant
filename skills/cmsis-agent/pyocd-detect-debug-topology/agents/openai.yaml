@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: pyOCD Detect Debug Topology"
+  short_description: "Capture supplementary CMSIS debug scan evidence."
+  default_prompt: "Use $pyocd-detect-debug-topology to capture supplementary pyOCD debug topology evidence."

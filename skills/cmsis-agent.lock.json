@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/Open-CMSIS-Pack/cmsis-agent.git",
+  "ref": "main",
+  "sha": "3fb5e0f8926fabbd81fa55bc8774c5bdedff4ef7",
+  "sourcePath": "generic-mcu-skills/skills",
+  "fetchedAt": "2026-08-20T11:48:40.044Z",
+  "contentHash": "f4fe9d3e39286e958d12a8f8833c3698e17ec89da893c6efe6b9ba1211ae7e64"
+}

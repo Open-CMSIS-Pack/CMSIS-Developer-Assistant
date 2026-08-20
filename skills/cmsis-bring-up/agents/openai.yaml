@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Debug Knowledge"
+  short_description: "Establish verifiable device debug and trace facts from documentation"
+  default_prompt: "Use $cmsis-bring-up to establish verifiable device debug and trace facts from documentation."

@@ -174,6 +174,19 @@ export class DebugMCPServer {
         const mcpServer = new McpServer({
             name: 'cmsis-developer-assistant',
             version: SERVER_VERSION,
+        }, {
+            // Surfaced to clients at `initialize`. Points agents at the
+            // `cmsis-debug-live` Agent Skill, which the extension installs
+            // into the standard skills directories, and at
+            // get_debug_instructions for harnesses that do not load skills.
+            instructions: 'These tools drive a live Arm Cortex-M debug session through the CMSIS Debugger to ' +
+                'investigate runtime bugs, faults, crashes, hangs, failing tests, wrong/null values, unexpected ' +
+                'output and other "it does not work on the board" reports. For runtime investigations, ' +
+                'invoke the "cmsis-debug-live" Agent Skill first: it provides the target-awareness checklist, ' +
+                'the session-status gate, breakpoint strategy, step-and-inspect workflow, fault decode and ' +
+                'root-cause guidance needed to use these tools effectively instead of guessing or adding ' +
+                'temporary printf/UART logging. Harnesses that do not load skills (GitHub Copilot Chat) ' +
+                'should call get_debug_instructions instead.',
         });
         const handlers = this.handlerFactory();
         this.setupTools(mcpServer, handlers.debug, handlers.serial);
@@ -207,7 +220,8 @@ export class DebugMCPServer {
 
         // Start debugging tool
         mcpServer.registerTool('start_debugging', {
-            description: 'Start a debug session via the standard VS Code debug pipeline (uses launch.json + the debug tab).' +
+            description: 'Start a debug session via the standard VS Code debug pipeline (uses launch.json + the debug tab). ' +
+                'Invoke the "cmsis-debug-live" skill first.' +
                 '\n\n⚠️ FOR CMSIS / CORTEX-M PROJECTS: prefer `cmsis_action` with `action="load_and_debug"` ' +
                 '(same as clicking *Debug* in the CMSIS Solution panel — builds if needed, flashes, then attaches). ' +
                 '`start_debugging` skips the flash step and is the wrong tool for embedded targets that need ' +

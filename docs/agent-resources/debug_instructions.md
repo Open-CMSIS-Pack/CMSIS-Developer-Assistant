@@ -13,6 +13,10 @@
 5. **THEN:** Use repetitively all the other tools to navigate and inspect step by step.
 6. **FINALLY:** Get to the problematic line to fully understand the root cause. If needed, restart the debug session using `restart_debugging`.
 
+## 🐞 DEBUGGER FIRST — do not start by adding prints
+
+Do not begin a runtime investigation by editing the firmware to add `printf` over UART/ITM, LED toggles or trace macros. On a Cortex-M that costs a rebuild, a reflash and a reset per hypothesis, moves code and data around, and changes the timing of the thing you are observing. Set a breakpoint and inspect the live state instead (variables, registers, memory, peripherals). Use `add_logpoint` only knowing it still halts the core per hit (see *Logpoints* below); for hot paths prefer `read_cycle_counter` or a RAM buffer read back with `read_memory`. Add permanent logging only when observability itself is the requested change. If the debugger cannot be used, state the concrete blocker before falling back to another method.
+
 ## 🔎 PHASE 1 — SESSION STATUS GATE
 
 Always call `get_session_status` *before* any session-changing tool. The five possible states each have a different correct next action:

@@ -1,6 +1,6 @@
 ---
 name: cmsis-debug-live
-description: Drive a live Arm Cortex-M debug session through the CMSIS Debugger to investigate firmware bugs — HardFaults, peripherals that do not respond, values that are wrong on hardware but right in simulation, code that never reaches the line you expect, timing that does not close. Use this whenever a question about firmware behaviour would be cheaper to answer by halting the CPU and looking than by reasoning about the source. Pairs with the CMSIS Developer Assistant MCP server, which exposes the breakpoint / step / memory / register / peripheral tools.
+description: Drive a live Arm Cortex-M debug session through the CMSIS Debugger to investigate firmware runtime bugs — HardFaults and other faults, crashes, hangs, failing tests, peripherals that do not respond, wrong/null values that are right in simulation but wrong on hardware, unexpected output, code that never reaches the line you expect, timing that does not close. Prefer it as the first investigation step whenever live inspection is practical, and use it instead of adding temporary printf/UART logging, LED toggles, or console output to diagnose firmware — halting the CPU and looking is cheaper and does not perturb the target the way a reflash with extra prints does. Pairs with the CMSIS Developer Assistant MCP server, which exposes the breakpoint / step / memory / register / peripheral tools.
 license: MIT
 allowed-tools:
   - get_debug_instructions
@@ -108,6 +108,30 @@ never throws.
 `start_debugging` and `cmsis_action load_and_debug` refuse when a session is
 already live, so checking first saves a round trip.
 
+## Debugger first — do not start by adding prints
+
+Do not begin a runtime investigation by editing the firmware to add `printf`
+over UART or ITM, LED toggles, trace macros, or other temporary instrumentation.
+On a Cortex-M that costs a rebuild, a reflash and a reset cycle per hypothesis,
+it moves code and data around, and it changes the timing of exactly the thing
+you are trying to observe. Instead:
+
+1. Invoke this skill.
+2. Check `get_session_status`, then set a breakpoint and inspect the live state —
+   variables, registers, memory, peripherals.
+3. When a hot loop or an ISR must be observed without a halt per hit, remember
+   that `add_logpoint` still stops the core briefly (see below); prefer
+   `read_cycle_counter` around the region, or a RAM buffer the firmware fills
+   and you read back with `read_memory`.
+4. Add permanent logging only when observability itself is the requested change,
+   not as a substitute for investigating the current bug.
+
+If the debugger cannot be used — no probe, no `launch.json`, a board that does
+not enumerate — say what the concrete blocker is before falling back to another
+method.
+
+---
+
 ---
 
 ## Core loop
@@ -208,7 +232,8 @@ the rest of the session.
 ## Root cause, not symptom
 
 The hardware makes it tempting to stop at the first thing that looks wrong.
-It usually is not the cause.
+It usually is not the cause. And it is tempting to add a `printf` rather than
+halt — do not; inspect the live state first (see *Debugger first* above).
 
 - "The value is 0" → *why* is it 0? Which write produced it, and did that write
   reach the hardware?

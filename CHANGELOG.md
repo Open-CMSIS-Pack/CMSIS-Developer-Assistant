@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to CMSIS-DebugMCP will be documented in this file.
+All notable changes to CMSIS Developer Assistant will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Detached from the Microsoft DebugMCP upstream.** Syncing has stopped; the "fork of" framing is reworded and the Microsoft governance boilerplate (CONTRIBUTING / CODE_OF_CONDUCT / SUPPORT) replaced with Open-CMSIS-Pack equivalents. Microsoft's copyright notice and the MIT license text are retained.
 
 ### Added
-- **Dual-licensed under Apache-2.0 OR MIT.** `LICENSE-MIT` added beside the Apache-2.0 `LICENSE`; a `NOTICE` records provenance; every source header carries `SPDX-License-Identifier: Apache-2.0 OR MIT` with both the Microsoft and Arm copyright lines.
+- **Dual-licensed under Apache-2.0 OR MIT.** `LICENSE-MIT` added beside the Apache-2.0 `LICENSE`; a `NOTICE` records provenance.
 
 ## [2.0.3] - 2026-08-10
 

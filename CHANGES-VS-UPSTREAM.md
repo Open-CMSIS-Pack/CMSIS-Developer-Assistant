@@ -1,10 +1,10 @@
 # CMSIS Developer Assistant — Provenance & changes vs. the DebugMCP origin
 
-> **Historical provenance.** CMSIS Developer Assistant was originally derived from [microsoft/DebugMCP](https://github.com/microsoft/DebugMCP) (MIT) and is now developed independently by Arm as part of Open-CMSIS-Pack. Upstream syncing has stopped; this document is retained to record how the project diverged from that origin.
+> **Historical provenance.** CMSIS Developer Assistant was originally derived from [microsoft/DebugMCP](https://github.com/microsoft/DebugMCP) (MIT) and is now developed independently by Arm as part of Open-CMSIS-Pack. Upstream is no longer tracked routinely — individual upstream changes are still cherry-picked when they apply to Cortex-M (last pass: v2.3.1, 2026-08-20, see [§9](#9-upstream-work-deliberately-not-taken)) — and this document is retained to record how the project diverged from that origin.
 
 Originally derived from [microsoft/DebugMCP](https://github.com/microsoft/DebugMCP), this project adapts the MCP debugger server for **Arm Cortex-M targets driven through the CMSIS Debugger VS Code extension**. Upstream DebugMCP is language-agnostic; it assumes a `vscode.debug.startDebugging(...)` call against a standard `launch.json` of type `python`, `node`, `cppdbg`, etc. It has no concept of a GDB target server, no memory or register reads, no fault decoding, no SVD awareness, no per-call timeouts, and no resilience to a wedged probe. Everything in this document exists because that is the gap to close before an AI agent can debug real embedded hardware (pyOCD / J-Link / CMSIS-DAP + `gdbtarget`).
 
-Upstream baseline: forked at [`4422d8c`](https://github.com/microsoft/DebugMCP/commit/4422d8c) (2026-03-14), last synced against [`4051049`](https://github.com/microsoft/DebugMCP/commit/4051049) (upstream v2.3.0, 2026-08-05) in fork v2.0.0. See [§9](#9-upstream-work-deliberately-not-taken) for what was deliberately left behind.
+Upstream baseline: forked at [`4422d8c`](https://github.com/microsoft/DebugMCP/commit/4422d8c) (2026-03-14), last synced against [`4051049`](https://github.com/microsoft/DebugMCP/commit/4051049) (upstream v2.3.0, 2026-08-05) in fork v2.0.0; individual changes cherry-picked through [`148cbb9a`](https://github.com/microsoft/DebugMCP/commit/148cbb9a) (upstream v2.3.1, 2026-08-20). See [§9](#9-upstream-work-deliberately-not-taken) for what was deliberately left behind.
 
 Current release: **v2.1.0** — see [CHANGELOG.md](CHANGELOG.md) for the per-version detail.
 
@@ -182,7 +182,7 @@ This fork is **not** intended to be merged back as-is — the embedded surface (
 
 ## 9. Upstream work deliberately not taken
 
-Synced against upstream v2.3.0. These are the changes that were considered and rejected, with the reason — so the next sync does not re-litigate them.
+Synced against upstream v2.3.0, then upstream v2.3.1 (PRs #115–#131, 2026-08-20) reviewed PR by PR. These are the changes that were considered and rejected, with the reason — so the next pass does not re-litigate them.
 
 | Upstream change | Why not |
 | --- | --- |
@@ -193,6 +193,9 @@ Synced against upstream v2.3.0. These are the changes that were considered and r
 | **Removal of `get_debug_instructions` and its doc** | Kept. Upstream replaced them with the `debug-live` Agent Skill, but GitHub Copilot Chat reads MCP tools and not `~/.agents/skills` — removing the tool would leave that harness with no guidance at all. The fork ships *both*: the tool and the `cmsis-debug-live` skill. |
 | **The `debug-live` skill name** | The fork's skill is `cmsis-debug-live`. Both extensions can be installed at once and would otherwise fight over the same directory, leaving whichever registered last in place with a workflow written for the wrong kind of target. For the same reason the fork does no legacy-name cleanup — removing a `debug-live` directory would delete upstream's skill. |
 | **`6f7fa56` "Remove extra checks in hasActiveSession()"** | Not ported (since v1.1.9). The fork replaced that gate with a DAP-event tracker plus `ensureStoppedSession` and state-aware errors, which is the better fix for embedded targets. |
+| **README star-history chart fix** (PR #128) | No such chart here. |
+| **Dependabot bumps** (PRs #121 ip-address + express-rate-limit, #124 js-yaml, #131 @hono/node-server) | Already at or above those versions in the lockfile; none is a direct dependency here. |
+| **Version bump to 2.3.1** (PR #130) | The fork is on its own 2.x line; versions are independent. |
 
 ### Taken, but adapted
 
@@ -204,3 +207,6 @@ Synced against upstream v2.3.0. These are the changes that were considered and r
 | **`add_breakpoint` by line** (issue #18) | Taken, but `lineContent` is retained as a deprecated fallback so existing agent prompts keep working. |
 | **Stateful session transport** (PR #96) | Taken. Note this replaced the fork's *per-request* model, which existed to fix a concurrency bug — the regression is guarded by `test/transport/session-lifecycle.js`. |
 | **esbuild bundling** | Script prepared, **packaging not switched over** — see [docs/packaging-esbuild.md](docs/packaging-esbuild.md). `serialport` must stay external regardless: `node-gyp-build` resolves its native `.node` relative to `__dirname` at runtime. |
+| **Remember a dismissed setup picker** (PR #115) | Verbatim. |
+| **Debugger-first guidance** (PR #129) | Same rule, embedded flavour: the temptation here is `printf` over UART/ITM or an LED toggle, which costs a reflash and moves the timing. The MCP `instructions` also point at `get_debug_instructions`, because Copilot Chat does not load skills (see above). |
+| **Skill-trigger contract tests + live evaluation** (PR #130) | Tests pin the fork's wording. The live eval installs `cmsis-debug-live` and uses an embedded prompt (a HardFault, an ADC buffer right on the FVP and wrong on the board); ported as `scripts/test-skill-trigger.ts` under tsx like the other scripts. |

@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-08-20
+
 ### Fixed
+- **`docs/agent-resources/troubleshooting/csharp.md` carried three unresolved merge-conflict hunks** (`<<<<<<< HEAD … >>>>>>> 251b176`) left by the rebase-merge of the 2.1.0 rename — the file ships in the VSIX and is served to agents as the `troubleshooting/csharp` MCP resource. Resolved; `SUPPORT.md` is back on LF line endings.
 - **The architecture diagram on the extension page now ships inside the VSIX.** vsce rewrote the README's relative image link to `package.json`'s `repository` on GitHub, so the extension page showed whatever `assets/architecture.png` that branch held — the original DebugMCP drawing, not the diagram this build was made from. `scripts/package.ts` now generates the packaged readme with the image inlined as a `data:` URI (the only in-package source VS Code's extension page accepts) and the other relative links rewritten as before; `README.md` in the repository keeps its relative paths for GitHub.
 
 ## [2.3.0] - 2026-08-20

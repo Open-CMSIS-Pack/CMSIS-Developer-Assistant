@@ -33,3 +33,21 @@ GitHub Copilot Chat, which reads MCP tools but not `~/.agents/skills`.
 The two overlap on purpose. The skill is the version an agent gets *before* it
 starts calling tools; the tool is the fallback for agents that only discover
 things by calling them. Keep them consistent when either changes.
+
+## Live trigger evaluation
+
+`npm run test:skill-trigger-agent` launches a real Copilot CLI session in a
+scratch worktree that carries only this skill, gives it an embedded
+"it does not work on the board" prompt (a HardFault with an ADC buffer that is
+right on the FVP and wrong on hardware), and asserts from the JSON tool events
+that `cmsis-debug-live` is the first tool invoked. The static contract tests in
+`src/test/debugSkillGuidance.test.ts` pin the wording that makes that happen.
+
+It is opt-in on purpose: it needs an authenticated Copilot CLI, spends AI
+credits, and a model's first move is not deterministic.
+
+Pass a different prompt after `--`:
+
+```text
+npm run test:skill-trigger-agent -- "The UART stops transmitting after the first DMA transfer"
+```

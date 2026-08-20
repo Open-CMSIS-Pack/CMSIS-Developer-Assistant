@@ -130,6 +130,71 @@ if (isOddMinorVersion(version) && !argv.includes('--pre-release')) {
     argv.push('--pre-release');
 }
 
+// Ship the README's images inside the VSIX.
+//
+// vsce rewrites relative README links to absolute URLs under package.json's
+// `repository`, so the extension page loaded assets/architecture.png from
+// whatever that GitHub branch happened to hold - not the diagram this build
+// was made from. VS Code's extension page renders images only from https:
+// and data: sources (it does not serve files out of the extension folder), so
+// the only way to ship the picture with the package is to inline it. The
+// packaged readme is generated here: relative images become data: URIs,
+// other relative links are rewritten the way vsce would have, and README.md in
+// the repository keeps its plain relative paths so GitHub renders it as-is.
+const repoRoot = path.resolve(__dirname, '..');
+const inlineImageExtensions: Record<string, string> = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
+};
+
+function repositoryBase(): { content: string; images: string } | undefined {
+    const repository = (packageJson as { repository?: string | { url?: string } }).repository;
+    const url = typeof repository === 'string' ? repository : repository?.url;
+    const match = url && /github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?\/?$/.exec(url);
+    if (!match) {
+        return undefined;
+    }
+    return {
+        content: `https://github.com/${match[1]}/blob/HEAD/`,
+        images: `https://github.com/${match[1]}/raw/HEAD/`,
+    };
+}
+
+function isRelativeLink(link: string): boolean {
+    return !/^[a-z][a-z0-9+.-]*:/i.test(link) && !link.startsWith('#') && !link.startsWith('/');
+}
+
+function buildPackagedReadme(): string {
+    const readme = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
+    const base = repositoryBase();
+    let inlined = 0;
+    const out = readme.replace(/(!?)\[([^\]]*)\]\(([^)\s]+)((?:\s+"[^"]*")?)\)/g, (whole, bang: string, text: string, link: string, title: string) => {
+        if (!isRelativeLink(link)) {
+            return whole;
+        }
+        if (bang) {
+            const file = path.join(repoRoot, link.split('#')[0]);
+            const mime = inlineImageExtensions[path.extname(file).toLowerCase()];
+            if (mime && fs.existsSync(file)) {
+                inlined++;
+                const data = fs.readFileSync(file).toString('base64');
+                return `![${text}](data:${mime};base64,${data}${title})`;
+            }
+            return base ? `![${text}](${base.images}${link}${title})` : whole;
+        }
+        return base ? `[${text}](${base.content}${link}${title})` : whole;
+    });
+    console.log(`Packaged readme: ${inlined} image(s) inlined, relative links rewritten to ${base?.content ?? '(no repository URL)'}`);
+    return out;
+}
+
+if (!getOptionValue(argv, '--readme-path', '--readme-path')) {
+    const packagedReadme = path.join(repoRoot, 'out', 'readme.vsix.md');
+    fs.mkdirSync(path.dirname(packagedReadme), { recursive: true });
+    fs.writeFileSync(packagedReadme, buildPackagedReadme());
+    // vsce's rewriting (and its https-only image check) would undo the inlining.
+    argv.push('--readme-path', path.relative(repoRoot, packagedReadme), '--no-rewrite-relative-links');
+}
+
 // package the extension for the target platform
 const command = `vsce package ${argv.join(' ')}`;
 console.log(`Running command: ${command}`);

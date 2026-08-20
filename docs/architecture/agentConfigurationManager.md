@@ -50,7 +50,7 @@ The configuration written to agent settings:
 
 ### Popup State
 
-Uses VS Code's `globalState` to track whether the onboarding popup has been shown, preventing repeated prompts on every activation.
+Uses VS Code's `globalState` to track whether the onboarding popup has been shown or dismissed, preventing repeated prompts on every activation. Users can still reopen setup from the Command Palette.
 
 ## Key Code Locations
 
@@ -67,7 +67,7 @@ Uses VS Code's `globalState` to track whether the onboarding popup has been show
 3. If not, display multi-select dialog with supported agents
 4. For each selected agent, write/update config file
 5. Show success message with option to open config file
-6. Mark popup as shown
+6. Mark popup as shown after it is accepted or dismissed
 
 ## Commands
 

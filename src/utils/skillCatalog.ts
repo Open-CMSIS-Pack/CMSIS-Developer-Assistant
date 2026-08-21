@@ -40,7 +40,7 @@ export const SKILL_CATEGORY_LABELS: Readonly<Record<SkillCategory, string>> = {
     'help': 'Help',
 };
 
-export type SkillSource = 'cmsis-agent' | 'bundled' | 'generated';
+export type SkillSource = 'cmsis-skills' | 'bundled' | 'generated';
 
 export interface SkillCatalogEntry {
     /** Equals the directory name and the frontmatter `name`. */
@@ -51,7 +51,7 @@ export interface SkillCatalogEntry {
     /** Routers are the per-category entry points; skills are the workers. */
     kind: 'skill' | 'router';
     source: SkillSource;
-    /** Directory relative to the extension root, e.g. `skills/cmsis-agent/debug-knowledge`. */
+    /** Directory relative to the extension root, e.g. `skills/cmsis-skills/debug-knowledge`. */
     path: string;
     /** From `agents/openai.yaml` `interface.display_name`, when present. */
     displayName?: string;
@@ -76,7 +76,7 @@ export const SKILL_CATALOG_FILE = path.join('skills', 'catalog.json');
 /** Setting key under `cmsis-developer-assistant.` holding the user's explicit pack picks. */
 export const INSTALLED_SKILLS_SETTING = 'installedSkills';
 
-/** Setting key under the prefix: whether the AI Skills Pack (cmsis-agent skills + routers) is installed at all. */
+/** Setting key under the prefix: whether the AI Skills Pack (cmsis-skills skills + routers) is installed at all. */
 export const AI_SKILLS_ENABLED_SETTING = 'aiSkills.enabled';
 
 /** Setting key under the prefix: whether to offer the pack to users whose agents have the server registered. */
@@ -94,9 +94,9 @@ export function isBundledSkill(entry: SkillCatalogEntry): boolean {
     return entry.source === 'bundled';
 }
 
-/** The AI Skills Pack: the vendored cmsis-agent skills and the generated per-category routers. */
+/** The AI Skills Pack: the vendored cmsis-skills skills and the generated per-category routers. */
 export function isPackSkill(entry: SkillCatalogEntry): boolean {
-    return entry.source === 'cmsis-agent' || entry.source === 'generated';
+    return entry.source === 'cmsis-skills' || entry.source === 'generated';
 }
 
 export function bundledSkillNames(catalog: SkillCatalog): string[] {
@@ -266,7 +266,7 @@ function readScalar(frontmatter: string, key: string): string | undefined {
 }
 
 /**
- * Skill names referenced with the `$name` sigil cmsis-agent uses for
+ * Skill names referenced with the `$name` sigil cmsis-skills uses for
  * cross-skill hand-over (also Codex's invocation syntax). Returns every
  * lowercase-hyphenated token; the caller decides which ones are known.
  */

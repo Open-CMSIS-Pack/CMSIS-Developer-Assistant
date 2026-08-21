@@ -48,7 +48,7 @@ suite('Agent skill installer', () => {
             { name: 'cmsis-debug-live', description: 'bundled', category: 'debug', kind: 'skill', source: 'bundled', path: 'skills/cmsis-debug-live', dependsOn: [] },
             { name: 'cmsis-help', description: 'bundled help', category: 'help', kind: 'skill', source: 'bundled', path: 'skills/cmsis-help', dependsOn: [] },
             { name: 'r-pack', description: 'router', category: 'pack', kind: 'router', source: 'generated', path: 'skills/r-pack', dependsOn: ['gen'] },
-            { name: 'gen', description: 'gen', category: 'pack', kind: 'skill', source: 'cmsis-agent', path: 'skills/cmsis-agent/gen', dependsOn: [] },
+            { name: 'gen', description: 'gen', category: 'pack', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/gen', dependsOn: [] },
         ],
     };
 
@@ -75,7 +75,7 @@ suite('Agent skill installer', () => {
         writeSkill(path.join(extensionPath, 'skills', 'cmsis-debug-live'), 'cmsis-debug-live', { 'references/guide.md': 'guide' });
         writeSkill(path.join(extensionPath, 'skills', 'cmsis-help'), 'cmsis-help');
         writeSkill(path.join(extensionPath, 'skills', 'r-pack'), 'r-pack', { 'agents/openai.yaml': 'interface: {}' });
-        writeSkill(path.join(extensionPath, 'skills', 'cmsis-agent', 'gen'), 'gen', { 'references/contract.md': 'v1' });
+        writeSkill(path.join(extensionPath, 'skills', 'cmsis-skills', 'gen'), 'gen', { 'references/contract.md': 'v1' });
     });
 
     teardown(() => {
@@ -100,7 +100,7 @@ suite('Agent skill installer', () => {
     test('upstream skills carry the upstream commit in their marker', async () => {
         await installer().sync(catalog, ['gen'], []);
         assert.strictEqual(readMarker(rootA, 'gen').sha, 'feedface');
-        assert.strictEqual(readMarker(rootA, 'gen').source, 'cmsis-agent');
+        assert.strictEqual(readMarker(rootA, 'gen').source, 'cmsis-skills');
     });
 
     test('implied skills are installed hidden from the slash menu, explicit ones are not', async () => {
@@ -124,7 +124,7 @@ suite('Agent skill installer', () => {
     test('re-sync replaces the directory, so files dropped from the bundle disappear', async () => {
         await installer().sync(catalog, ['gen'], []);
         assert.ok(fs.existsSync(path.join(rootA, 'gen', 'references', 'contract.md')));
-        fs.rmSync(path.join(extensionPath, 'skills', 'cmsis-agent', 'gen', 'references'), { recursive: true });
+        fs.rmSync(path.join(extensionPath, 'skills', 'cmsis-skills', 'gen', 'references'), { recursive: true });
         await installer().sync(catalog, ['gen'], []);
         assert.ok(!fs.existsSync(path.join(rootA, 'gen', 'references', 'contract.md')), 'stale file survived');
         assert.ok(fs.existsSync(path.join(rootA, 'gen', 'SKILL.md')));
@@ -209,7 +209,7 @@ suite('Agent skill installer', () => {
     });
 
     test('a missing bundled skill is reported, not thrown', async () => {
-        const broken: SkillCatalog = { ...catalog, skills: [...catalog.skills, { name: 'ghost', description: '', category: 'devops', kind: 'skill', source: 'cmsis-agent', path: 'skills/cmsis-agent/ghost', dependsOn: [] }] };
+        const broken: SkillCatalog = { ...catalog, skills: [...catalog.skills, { name: 'ghost', description: '', category: 'devops', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/ghost', dependsOn: [] }] };
         const report = await installer().sync(broken, ['ghost', 'gen'], []);
         assert.strictEqual(report.failed.filter(f => f.name === 'ghost').length, 2);
         assert.ok(fs.existsSync(path.join(rootA, 'gen', 'SKILL.md')), 'other skills still install');

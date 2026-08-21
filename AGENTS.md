@@ -31,7 +31,7 @@ AI Agent (Cline/Copilot/Cursor) → MCP/HTTP → DebugMCPServer → DebuggingHan
 | `DebugState` | Debug session state model | [docs/architecture/debugState.md](docs/architecture/debugState.md) |
 | `DebugConfigurationManager` | Launch configs, language detection | [docs/architecture/debugConfigurationManager.md](docs/architecture/debugConfigurationManager.md) |
 | `AgentConfigurationManager` | AI agent auto-configuration and agent-skill installation | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
-| `skills/` | Bundled Agent Skills: `cmsis-debug-live`, the generated `cmsis-help`, the vendored Open-CMSIS-Pack/cmsis-agent skills, per-category routers, `catalog.json` | [skills/README.md](skills/README.md) |
+| `skills/` | Bundled Agent Skills: `cmsis-debug-live`, the generated `cmsis-help`, the vendored Open-CMSIS-Pack/cmsis-skills skills, per-category routers, `catalog.json` | [skills/README.md](skills/README.md) |
 
 ## Documentation Maintenance
 
@@ -60,7 +60,7 @@ Include in each source file:
 | `npm run lint` | Run ESLint on `src/` |
 | `npm test` | Run all tests (`src/test/*.test.ts`) |
 | `npm run watch` | Compile in watch mode |
-| `npm run skills:sync` | Re-vendor the cmsis-agent skills at the pinned commit and regenerate `skills/catalog.json`, the routers and `skills/cmsis-help` (`-- --update` moves the pin to upstream `main`) |
+| `npm run skills:sync` | Re-vendor the cmsis-skills skills at the pinned commit and regenerate `skills/catalog.json`, the routers and `skills/cmsis-help` (`-- --update` moves the pin to upstream `main`) |
 
 ## Code Style & Conventions
 

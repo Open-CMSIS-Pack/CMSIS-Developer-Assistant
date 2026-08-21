@@ -113,7 +113,7 @@ check('the bundle keeps serialport external',
 check('the agent skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-debug-live', 'SKILL.md')));
 check('the help skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-help', 'SKILL.md')));
 check('the skill catalog ships', fs.existsSync(path.join(root, 'skills', 'catalog.json')));
-check('the upstream skill lock ships', fs.existsSync(path.join(root, 'skills', 'cmsis-agent.lock.json')));
+check('the upstream skill lock ships', fs.existsSync(path.join(root, 'skills', 'cmsis-skills.lock.json')));
 let catalogOk = false;
 let catalogDetail = '';
 try {
@@ -127,7 +127,7 @@ try {
     catalogDetail = err.message;
 }
 check('every catalog skill ships', catalogOk, catalogDetail);
-check('the upstream licence ships', fs.existsSync(path.join(root, 'skills', 'cmsis-agent', 'LICENSE')));
+check('the upstream licence ships', fs.existsSync(path.join(root, 'skills', 'cmsis-skills', 'LICENSE')));
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);

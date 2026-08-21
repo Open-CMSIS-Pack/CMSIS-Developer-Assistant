@@ -230,7 +230,7 @@ export class AgentConfigurationManager {
         return vscode.workspace.getConfiguration('cmsis-developer-assistant');
     }
 
-    /** `aiSkills.enabled`: whether the cmsis-agent pack and its routers are installed at all. */
+    /** `aiSkills.enabled`: whether the cmsis-skills pack and its routers are installed at all. */
     private isSkillsPackEnabled(): boolean {
         return this.getSettings().get<boolean>(AI_SKILLS_ENABLED_SETTING, true);
     }

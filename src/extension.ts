@@ -125,7 +125,10 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.workspace.onDidChangeConfiguration(async (event) => {
             // The skill selection is applied live — whether it changed in the
             // picker, in settings.json, or arrived through Settings Sync.
-            if (event.affectsConfiguration('cmsis-developer-assistant.installedSkills') && agentConfigManager) {
+            // Toggling the pack re-syncs too: off removes the pack skills this
+            // extension installed, on brings the kept selection back.
+            if ((event.affectsConfiguration('cmsis-developer-assistant.installedSkills') ||
+                event.affectsConfiguration('cmsis-developer-assistant.aiSkills.enabled')) && agentConfigManager) {
                 await agentConfigManager.syncSkills('setting changed');
             }
             if (!event.affectsConfiguration('cmsis-developer-assistant.serverPort')) {
@@ -145,14 +148,21 @@ export async function activate(context: vscode.ExtensionContext) {
     // Register commands
     registerCommands(context);
 
-    // Show post-install popup if needed (with slight delay to allow VS Code to fully load)
+    // Show the first-run setup if needed (with slight delay to allow VS Code
+    // to fully load). Once that has been answered, the monthly nudge takes its
+    // place: agents that have the server registered but no pack skill picked.
     setTimeout(async () => {
         try {
-            if (agentConfigManager && await agentConfigManager.shouldShowPopup()) {
+            if (!agentConfigManager) {
+                return;
+            }
+            if (await agentConfigManager.shouldShowPopup()) {
                 await agentConfigManager.runSetupFlow();
+            } else {
+                await agentConfigManager.maybePromptForSkills();
             }
         } catch (error) {
-            logger.error('Error showing post-install popup', error);
+            logger.error('Error showing the setup or skill prompt', error);
         }
     }, 2000);
 

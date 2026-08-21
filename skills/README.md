@@ -8,7 +8,8 @@ the top-level README.
 
 | Path | What | Maintained how |
 |------|------|----------------|
-| `cmsis-debug-live/` | The extension's own live Cortex-M debugging workflow. | Authored here. |
+| `cmsis-debug-live/` | The extension's own live Cortex-M debugging workflow. Always installed. | Authored here. |
+| `cmsis-help/` | The extension's own "what can I ask for?" skill: slash commands, member skills per category, VS Code commands, MCP tool groups, settings. Always installed. | **Generated** from `catalog.json`, `package.json` and the `help` block of `scripts/skills.config.json` (`src/utils/skillHelp.ts`); the test re-renders it. |
 | `cmsis-agent/<name>/` | The [Open-CMSIS-Pack/cmsis-agent](https://github.com/Open-CMSIS-Pack/cmsis-agent) skills, verbatim, flattened by name. `LICENSE` is upstream's Apache-2.0. | **Generated** — never edit; re-sync. |
 | `cmsis-project/`, `cmsis-bring-up/`, `cmsis-pack/` | One router skill per upstream category: a dispatch table to the member skills plus a typical workflow. Gives agents one slash command per category. | **Generated** from `scripts/skills.config.json`. |
 | `catalog.json` | Name, description, category, kind, source, path and `dependsOn` of every skill. The runtime and the tests read only this. | **Generated.** |
@@ -24,10 +25,11 @@ npm run skills:sync -- --update  # move the pin to the current upstream main, th
 The script does a shallow `git fetch` of the pinned commit, copies
 `generic-mcu-skills/skills/<category>/<name>/` into `cmsis-agent/<name>/`,
 reads each skill's frontmatter and `agents/openai.yaml`, records the `$name`
-cross-references as dependencies, regenerates the routers and the catalog,
-and rewrites the lock. It fails loudly on duplicate names, a name that
-collides with a bundled or router skill, an unknown category, or a `$name`
-reference that no longer resolves.
+cross-references as dependencies, regenerates the routers, the catalog and
+the `cmsis-help` skill, and rewrites the lock. It fails loudly on duplicate
+names, a name that collides with a bundled or router skill, an unknown
+category, a `$name` reference that no longer resolves, or a palette command
+or listed setting without a one-liner in the `help` block.
 
 `src/test/skillCatalog.test.ts` pins the catalog to the directories on disk
 and the lock's content hash, so a hand edit under `cmsis-agent/` or a

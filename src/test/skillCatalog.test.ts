@@ -21,12 +21,21 @@ import {
     SKILL_CATEGORY_ORDER,
     SkillCatalog,
     SkillCatalogEntry,
+    bundledSkillNames,
     extractSkillReferences,
     groupByCategory,
+    hasPackSkillSelected,
     loadSkillCatalog,
     parseSkillFrontmatter,
     resolveDesiredSkills,
 } from '../utils/skillCatalog';
+import {
+    HELP_SKILL_NAME,
+    HelpSkillConfig,
+    readPackageContributions,
+    renderHelpOpenAiYaml,
+    renderHelpSkillMarkdown,
+} from '../utils/skillHelp';
 import { hashTree } from '../utils/treeHash';
 
 /**
@@ -104,11 +113,13 @@ suite('Agent skill catalog', () => {
         }
     });
 
-    test('the bundled debugging skill is the default and the only bundled entry', () => {
+    test('the bundled entries are the debugging skill and the help skill, nothing else', () => {
         const bundled = catalog().skills.filter(entry => entry.source === 'bundled');
-        assert.deepStrictEqual(bundled.map(entry => entry.name), ['cmsis-debug-live']);
-        assert.strictEqual(bundled[0].category, 'debug');
-        assert.strictEqual(bundled[0].path, 'skills/cmsis-debug-live');
+        assert.deepStrictEqual(bundled.map(entry => [entry.name, entry.category, entry.path]), [
+            ['cmsis-debug-live', 'debug', 'skills/cmsis-debug-live'],
+            [HELP_SKILL_NAME, 'help', `skills/${HELP_SKILL_NAME}`],
+        ]);
+        assert.deepStrictEqual(bundledSkillNames(catalog()), ['cmsis-debug-live', HELP_SKILL_NAME]);
     });
 
     test('every dependency resolves to a catalog skill and nothing depends on itself', () => {
@@ -179,6 +190,78 @@ suite('Agent skill catalog', () => {
                 assert.match(markdown, /^description: "/m, `${router.name}`);
             }
         });
+
+        test('every router points at the help skill for the full command list', () => {
+            for (const router of routers()) {
+                const markdown = fs.readFileSync(path.join(repoRoot, router.path, 'SKILL.md'), 'utf8');
+                assert.ok(markdown.includes(`\`/${HELP_SKILL_NAME}\``), `${router.name} does not mention /${HELP_SKILL_NAME}`);
+            }
+        });
+    });
+
+    /**
+     * The help skill is what an agent answers "what can I ask for?" from. It
+     * is generated from the catalog, package.json and the generator config,
+     * and re-rendered here: a new command, setting or skill that is not
+     * reflected in the shipped file fails this suite, not a user's question.
+     */
+    suite(HELP_SKILL_NAME, () => {
+        const helpDir = path.join(skillsDir, HELP_SKILL_NAME);
+        const config = (): HelpSkillConfig =>
+            JSON.parse(fs.readFileSync(path.join(repoRoot, 'scripts', 'skills.config.json'), 'utf8')).help;
+        const contributions = () =>
+            readPackageContributions(JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')));
+        const shipped = (): string => fs.readFileSync(path.join(helpDir, 'SKILL.md'), 'utf8');
+
+        test('the shipped SKILL.md and openai.yaml are exactly what the generator renders now', () => {
+            assert.strictEqual(shipped(), renderHelpSkillMarkdown(catalog(), contributions(), config()),
+                `skills/${HELP_SKILL_NAME}/SKILL.md is stale — run \`npm run skills:sync\``);
+            assert.strictEqual(fs.readFileSync(path.join(helpDir, 'agents', 'openai.yaml'), 'utf8'), renderHelpOpenAiYaml(config()));
+        });
+
+        test('it is bundled, always installed, and its frontmatter is the config description, quoted', () => {
+            const entry = catalog().skills.find(skill => skill.name === HELP_SKILL_NAME);
+            assert.ok(entry);
+            assert.strictEqual(entry.source, 'bundled');
+            assert.deepStrictEqual(entry.dependsOn, [], 'the help skill must not pull the pack in');
+            assert.strictEqual(entry.description, config().description);
+            assert.ok(config().description.length <= 1024);
+            assert.match(shipped(), /^description: "/m);
+        });
+
+        test('it names every slash command, every router member, every palette command and every listed setting', () => {
+            const markdown = shipped();
+            for (const entry of catalog().skills.filter(skill => skill.kind === 'router' || skill.source === 'bundled')) {
+                assert.ok(markdown.includes(`\`/${entry.name}\``), `missing /${entry.name}`);
+            }
+            for (const router of catalog().skills.filter(skill => skill.kind === 'router')) {
+                for (const member of router.dependsOn) {
+                    assert.ok(markdown.includes(`\`$${member}\``), `missing $${member}`);
+                }
+            }
+            for (const command of contributions().commands) {
+                assert.ok(markdown.includes(command.title), `missing command title ${command.title}`);
+                assert.ok(markdown.includes(`\`${command.command}\``), `missing command id ${command.command}`);
+            }
+            for (const hidden of contributions().hiddenCommands) {
+                assert.ok(!markdown.includes(hidden), `hidden command ${hidden} must not be advertised`);
+            }
+            for (const id of Object.keys(config().settings)) {
+                assert.ok(markdown.includes(`\`cmsis-developer-assistant.${id}\``), `missing setting ${id}`);
+            }
+            assert.ok(contributions().commands.length >= 2, 'palette commands disappeared');
+        });
+
+        test('every palette command needs a one-liner in the generator config, and vice versa', () => {
+            const ids = contributions().commands.map(command => command.command).sort();
+            assert.deepStrictEqual(Object.keys(config().settings).length > 0, true);
+            assert.deepStrictEqual(Object.keys(config().commands).sort(), ids,
+                'scripts/skills.config.json help.commands must list exactly the palette commands');
+            const broken = { ...config(), commands: { ...config().commands, 'cmsis-developer-assistant.ghost': 'x' } };
+            assert.throws(() => renderHelpSkillMarkdown(catalog(), contributions(), broken), /ghost/);
+            const missing = { ...config(), settings: { ...config().settings, 'noSuchSetting': 'x' } };
+            assert.throws(() => renderHelpSkillMarkdown(catalog(), contributions(), missing), /noSuchSetting/);
+        });
     });
 
     suite('resolveDesiredSkills', () => {
@@ -193,39 +276,56 @@ suite('Agent skill catalog', () => {
                 { name: 'know2', description: '', category: 'bring-up', kind: 'skill', source: 'cmsis-agent', path: 'skills/cmsis-agent/know2', dependsOn: ['know'] },
                 { name: 'docs', description: '', category: 'bring-up', kind: 'skill', source: 'cmsis-agent', path: 'skills/cmsis-agent/docs', dependsOn: [] },
                 { name: 'cmsis-debug-live', description: '', category: 'debug', kind: 'skill', source: 'bundled', path: 'skills/cmsis-debug-live', dependsOn: [] },
+                { name: 'cmsis-help', description: '', category: 'help', kind: 'skill', source: 'bundled', path: 'skills/cmsis-help', dependsOn: [] },
             ],
         };
+        const bundled = ['cmsis-debug-live', 'cmsis-help'];
 
-        test('the default selection is just the bundled skill', () => {
+        test('an empty selection still installs the bundled skills, and nothing else', () => {
+            assert.deepStrictEqual(resolveDesiredSkills(fake, []), { explicit: bundled, implied: [], unknown: [], suppressed: [] });
+        });
+
+        test('a pre-2.3.2 selection that names the bundled skill is accepted and dedupes', () => {
             const desired = resolveDesiredSkills(fake, ['cmsis-debug-live']);
-            assert.deepStrictEqual(desired, { explicit: ['cmsis-debug-live'], implied: [], unknown: [] });
+            assert.deepStrictEqual(desired, { explicit: bundled, implied: [], unknown: [], suppressed: [] });
         });
 
         test('picking a router implies its members and their transitive dependencies', () => {
             const desired = resolveDesiredSkills(fake, ['r-pack']);
-            assert.deepStrictEqual(desired.explicit, ['r-pack']);
+            assert.deepStrictEqual(desired.explicit, ['r-pack', ...bundled]);
             assert.deepStrictEqual([...desired.implied].sort(), ['docs', 'gen', 'know', 'know2', 'val']);
         });
 
         test('explicit picks are never listed as implied, cycles terminate', () => {
             const desired = resolveDesiredSkills(fake, ['know', 'know2']);
-            assert.deepStrictEqual(desired.explicit, ['know', 'know2']);
+            assert.deepStrictEqual(desired.explicit, ['know', 'know2', ...bundled]);
             assert.deepStrictEqual(desired.implied, ['docs']);
         });
 
         test('unknown names are reported, not thrown, and duplicates collapse', () => {
             const desired = resolveDesiredSkills(fake, ['val', 'from-the-future', 'val', 'from-the-future']);
-            assert.deepStrictEqual(desired.explicit, ['val']);
+            assert.deepStrictEqual(desired.explicit, ['val', ...bundled]);
             assert.deepStrictEqual(desired.unknown, ['from-the-future']);
         });
 
-        test('an empty selection installs nothing', () => {
-            assert.deepStrictEqual(resolveDesiredSkills(fake, []), { explicit: [], implied: [], unknown: [] });
+        test('with the pack disabled only the bundled skills are desired and the picks are reported as suppressed', () => {
+            const desired = resolveDesiredSkills(fake, ['r-pack', 'know', 'cmsis-debug-live', 'from-the-future'], { packEnabled: false });
+            assert.deepStrictEqual(desired.explicit, bundled);
+            assert.deepStrictEqual(desired.implied, [], 'pack members must not sneak in through the closure');
+            assert.deepStrictEqual(desired.suppressed, ['r-pack', 'know']);
+            assert.deepStrictEqual(desired.unknown, ['from-the-future']);
+        });
+
+        test('hasPackSkillSelected sees routers and members, not bundled or unknown names', () => {
+            assert.strictEqual(hasPackSkillSelected(fake, []), false);
+            assert.strictEqual(hasPackSkillSelected(fake, ['cmsis-debug-live', 'from-the-future']), false);
+            assert.strictEqual(hasPackSkillSelected(fake, ['r-pack']), true);
+            assert.strictEqual(hasPackSkillSelected(fake, ['cmsis-debug-live', 'docs']), true);
         });
 
         test('groupByCategory orders categories and puts the router first', () => {
             const groups = groupByCategory(fake);
-            assert.deepStrictEqual([...groups.keys()], ['bring-up', 'debug', 'pack']);
+            assert.deepStrictEqual([...groups.keys()], ['bring-up', 'debug', 'pack', 'help']);
             assert.deepStrictEqual(groups.get('pack')?.map(entry => entry.name), ['r-pack', 'gen', 'val']);
         });
     });

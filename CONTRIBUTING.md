@@ -26,7 +26,7 @@ npm run build          # check-types + production esbuild bundle → dist/
 npm run package        # build + create a platform-targeted VSIX
 npm run lint           # lint src/
 npm run lint:md        # lint Markdown files
-npm run skills:sync    # re-vendor the cmsis-agent skills + regenerate skills/catalog.json (see skills/README.md)
+npm run skills:sync    # re-vendor the cmsis-skills skills + regenerate skills/catalog.json (see skills/README.md)
 ```
 
 The extension ships as the esbuild bundle in `dist/`; `out/` exists for the

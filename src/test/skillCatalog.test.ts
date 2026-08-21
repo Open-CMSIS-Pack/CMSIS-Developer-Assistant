@@ -50,8 +50,8 @@ suite('Agent skill catalog', () => {
 
     const repoRoot = path.resolve(__dirname, '..', '..', '..');
     const skillsDir = path.join(repoRoot, 'skills');
-    const vendorDir = path.join(skillsDir, 'cmsis-agent');
-    const lockPath = path.join(skillsDir, 'cmsis-agent.lock.json');
+    const vendorDir = path.join(skillsDir, 'cmsis-skills');
+    const lockPath = path.join(skillsDir, 'cmsis-skills.lock.json');
 
     const catalog = (): SkillCatalog => loadSkillCatalog(repoRoot);
     const lock = (): { sha: string; contentHash: string; repository: string } =>
@@ -75,17 +75,17 @@ suite('Agent skill catalog', () => {
             .map(entry => entry.name)
             .sort();
         const inCatalog = catalog().skills
-            .filter(entry => entry.source === 'cmsis-agent')
+            .filter(entry => entry.source === 'cmsis-skills')
             .map(entry => entry.name)
             .sort();
         assert.deepStrictEqual(inCatalog, onDisk,
-            'run `npm run skills:sync` — skills/cmsis-agent and skills/catalog.json disagree');
+            'run `npm run skills:sync` — skills/cmsis-skills and skills/catalog.json disagree');
         assert.ok(onDisk.length > 0, 'no upstream skills vendored');
     });
 
     test('the vendored tree has not been edited by hand', () => {
         assert.strictEqual(hashTree(vendorDir), lock().contentHash,
-            'skills/cmsis-agent differs from what `npm run skills:sync` wrote — re-sync instead of editing vendored files');
+            'skills/cmsis-skills differs from what `npm run skills:sync` wrote — re-sync instead of editing vendored files');
     });
 
     test('the upstream licence ships with the vendored skills', () => {
@@ -134,7 +134,7 @@ suite('Agent skill catalog', () => {
 
     test('the $name references in each vendored SKILL.md are recorded as dependencies', () => {
         const names = new Set(catalog().skills.map(entry => entry.name));
-        for (const entry of catalog().skills.filter(e => e.source === 'cmsis-agent')) {
+        for (const entry of catalog().skills.filter(e => e.source === 'cmsis-skills')) {
             const markdown = fs.readFileSync(path.join(repoRoot, entry.path, 'SKILL.md'), 'utf8');
             const expected = extractSkillReferences(markdown).filter(ref => names.has(ref) && ref !== entry.name);
             assert.deepStrictEqual([...entry.dependsOn].sort(), expected,
@@ -147,7 +147,7 @@ suite('Agent skill catalog', () => {
 
         test('one router per category that has upstream skills', () => {
             const categoriesWithSkills = new Set(catalog().skills
-                .filter(entry => entry.source === 'cmsis-agent')
+                .filter(entry => entry.source === 'cmsis-skills')
                 .map(entry => entry.category));
             assert.deepStrictEqual(
                 routers().map(router => router.category).sort(),
@@ -157,7 +157,7 @@ suite('Agent skill catalog', () => {
         test('a router depends on exactly the skills of its category', () => {
             for (const router of routers()) {
                 const members = catalog().skills
-                    .filter(entry => entry.kind === 'skill' && entry.category === router.category && entry.source === 'cmsis-agent')
+                    .filter(entry => entry.kind === 'skill' && entry.category === router.category && entry.source === 'cmsis-skills')
                     .map(entry => entry.name)
                     .sort();
                 assert.deepStrictEqual([...router.dependsOn].sort(), members, `${router.name}`);
@@ -270,11 +270,11 @@ suite('Agent skill catalog', () => {
             source: { repository: 'r', sha: 'abc', sourcePath: 'p' },
             skills: [
                 { name: 'r-pack', description: '', category: 'pack', kind: 'router', source: 'generated', path: 'skills/r-pack', dependsOn: ['gen', 'val'] },
-                { name: 'gen', description: '', category: 'pack', kind: 'skill', source: 'cmsis-agent', path: 'skills/cmsis-agent/gen', dependsOn: ['know', 'val'] },
-                { name: 'val', description: '', category: 'pack', kind: 'skill', source: 'cmsis-agent', path: 'skills/cmsis-agent/val', dependsOn: [] },
-                { name: 'know', description: '', category: 'bring-up', kind: 'skill', source: 'cmsis-agent', path: 'skills/cmsis-agent/know', dependsOn: ['docs', 'know2'] },
-                { name: 'know2', description: '', category: 'bring-up', kind: 'skill', source: 'cmsis-agent', path: 'skills/cmsis-agent/know2', dependsOn: ['know'] },
-                { name: 'docs', description: '', category: 'bring-up', kind: 'skill', source: 'cmsis-agent', path: 'skills/cmsis-agent/docs', dependsOn: [] },
+                { name: 'gen', description: '', category: 'pack', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/gen', dependsOn: ['know', 'val'] },
+                { name: 'val', description: '', category: 'pack', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/val', dependsOn: [] },
+                { name: 'know', description: '', category: 'bring-up', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/know', dependsOn: ['docs', 'know2'] },
+                { name: 'know2', description: '', category: 'bring-up', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/know2', dependsOn: ['know'] },
+                { name: 'docs', description: '', category: 'bring-up', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/docs', dependsOn: [] },
                 { name: 'cmsis-debug-live', description: '', category: 'debug', kind: 'skill', source: 'bundled', path: 'skills/cmsis-debug-live', dependsOn: [] },
                 { name: 'cmsis-help', description: '', category: 'help', kind: 'skill', source: 'bundled', path: 'skills/cmsis-help', dependsOn: [] },
             ],

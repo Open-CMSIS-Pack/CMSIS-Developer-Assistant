@@ -109,13 +109,13 @@
           "uniqueItems": true,
           "default": [],
           "scope": "application",
-          "markdownDescription": "The AI Skills Pack skills — the Open-CMSIS-Pack [cmsis-agent](https://github.com/Open-CMSIS-Pack/cmsis-agent) skills and their per-category entry points `cmsis-project`, `cmsis-bring-up`, `cmsis-pack` — to copy into your personal skills directories: `~/.agents/skills` always, `~/.claude/skills` when Claude Code is installed, `$COPILOT_HOME/skills` when that variable is set. Pick them with **CMSIS Developer Assistant: Select Agent Skills**. An entry point gives the agent one slash command for the whole category; skills a selected skill depends on are installed too, hidden from the slash menu. The extension's own `cmsis-debug-live` and `cmsis-help` are always installed and need not be listed. Deselected skills that this extension installed are removed; skills you installed yourself are never touched. Has no effect while `#cmsis-developer-assistant.aiSkills.enabled#` is off."
+          "markdownDescription": "The AI Skills Pack skills — the Open-CMSIS-Pack [cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills) skills and their per-category entry points `cmsis-project`, `cmsis-bring-up`, `cmsis-pack` — to copy into your personal skills directories: `~/.agents/skills` always, `~/.claude/skills` when Claude Code is installed, `$COPILOT_HOME/skills` when that variable is set. Pick them with **CMSIS Developer Assistant: Select Agent Skills**. An entry point gives the agent one slash command for the whole category; skills a selected skill depends on are installed too, hidden from the slash menu. The extension's own `cmsis-debug-live` and `cmsis-help` are always installed and need not be listed. Deselected skills that this extension installed are removed; skills you installed yourself are never touched. Has no effect while `#cmsis-developer-assistant.aiSkills.enabled#` is off."
         },
         "cmsis-developer-assistant.aiSkills.enabled": {
           "type": "boolean",
           "default": true,
           "scope": "application",
-          "markdownDescription": "Enable the AI Skills Pack for selected agents: the Open-CMSIS-Pack [cmsis-agent](https://github.com/Open-CMSIS-Pack/cmsis-agent) skills and their per-category entry points (`cmsis-project`, `cmsis-bring-up`, `cmsis-pack`). When disabled, the pack skills this extension installed are removed from your skills directories (skills you installed yourself are never touched), the skills step of the setup is skipped and no install prompt is shown; the extension's own skills (`cmsis-debug-live`, `cmsis-help`) stay installed and your `#cmsis-developer-assistant.installedSkills#` selection is kept for re-enabling."
+          "markdownDescription": "Enable the AI Skills Pack for selected agents: the Open-CMSIS-Pack [cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills) skills and their per-category entry points (`cmsis-project`, `cmsis-bring-up`, `cmsis-pack`). When disabled, the pack skills this extension installed are removed from your skills directories (skills you installed yourself are never touched), the skills step of the setup is skipped and no install prompt is shown; the extension's own skills (`cmsis-debug-live`, `cmsis-help`) stay installed and your `#cmsis-developer-assistant.installedSkills#` selection is kept for re-enabling."
         },
         "cmsis-developer-assistant.aiSkills.promptOnDetect": {
           "type": "boolean",
@@ -158,7 +158,7 @@
     "skills:sync": "tsx scripts/sync-skills.ts",
     "tpip:update": "tsx scripts/update-tpip docs/third-party-licenses.json",
     "tpip:report": "tsx scripts/tpip-reporter --header docs/tpip-header.md docs/third-party-licenses.json TPIP.md",
-    "lint:md": "markdownlint **/*.md -c ./.github/markdownlint.jsonc -i ./node_modules -i ./dist -i ./coverage -i ./out -i ./docs/architecture -i ./skills/cmsis-agent -i CHANGELOG.md"
+    "lint:md": "markdownlint **/*.md -c ./.github/markdownlint.jsonc -i ./node_modules -i ./dist -i ./coverage -i ./out -i ./docs/architecture -i ./skills/cmsis-skills -i CHANGELOG.md"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",

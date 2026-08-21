@@ -37,7 +37,7 @@ export const SKILL_MARKER_FILE = '.cmsis-developer-assistant.json';
 export interface SkillMarker {
     name: string;
     source: SkillSource;
-    /** Upstream commit for cmsis-agent skills; the extension version otherwise. */
+    /** Upstream commit for cmsis-skills skills; the extension version otherwise. */
     sha: string;
     extensionVersion: string;
     installedAt: string;
@@ -240,7 +240,7 @@ export class SkillInstaller {
             const marker: SkillMarker = {
                 name: entry.name,
                 source: entry.source,
-                sha: entry.source === 'cmsis-agent' ? upstreamSha : this.extensionVersion,
+                sha: entry.source === 'cmsis-skills' ? upstreamSha : this.extensionVersion,
                 extensionVersion: this.extensionVersion,
                 installedAt: new Date().toISOString(),
                 hidden,

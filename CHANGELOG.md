@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.3.3] - 2026-08-21
+
+### Changed
+- **The upstream skills repository is now [Open-CMSIS-Pack/cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills)** (renamed from cmsis-agent) and the extension adopts the name throughout: the vendored tree is `skills/cmsis-skills/`, the lock is `skills/cmsis-skills.lock.json`, the catalog source id is `cmsis-skills`, and the pin moved to the renamed repository's current `main` (`d778b91`, documentation-only changes upstream — the 21 skills are unchanged, same content hash). Nothing changes on disk for users; installed skills are re-marked on the next sync.
+
 ## [2.3.2] - 2026-08-21
 
 ### Added

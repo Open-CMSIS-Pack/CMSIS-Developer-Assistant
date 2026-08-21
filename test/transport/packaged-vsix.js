@@ -111,6 +111,7 @@ check('the bundle keeps serialport external',
 //    extension: the bundled debugging skill, the catalog that drives the
 //    picker, the upstream lock, and every SKILL.md the catalog points at.
 check('the agent skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-debug-live', 'SKILL.md')));
+check('the help skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-help', 'SKILL.md')));
 check('the skill catalog ships', fs.existsSync(path.join(root, 'skills', 'catalog.json')));
 check('the upstream skill lock ships', fs.existsSync(path.join(root, 'skills', 'cmsis-agent.lock.json')));
 let catalogOk = false;

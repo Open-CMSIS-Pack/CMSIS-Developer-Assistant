@@ -25,10 +25,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-export type SkillCategory = 'project' | 'bring-up' | 'debug' | 'pack' | 'devops';
+export type SkillCategory = 'project' | 'bring-up' | 'debug' | 'pack' | 'devops' | 'help';
 
 /** Display order in the picker and in the generated catalog. */
-export const SKILL_CATEGORY_ORDER: readonly SkillCategory[] = ['project', 'bring-up', 'debug', 'pack', 'devops'];
+export const SKILL_CATEGORY_ORDER: readonly SkillCategory[] = ['project', 'bring-up', 'debug', 'pack', 'devops', 'help'];
 
 /** Picker group headings. */
 export const SKILL_CATEGORY_LABELS: Readonly<Record<SkillCategory, string>> = {
@@ -37,6 +37,7 @@ export const SKILL_CATEGORY_LABELS: Readonly<Record<SkillCategory, string>> = {
     'debug': 'Live debugging',
     'pack': 'CMSIS-Pack debug authoring',
     'devops': 'DevOps',
+    'help': 'Help',
 };
 
 export type SkillSource = 'cmsis-agent' | 'bundled' | 'generated';
@@ -72,11 +73,44 @@ export interface SkillCatalog {
 
 export const SKILL_CATALOG_FILE = path.join('skills', 'catalog.json');
 
-/** Setting key under `cmsis-developer-assistant.` holding the user's explicit picks. */
+/** Setting key under `cmsis-developer-assistant.` holding the user's explicit pack picks. */
 export const INSTALLED_SKILLS_SETTING = 'installedSkills';
 
-/** What a fresh install gets — the extension's own debugging skill and nothing else. */
-export const DEFAULT_INSTALLED_SKILLS: readonly string[] = ['cmsis-debug-live'];
+/** Setting key under the prefix: whether the AI Skills Pack (cmsis-agent skills + routers) is installed at all. */
+export const AI_SKILLS_ENABLED_SETTING = 'aiSkills.enabled';
+
+/** Setting key under the prefix: whether to offer the pack to users whose agents have the server registered. */
+export const AI_SKILLS_PROMPT_SETTING = 'aiSkills.promptOnDetect';
+
+/**
+ * What a fresh install has picked from the pack — nothing. The bundled
+ * skills (`cmsis-debug-live`, `cmsis-help`) are not picks: they are always
+ * installed, whatever the setting says.
+ */
+export const DEFAULT_INSTALLED_SKILLS: readonly string[] = [];
+
+/** The extension's own skills: always installed, never offered in the picker. */
+export function isBundledSkill(entry: SkillCatalogEntry): boolean {
+    return entry.source === 'bundled';
+}
+
+/** The AI Skills Pack: the vendored cmsis-agent skills and the generated per-category routers. */
+export function isPackSkill(entry: SkillCatalogEntry): boolean {
+    return entry.source === 'cmsis-agent' || entry.source === 'generated';
+}
+
+export function bundledSkillNames(catalog: SkillCatalog): string[] {
+    return catalog.skills.filter(isBundledSkill).map(entry => entry.name);
+}
+
+/** Whether the configured picks name at least one pack skill the catalog knows. */
+export function hasPackSkillSelected(catalog: SkillCatalog, configured: readonly string[]): boolean {
+    const byName = new Map(catalog.skills.map(entry => [entry.name, entry]));
+    return configured.some(name => {
+        const entry = byName.get(name);
+        return entry !== undefined && isPackSkill(entry);
+    });
+}
 
 export function parseSkillCatalog(json: string): SkillCatalog {
     const parsed = JSON.parse(json) as Partial<SkillCatalog>;
@@ -94,32 +128,55 @@ export function loadSkillCatalog(extensionPath: string): SkillCatalog {
 }
 
 export interface DesiredSkills {
-    /** Names the user picked, in catalog order. Installed visible. */
+    /** The bundled skills plus the pack skills the user picked, in catalog order. Installed visible. */
     explicit: string[];
-    /** Transitive `dependsOn` closure of the explicit picks, minus the picks. Installed hidden. */
+    /** Transitive `dependsOn` closure of the explicit set, minus the set. Installed hidden. */
     implied: string[];
     /** Configured names the catalog does not know (e.g. synced from another version). Ignored. */
     unknown: string[];
+    /** Configured pack picks withheld because the pack is disabled. Kept in the setting for re-enabling. */
+    suppressed: string[];
+}
+
+export interface DesiredSkillsOptions {
+    /** `aiSkills.enabled`. Off: only the bundled skills are desired, whatever was picked. Default on. */
+    packEnabled?: boolean;
 }
 
 /**
- * Turn the configured picks into the set to install. The setting stores only
- * explicit picks; the closure is recomputed here every time, so a dependency
- * added upstream reaches existing users on the next sync.
+ * Turn the configured picks into the set to install. The bundled skills are
+ * always in; the setting stores only the pack picks; the closure is
+ * recomputed here every time, so a dependency added upstream reaches
+ * existing users on the next sync. With the pack disabled the picks are
+ * reported as `suppressed` and nothing from the pack is desired — the
+ * installer's sweep then removes what it installed earlier.
  */
-export function resolveDesiredSkills(catalog: SkillCatalog, configured: readonly string[]): DesiredSkills {
+export function resolveDesiredSkills(
+    catalog: SkillCatalog,
+    configured: readonly string[],
+    options: DesiredSkillsOptions = {},
+): DesiredSkills {
+    const packEnabled = options.packEnabled ?? true;
     const byName = new Map(catalog.skills.map(entry => [entry.name, entry]));
     const order = new Map(catalog.skills.map((entry, index) => [entry.name, index]));
     const sortCatalogOrder = (names: Iterable<string>): string[] =>
         [...new Set(names)].sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
 
-    const explicitSet = new Set<string>();
+    const explicitSet = new Set<string>(bundledSkillNames(catalog));
     const unknown: string[] = [];
+    const suppressed: string[] = [];
     for (const name of configured) {
-        if (byName.has(name)) {
+        const entry = byName.get(name);
+        if (!entry) {
+            if (!unknown.includes(name)) {
+                unknown.push(name);
+            }
+        } else if (isPackSkill(entry) && !packEnabled) {
+            if (!suppressed.includes(name)) {
+                suppressed.push(name);
+            }
+        } else {
             explicitSet.add(name);
-        } else if (!unknown.includes(name)) {
-            unknown.push(name);
         }
     }
 
@@ -128,10 +185,15 @@ export function resolveDesiredSkills(catalog: SkillCatalog, configured: readonly
     while (queue.length > 0) {
         const name = queue.pop() as string;
         for (const dependency of byName.get(name)?.dependsOn ?? []) {
-            if (!explicitSet.has(dependency) && !closure.has(dependency) && byName.has(dependency)) {
-                closure.add(dependency);
-                queue.push(dependency);
+            const entry = byName.get(dependency);
+            if (!entry || explicitSet.has(dependency) || closure.has(dependency)) {
+                continue;
             }
+            if (isPackSkill(entry) && !packEnabled) {
+                continue;
+            }
+            closure.add(dependency);
+            queue.push(dependency);
         }
     }
 
@@ -139,6 +201,7 @@ export function resolveDesiredSkills(catalog: SkillCatalog, configured: readonly
         explicit: sortCatalogOrder(explicitSet),
         implied: sortCatalogOrder(closure),
         unknown,
+        suppressed,
     };
 }
 

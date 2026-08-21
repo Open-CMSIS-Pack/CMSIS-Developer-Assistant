@@ -344,6 +344,17 @@
       "displayName": "CMSIS: Validate PDSC Sequence XML",
       "shortDescription": "Validate PDSC sequence XML and block formatting",
       "dependsOn": []
+    },
+    {
+      "name": "cmsis-help",
+      "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
+      "category": "help",
+      "kind": "skill",
+      "source": "bundled",
+      "path": "skills/cmsis-help",
+      "displayName": "CMSIS: Help",
+      "shortDescription": "List the CMSIS slash commands, VS Code commands, MCP tools and settings",
+      "dependsOn": []
     }
   ]
 }

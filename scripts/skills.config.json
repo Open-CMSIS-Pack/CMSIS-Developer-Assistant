@@ -1,8 +1,60 @@
 {
   "$comment": "Hand-authored input for scripts/sync-skills.ts. Router descriptions are what skills-aware harnesses use to auto-invoke the category entry point — keep them trigger-rich and under 1024 characters. Workflow lines become the 'Typical workflow' section of the generated router SKILL.md.",
   "bundled": [
-    { "name": "cmsis-debug-live", "category": "debug" }
+    {
+      "name": "cmsis-debug-live",
+      "category": "debug"
+    },
+    {
+      "name": "cmsis-help",
+      "category": "help",
+      "generated": true
+    }
   ],
+  "help": {
+    "displayName": "CMSIS: Help",
+    "shortDescription": "List the CMSIS slash commands, VS Code commands, MCP tools and settings",
+    "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
+    "commands": {
+      "cmsis-developer-assistant.configure": "The first-run setup, on demand: register the MCP server with the agents you pick, then choose the AI Skills Pack skills to install.",
+      "cmsis-developer-assistant.selectSkills": "Pick the AI Skills Pack skills (category entry points or individual skills) to copy into your personal skills directories."
+    },
+    "toolGroups": [
+      {
+        "name": "CMSIS Solution actions",
+        "summary": "`cmsis_action` — build, load, erase, load_and_run, load_and_debug, attach, detach, stop_run (the CMSIS Solution panel buttons); `flash` — program via pyOCD with a synchronous result."
+      },
+      {
+        "name": "Run control",
+        "summary": "`start_debugging`, `stop_debugging`, `restart_debugging`, `continue_execution`, `pause_execution`, `step_over`, `step_into`, `step_out`, `wait_for_stop`, `reset`."
+      },
+      {
+        "name": "Breakpoints",
+        "summary": "`add_breakpoint` (by line, optional condition), `add_logpoint`, `remove_breakpoint`, `list_breakpoints`, `clear_all_breakpoints`."
+      },
+      {
+        "name": "Inspection",
+        "summary": "`get_call_stack`, `get_threads`, `get_frame_variables`, `list_variable_names`, `get_variables_values`, `evaluate_expression`."
+      },
+      {
+        "name": "Cortex-M",
+        "summary": "`read_memory`, `read_core_registers`, `read_peripheral_register` (SVD), `get_fault_info` (CFSR/HFSR decode), `read_cycle_counter`, `get_device_info`."
+      },
+      {
+        "name": "Serial ports",
+        "summary": "`serial_list_ports`, `serial_open`, `serial_read`, `serial_write`, `serial_close`, `serial_status`, `serial_clear_buffer`, and the Serial Monitor bridge `serial_subscribe_monitor` / `serial_unsubscribe_monitor` / `serial_open_monitor`."
+      },
+      {
+        "name": "Session health and windows",
+        "summary": "`get_session_status`, `check_target_connection`, `get_debug_instructions`; with several VS Code windows `list_debug_windows` and `select_debug_window`."
+      }
+    ],
+    "settings": {
+      "installedSkills": "The AI Skills Pack skills (entry points or individual skills) to copy into your personal skills directories; `cmsis-debug-live` and `cmsis-help` are always installed.",
+      "aiSkills.enabled": "Install the AI Skills Pack at all. Off: pack skills this extension installed are removed, the skills setup step and the install prompt are skipped; the selection is kept.",
+      "aiSkills.promptOnDetect": "Offer to install the pack — at most once a month — when an agent has the MCP server registered but no pack skill is selected."
+    }
+  },
   "categories": [
     {
       "id": "project",

@@ -44,6 +44,8 @@ The extension activates on startup and serves MCP at `http://localhost:3001/mcp`
 
 For other agents, the extension shows a two-step setup on first activation: step 1 writes the server into the configuration of every agent you select, step 2 lets you choose the [agent skills](#agent-skills) to install. The setup can be opened again at any time with the command **CMSIS Developer Assistant: Configure Agents and Skills** from the [command palette](https://code.visualstudio.com/docs/getstarted/userinterface#_command-palette). For manual registration, see [Manual agent registration](#manual-agent-registration).
 
+If an agent has the server registered but none of the CMSIS AI Skills has been selected, the extension offers to install them — at most once a month, with **Select Skills**, **Later** and **Don't ask again** — until a skill from the pack is added (setting `cmsis-developer-assistant.aiSkills.promptOnDetect`).
+
 > &#128204; **TIP**
 >
 > Enable auto-approval for the CMSIS Developer Assistant tools in your AI assistant. A debug session is a long series of small tool calls, and confirming each one interrupts the workflow.
@@ -55,7 +57,7 @@ For other agents, the extension shows a two-step setup on first activation: step
 3. Ask the agent to debug, for example: _"Load and debug the application, then stop at `main`."_ The agent calls `cmsis_action` with `load_and_debug`, which builds if required, programs the device, and attaches the debugger in one step.
 4. Continue in natural language: _"Why do we end up in the HardFault handler?"_, _"Show the GPIOA registers"_, _"Read 64 bytes at the stack pointer"_. The agent uses the inspection tools described below and reports what it found.
 
-The extension also installs the agent skill `cmsis-debug-live` into your personal skills directories. Agents that support the [agent skills](https://agentskills.io/) format pick it up automatically; it teaches the agent a systematic workflow for firmware debugging on hardware, from target-state checks to HardFault root-cause analysis. More skills are available on request — see [Agent skills](#agent-skills).
+The extension also installs two agent skills into your personal skills directories: `cmsis-debug-live`, which teaches the agent a systematic workflow for firmware debugging on hardware, from target-state checks to HardFault root-cause analysis, and `cmsis-help`, which answers "what can I ask the CMSIS Developer Assistant for?" — the slash commands, VS Code commands, tools and settings. Agents that support the [agent skills](https://agentskills.io/) format pick them up automatically. More skills are available on request — see [Agent skills](#agent-skills).
 
 > &#128221; **Note:**
 >
@@ -158,17 +160,22 @@ Skills are `SKILL.md` workflows in the [Agent Skills](https://agentskills.io/) f
 
 The catalog contains:
 
-- **`cmsis-debug-live`** (installed by default) — the live Cortex-M debugging workflow for the tools of this extension.
+- **`cmsis-debug-live`** (always installed) — the live Cortex-M debugging workflow for the tools of this extension.
+- **`cmsis-help`** (always installed) — the list of CMSIS slash commands, the member skills behind each, the VS Code commands, the MCP tool groups and the settings; generated from the catalog and `package.json` so it cannot go stale. Ask the agent `/cmsis-help`.
 - **The [Open-CMSIS-Pack/cmsis-agent](https://github.com/Open-CMSIS-Pack/cmsis-agent) skills**, vendored at a pinned commit (`skills/cmsis-agent.lock.json`): project setup (`add-cmsis-target`, `identify-cmsis-board-support`, `start-zephyr-project`, …), device debug and trace knowledge (`debug-access-knowledge`, `debug-knowledge`, `trace-knowledge`, …), and CMSIS-Pack debug authoring (`generate-debug-sequences`, `generate-trace-sequences`, `manage-pdsc-debugvars`, …).
 - **One entry point per category** — `cmsis-project`, `cmsis-bring-up`, `cmsis-pack`. Selecting an entry point gives the agent a single slash command for the whole category: the member skills are installed with `user-invocable: false`, so agents that honour that flag (Claude Code, VS Code, Copilot CLI) keep them out of the `/` menu while the model can still invoke them by description. Selecting an individual skill makes it visible; skills it depends on (the `$name` references in its text) are installed hidden.
 
-Choose skills with **CMSIS Developer Assistant: Select Agent Skills** (also step 2 of **Configure Agents and Skills**) or edit the `cmsis-developer-assistant.installedSkills` setting. The selection is applied on every activation and whenever the setting changes, including through Settings Sync. Every directory the extension writes carries a `.cmsis-developer-assistant.json` marker; deselected skills with that marker are removed, and a skill you installed yourself is never overwritten or removed, even if it shares a name.
+The cmsis-agent skills and their entry points form the **AI Skills Pack**. Choose from it with **CMSIS Developer Assistant: Select Agent Skills** (also step 2 of **Configure Agents and Skills**) or edit the `cmsis-developer-assistant.installedSkills` setting; the extension's own `cmsis-debug-live` and `cmsis-help` are always installed and are not part of the selection. The selection is applied on every activation and whenever the setting changes, including through Settings Sync. Every directory the extension writes carries a `.cmsis-developer-assistant.json` marker; deselected skills with that marker are removed, and a skill you installed yourself is never overwritten or removed, even if it shares a name.
+
+Turning `cmsis-developer-assistant.aiSkills.enabled` off switches the pack off: the pack skills this extension installed are removed (marker-guarded, your own skills are untouched), the skills step of the setup and the install prompt are skipped, and the two bundled skills stay. Your selection is kept, so turning it back on restores exactly what you had.
 
 ## Configuration
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `cmsis-developer-assistant.installedSkills` | `["cmsis-debug-live"]` | Agent skills from the bundled catalog to install into your personal skills directories. See [Agent Skills](#agent-skills). |
+| `cmsis-developer-assistant.installedSkills` | `[]` | The AI Skills Pack skills (entry points or individual skills) to install into your personal skills directories; `cmsis-debug-live` and `cmsis-help` are always installed. See [Agent Skills](#agent-skills). |
+| `cmsis-developer-assistant.aiSkills.enabled` | `true` | Enable the AI Skills Pack for selected agents. Off: pack skills this extension installed are removed, the skills setup step and the install prompt are skipped, the selection is kept. |
+| `cmsis-developer-assistant.aiSkills.promptOnDetect` | `true` | Prompt to install the CMSIS AI Skills for selected agents — monthly, until a pack skill is added. |
 | `cmsis-developer-assistant.serverPort` | `3001` | Port of the MCP server. One window binds it and routes to the others. Changing the port requires a window reload; the extension offers to reload. |
 | `cmsis-developer-assistant.timeoutInSeconds` | `180` | Timeout for debugging operations such as starting a session. |
 | `cmsis-developer-assistant.dapRequestTimeoutMs` | `10000` | Per-request timeout for traffic to the debug adapter and probe. Increase for slow targets or large memory reads. |

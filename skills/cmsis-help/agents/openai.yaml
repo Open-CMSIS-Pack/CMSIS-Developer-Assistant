@@ -1,0 +1,4 @@
+interface:
+  display_name: "CMSIS: Help"
+  short_description: "List the CMSIS slash commands, VS Code commands, MCP tools and settings"
+  default_prompt: "Use $cmsis-help to list the CMSIS slash commands, VS Code commands, MCP tools and settings."

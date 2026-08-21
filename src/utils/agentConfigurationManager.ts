@@ -7,16 +7,22 @@ import * as path from 'path';
 import * as os from 'os';
 import { logger } from './logger';
 import {
+    AI_SKILLS_ENABLED_SETTING,
+    AI_SKILLS_PROMPT_SETTING,
     DEFAULT_INSTALLED_SKILLS,
     INSTALLED_SKILLS_SETTING,
     SKILL_CATEGORY_LABELS,
     SkillCatalog,
     SkillCatalogEntry,
+    bundledSkillNames,
     groupByCategory,
+    hasPackSkillSelected,
+    isBundledSkill,
     loadSkillCatalog,
     resolveDesiredSkills,
 } from './skillCatalog';
 import { SkillInstaller, SkillSyncReport, getSkillInstallRoots, summarizeSkillSync } from './skillInstaller';
+import { SKILLS_PROMPT_SHOWN_KEY, SKILL_PROMPT_BUTTONS, decideSkillPrompt, skillPromptMessage } from './skillPrompt';
 
 export interface BaseAgentInfo {
     id: string;
@@ -138,6 +144,30 @@ function isCodexServerSectionHeader(line: string, key: string): boolean {
     return new RegExp(`^\\s*\\[mcp_servers\\.${escaped}\\]\\s*(?:#.*)?$`).test(line);
 }
 
+/**
+ * Whether an agent's config file text registers this extension's MCP server:
+ * a `<mcpServerFieldName>.cmsis-developer-assistant` entry in the JSON
+ * formats, a `[mcp_servers.cmsis-developer-assistant]` section in Codex's
+ * TOML. The legacy `cmsis-debugmcp` key alone does not count — migration
+ * renames it on activation, before this is asked. Unparseable content reads
+ * as "not registered". Pure, so the install prompt's detection is testable.
+ */
+export function agentConfigHasServer(agent: AgentInfo, content: string): boolean {
+    if (agent.configFormat === 'toml') {
+        return content.split(/\r?\n/).some(line => isCodexServerSectionHeader(line, SERVER_KEY));
+    }
+    try {
+        const config = JSON.parse(content) as unknown;
+        if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+            return false;
+        }
+        const servers = (config as Record<string, unknown>)[agent.mcpServerFieldName];
+        return typeof servers === 'object' && servers !== null && SERVER_KEY in (servers as Record<string, unknown>);
+    } catch {
+        return false;
+    }
+}
+
 /** Longest `detail` line the skill picker shows per entry. */
 const PICKER_DETAIL_LENGTH = 140;
 
@@ -180,15 +210,34 @@ export class AgentConfigurationManager {
      * Check if we should show the post-install popup
      */
     public async shouldShowPopup(): Promise<boolean> {
-        // Antigravity / Gemini configure MCP servers themselves, so the
-        // selection popup is noise there — it offers a choice the host has
-        // already made.
-        if (process.env.ANTIGRAVITY_ENV === 'true' || process.env.GEMINI_HOME) {
+        if (this.isHostManagedEnvironment()) {
             return false;
         }
         // Check if popup has already been shown
         const popupShown = this.context.globalState.get<boolean>(this.POPUP_SHOWN_KEY, false);
         return !popupShown;
+    }
+
+    /**
+     * Antigravity / Gemini configure MCP servers themselves, so the setup
+     * prompts are noise there — they offer a choice the host has already made.
+     */
+    private isHostManagedEnvironment(): boolean {
+        return process.env.ANTIGRAVITY_ENV === 'true' || Boolean(process.env.GEMINI_HOME);
+    }
+
+    private getSettings(): vscode.WorkspaceConfiguration {
+        return vscode.workspace.getConfiguration('cmsis-developer-assistant');
+    }
+
+    /** `aiSkills.enabled`: whether the cmsis-agent pack and its routers are installed at all. */
+    private isSkillsPackEnabled(): boolean {
+        return this.getSettings().get<boolean>(AI_SKILLS_ENABLED_SETTING, true);
+    }
+
+    /** `aiSkills.promptOnDetect`: whether registered agents' users get the monthly install nudge. */
+    private isSkillPromptEnabled(): boolean {
+        return this.getSettings().get<boolean>(AI_SKILLS_PROMPT_SETTING, true);
     }
 
     /**
@@ -203,8 +252,13 @@ export class AgentConfigurationManager {
     public async runSetupFlow(): Promise<void> {
         try {
             const agents = await this.getSupportedAgents();
-            await this.showAgentSelectionDialog(agents);
-            await this.showSkillSelectionDialog();
+            const withSkillsStep = this.isSkillsPackEnabled();
+            await this.showAgentSelectionDialog(agents, withSkillsStep ? ' (1/2)' : '');
+            if (withSkillsStep) {
+                await this.showSkillSelectionDialog();
+            } else {
+                logger.info(`AI Skills Pack disabled (${AI_SKILLS_ENABLED_SETTING}); skipping the skills step of the setup`);
+            }
         } catch (error) {
             console.error('Error running the setup flow:', error);
             vscode.window.showErrorMessage(`Failed to show the CMSIS Developer Assistant setup: ${error}`);
@@ -218,6 +272,7 @@ export class AgentConfigurationManager {
      */
     public async resetPopupState(): Promise<void> {
         await this.context.globalState.update(this.POPUP_SHOWN_KEY, false);
+        await this.context.globalState.update(SKILLS_PROMPT_SHOWN_KEY, undefined);
     }
 
     /**
@@ -631,7 +686,7 @@ export class AgentConfigurationManager {
      * Step 1: the agent selection dialog. Resolves once the picker is gone,
      * with `true` when the user accepted a selection (even an empty one).
      */
-    private showAgentSelectionDialog(agents: AgentInfo[]): Promise<boolean> {
+    private showAgentSelectionDialog(agents: AgentInfo[], stepLabel = ' (1/2)'): Promise<boolean> {
         const items: vscode.QuickPickItem[] = agents.map(agent => ({
             label: `$(add) Configure ${agent.displayName}`,
             description: 'Add CMSIS Developer Assistant server to this agent',
@@ -641,7 +696,7 @@ export class AgentConfigurationManager {
 
         return new Promise<boolean>(resolve => {
             const quickPick = vscode.window.createQuickPick();
-            quickPick.title = 'CMSIS Developer Assistant Setup (1/2) - Choose AI Agents to Configure';
+            quickPick.title = `CMSIS Developer Assistant Setup${stepLabel} - Choose AI Agents to Configure`;
             quickPick.placeholder = 'Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)';
             quickPick.items = items;
             quickPick.canSelectMany = true;
@@ -691,9 +746,7 @@ export class AgentConfigurationManager {
     }
 
     private getConfiguredSkills(): string[] {
-        const configured = vscode.workspace
-            .getConfiguration('cmsis-developer-assistant')
-            .get<string[]>(INSTALLED_SKILLS_SETTING, [...DEFAULT_INSTALLED_SKILLS]);
+        const configured = this.getSettings().get<string[]>(INSTALLED_SKILLS_SETTING, [...DEFAULT_INSTALLED_SKILLS]);
         return Array.isArray(configured) ? configured.filter((name): name is string => typeof name === 'string') : [];
     }
 
@@ -710,12 +763,16 @@ export class AgentConfigurationManager {
             if (!catalog) {
                 return null;
             }
-            const desired = resolveDesiredSkills(catalog, this.getConfiguredSkills());
+            const packEnabled = this.isSkillsPackEnabled();
+            const desired = resolveDesiredSkills(catalog, this.getConfiguredSkills(), { packEnabled });
             if (desired.unknown.length > 0) {
                 logger.warn(`Ignoring unknown skills in the ${INSTALLED_SKILLS_SETTING} setting: ${desired.unknown.join(', ')}`);
             }
+            if (desired.suppressed.length > 0) {
+                logger.info(`AI Skills Pack disabled (${AI_SKILLS_ENABLED_SETTING}); not installing the selected [${desired.suppressed.join(', ')}]`);
+            }
             const report = await this.skillInstaller.sync(catalog, desired.explicit, desired.implied);
-            logger.info(`Agent skills synced (${reason}): ${summarizeSkillSync(report)}; ` +
+            logger.info(`Agent skills synced (${reason}, pack ${packEnabled ? 'enabled' : 'disabled'}): ${summarizeSkillSync(report)}; ` +
                 `visible [${desired.explicit.join(', ')}], hidden [${desired.implied.join(', ')}]`);
             for (const failure of report.failed) {
                 logger.warn(`Skill ${failure.name ?? '(root)'} at ${failure.root}: ${failure.error}`);
@@ -734,13 +791,25 @@ export class AgentConfigurationManager {
      * Step 2: the skill picker. Entries are grouped by category with the
      * category's router skill first — picking the router gives the agent one
      * slash command for the whole category and installs the members hidden.
+     * The bundled skills are always installed and are not offered as choices.
      * Resolves with `true` when the user accepted.
      */
-    public showSkillSelectionDialog(): Promise<boolean> {
+    public async showSkillSelectionDialog(): Promise<boolean> {
         const catalog = this.getCatalog();
         if (!catalog) {
             vscode.window.showErrorMessage('CMSIS Developer Assistant: the bundled skill catalog could not be loaded.');
-            return Promise.resolve(false);
+            return false;
+        }
+        if (!this.isSkillsPackEnabled()) {
+            const enable = 'Enable and Select';
+            const choice = await vscode.window.showInformationMessage(
+                `CMSIS Developer Assistant: the AI Skills Pack is disabled (setting cmsis-developer-assistant.${AI_SKILLS_ENABLED_SETTING}); ` +
+                'only the extension\'s own skills are installed.',
+                enable);
+            if (choice !== enable) {
+                return false;
+            }
+            await this.getSettings().update(AI_SKILLS_ENABLED_SETTING, true, vscode.ConfigurationTarget.Global);
         }
 
         type SkillItem = vscode.QuickPickItem & { entry?: SkillCatalogEntry };
@@ -749,8 +818,12 @@ export class AgentConfigurationManager {
         const items: SkillItem[] = [];
 
         for (const [category, entries] of groupByCategory(catalog)) {
+            const offered = entries.filter(entry => !isBundledSkill(entry));
+            if (offered.length === 0) {
+                continue;
+            }
             items.push({ label: SKILL_CATEGORY_LABELS[category], kind: vscode.QuickPickItemKind.Separator });
-            for (const entry of entries) {
+            for (const entry of offered) {
                 const dependencies = entry.dependsOn.filter(name => byName.has(name));
                 const isRouter = entry.kind === 'router';
                 const summary = truncate(entry.shortDescription ?? entry.description, PICKER_DETAIL_LENGTH);
@@ -771,7 +844,8 @@ export class AgentConfigurationManager {
         return new Promise<boolean>(resolve => {
             const quickPick = vscode.window.createQuickPick<SkillItem>();
             quickPick.title = 'CMSIS Developer Assistant Setup (2/2) - Choose Agent Skills to Install';
-            quickPick.placeholder = 'Select the agent skills to install into your personal skills directories (Esc keeps the current selection)';
+            quickPick.placeholder = 'Select the AI Skills Pack skills to install into your personal skills directories ' +
+                `(always installed: ${bundledSkillNames(catalog).join(', ')}; Esc keeps the current selection)`;
             quickPick.items = items;
             quickPick.selectedItems = items.filter(item => item.picked);
             quickPick.canSelectMany = true;
@@ -789,9 +863,7 @@ export class AgentConfigurationManager {
                 quickPick.hide();
 
                 try {
-                    await vscode.workspace
-                        .getConfiguration('cmsis-developer-assistant')
-                        .update(INSTALLED_SKILLS_SETTING, explicit, vscode.ConfigurationTarget.Global);
+                    await this.getSettings().update(INSTALLED_SKILLS_SETTING, explicit, vscode.ConfigurationTarget.Global);
                     // The configuration-change listener syncs too; running it
                     // here as well makes the toast below reflect the result.
                     const report = await this.syncSkills('selection');
@@ -820,6 +892,74 @@ export class AgentConfigurationManager {
             });
             quickPick.show();
         });
+    }
+
+    /**
+     * The monthly nudge: when an agent has the MCP server registered but no
+     * pack skill was ever picked, offer the skill picker — at most once per
+     * 30 days, never while the first-run flow is still pending (it asks the
+     * same question), never with the pack disabled. The decision itself is
+     * pure and tested (`decideSkillPrompt`); this gathers its inputs and
+     * shows the toast.
+     */
+    public async maybePromptForSkills(now: number = Date.now()): Promise<void> {
+        const catalog = this.getCatalog();
+        if (!catalog) {
+            return;
+        }
+        const agents = await this.getAgentsWithServer();
+        const agentNames = agents.map(agent => agent.displayName);
+        const decision = decideSkillPrompt({
+            promptEnabled: this.isSkillPromptEnabled(),
+            packEnabled: this.isSkillsPackEnabled(),
+            firstRunPending: !this.context.globalState.get<boolean>(this.POPUP_SHOWN_KEY, false),
+            hostManaged: this.isHostManagedEnvironment(),
+            agentsWithServer: agentNames,
+            packSkillSelected: hasPackSkillSelected(catalog, this.getConfiguredSkills()),
+            lastShownAt: this.context.globalState.get<number>(SKILLS_PROMPT_SHOWN_KEY),
+            now,
+        });
+        if (!decision.show) {
+            logger.info(`Skill install prompt not shown: ${decision.reason}`);
+            return;
+        }
+
+        // Recorded before the toast, so a dismissal — or a second window
+        // racing this one — counts as shown.
+        await this.context.globalState.update(SKILLS_PROMPT_SHOWN_KEY, now);
+        const choice = await vscode.window.showInformationMessage(
+            skillPromptMessage(agentNames),
+            SKILL_PROMPT_BUTTONS.select,
+            SKILL_PROMPT_BUTTONS.later,
+            SKILL_PROMPT_BUTTONS.never,
+        );
+        if (choice === SKILL_PROMPT_BUTTONS.select) {
+            await this.showSkillSelectionDialog();
+        } else if (choice === SKILL_PROMPT_BUTTONS.never) {
+            await this.getSettings().update(AI_SKILLS_PROMPT_SETTING, false, vscode.ConfigurationTarget.Global);
+        }
+    }
+
+    /**
+     * The supported agents whose config file currently registers this
+     * server. Read-only; a missing or unreadable file just means "no".
+     */
+    private async getAgentsWithServer(): Promise<AgentInfo[]> {
+        const found: AgentInfo[] = [];
+        for (const agent of await this.getSupportedAgents()) {
+            try {
+                if (!fs.existsSync(agent.configPath)) {
+                    continue;
+                }
+                const content = await fs.promises.readFile(agent.configPath, 'utf8');
+                if (agentConfigHasServer(agent, content)) {
+                    found.push(agent);
+                }
+            } catch (error) {
+                logger.warn(`Could not read the ${agent.displayName} configuration at ${agent.configPath}: ${String(error)}`);
+            }
+        }
+        return found;
     }
 
     /**

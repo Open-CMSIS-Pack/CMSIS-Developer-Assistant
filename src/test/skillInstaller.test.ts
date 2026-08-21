@@ -18,7 +18,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { SkillCatalog } from '../utils/skillCatalog';
+import { SkillCatalog, resolveDesiredSkills } from '../utils/skillCatalog';
 import {
     SKILL_MARKER_FILE,
     SkillInstaller,
@@ -46,6 +46,7 @@ suite('Agent skill installer', () => {
         source: { repository: 'r', sha: 'feedface', sourcePath: 'p' },
         skills: [
             { name: 'cmsis-debug-live', description: 'bundled', category: 'debug', kind: 'skill', source: 'bundled', path: 'skills/cmsis-debug-live', dependsOn: [] },
+            { name: 'cmsis-help', description: 'bundled help', category: 'help', kind: 'skill', source: 'bundled', path: 'skills/cmsis-help', dependsOn: [] },
             { name: 'r-pack', description: 'router', category: 'pack', kind: 'router', source: 'generated', path: 'skills/r-pack', dependsOn: ['gen'] },
             { name: 'gen', description: 'gen', category: 'pack', kind: 'skill', source: 'cmsis-agent', path: 'skills/cmsis-agent/gen', dependsOn: [] },
         ],
@@ -72,6 +73,7 @@ suite('Agent skill installer', () => {
         rootA = path.join(tmp, 'home', '.agents', 'skills');
         rootB = path.join(tmp, 'home', '.claude', 'skills');
         writeSkill(path.join(extensionPath, 'skills', 'cmsis-debug-live'), 'cmsis-debug-live', { 'references/guide.md': 'guide' });
+        writeSkill(path.join(extensionPath, 'skills', 'cmsis-help'), 'cmsis-help');
         writeSkill(path.join(extensionPath, 'skills', 'r-pack'), 'r-pack', { 'agents/openai.yaml': 'interface: {}' });
         writeSkill(path.join(extensionPath, 'skills', 'cmsis-agent', 'gen'), 'gen', { 'references/contract.md': 'v1' });
     });
@@ -143,6 +145,27 @@ suite('Agent skill installer', () => {
         assert.ok(fs.existsSync(path.join(rootA, 'my-own-skill', 'SKILL.md')), 'user skill must survive');
         assert.ok(fs.existsSync(path.join(rootB, 'gen', 'SKILL.md')), 'user skill sharing a catalog name must survive');
         assert.deepStrictEqual(report.removed, [{ root: rootA, name: 'gen' }]);
+    });
+
+    test('disabling the AI Skills Pack removes the pack skills this extension installed and keeps the bundled ones', async () => {
+        const enabled = resolveDesiredSkills(catalog, ['r-pack']);
+        await installer().sync(catalog, enabled.explicit, enabled.implied);
+        assert.ok(fs.existsSync(path.join(rootA, 'r-pack', 'SKILL.md')));
+        assert.ok(fs.existsSync(path.join(rootA, 'gen', 'SKILL.md')));
+        writeSkill(path.join(rootA, 'my-own-skill'), 'my-own-skill');
+
+        const disabled = resolveDesiredSkills(catalog, ['r-pack'], { packEnabled: false });
+        const report = await installer().sync(catalog, disabled.explicit, disabled.implied);
+
+        for (const root of [rootA, rootB]) {
+            assert.ok(!fs.existsSync(path.join(root, 'r-pack')), 'router should be removed');
+            assert.ok(!fs.existsSync(path.join(root, 'gen')), 'member should be removed');
+            assert.ok(fs.existsSync(path.join(root, 'cmsis-debug-live', 'SKILL.md')), 'bundled skill stays');
+            assert.ok(fs.existsSync(path.join(root, 'cmsis-help', 'SKILL.md')), 'bundled help stays');
+        }
+        assert.ok(fs.existsSync(path.join(rootA, 'my-own-skill', 'SKILL.md')), 'user skill must survive');
+        assert.deepStrictEqual(report.removed.map(r => r.name).sort(), ['gen', 'gen', 'r-pack', 'r-pack']);
+        assert.deepStrictEqual(disabled.suppressed, ['r-pack']);
     });
 
     test('never overwrites a foreign skill directory of the same name', async () => {

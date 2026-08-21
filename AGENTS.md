@@ -31,7 +31,7 @@ AI Agent (Cline/Copilot/Cursor) → MCP/HTTP → DebugMCPServer → DebuggingHan
 | `DebugState` | Debug session state model | [docs/architecture/debugState.md](docs/architecture/debugState.md) |
 | `DebugConfigurationManager` | Launch configs, language detection | [docs/architecture/debugConfigurationManager.md](docs/architecture/debugConfigurationManager.md) |
 | `AgentConfigurationManager` | AI agent auto-configuration and agent-skill installation | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
-| `skills/` | Bundled Agent Skills: `cmsis-debug-live`, the vendored Open-CMSIS-Pack/cmsis-agent skills, per-category routers, `catalog.json` | [skills/README.md](skills/README.md) |
+| `skills/` | Bundled Agent Skills: `cmsis-debug-live`, the generated `cmsis-help`, the vendored Open-CMSIS-Pack/cmsis-agent skills, per-category routers, `catalog.json` | [skills/README.md](skills/README.md) |
 
 ## Documentation Maintenance
 
@@ -60,7 +60,7 @@ Include in each source file:
 | `npm run lint` | Run ESLint on `src/` |
 | `npm test` | Run all tests (`src/test/*.test.ts`) |
 | `npm run watch` | Compile in watch mode |
-| `npm run skills:sync` | Re-vendor the cmsis-agent skills at the pinned commit and regenerate `skills/catalog.json` + routers (`-- --update` moves the pin to upstream `main`) |
+| `npm run skills:sync` | Re-vendor the cmsis-agent skills at the pinned commit and regenerate `skills/catalog.json`, the routers and `skills/cmsis-help` (`-- --update` moves the pin to upstream `main`) |
 
 ## Code Style & Conventions
 
@@ -91,7 +91,9 @@ Include in each source file:
 |---------|---------|-------------|
 | `cmsis-developer-assistant.serverPort` | 3001 | MCP server port |
 | `cmsis-developer-assistant.timeoutInSeconds` | 180 | Operation timeout |
-| `cmsis-developer-assistant.installedSkills` | `["cmsis-debug-live"]` | Agent skills from `skills/catalog.json` to copy into the user's skills directories (application scope) |
+| `cmsis-developer-assistant.installedSkills` | `[]` | AI Skills Pack skills from `skills/catalog.json` to copy into the user's skills directories; the bundled `cmsis-debug-live` and `cmsis-help` are always installed (application scope) |
+| `cmsis-developer-assistant.aiSkills.enabled` | `true` | Install the AI Skills Pack at all; off removes the pack skills this extension installed and skips the skills setup step and the prompt (application scope) |
+| `cmsis-developer-assistant.aiSkills.promptOnDetect` | `true` | Monthly prompt to install the pack when an agent has the server registered but no pack skill is selected (application scope) |
 
 ## Documentation Resources
 

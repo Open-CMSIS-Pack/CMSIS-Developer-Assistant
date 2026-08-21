@@ -2,7 +2,7 @@
   "name": "cmsis-developer-assistant",
   "displayName": "CMSIS Developer Assistant",
   "description": "Enable AI coding agents to manage and extend CMSIS projects, with a set of AI skills and MCP server to interface to build and debug.",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "publisher": "arm",
   "license": "Apache-2.0 OR MIT",
   "homepage": "https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant",

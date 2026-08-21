@@ -1,6 +1,6 @@
 # TPIP Report for CMSIS Developer Assistant
 
-Generated for release: 2.3.1
+Generated for release: 2.3.2
 
 | *Package* | *Version* | *Repository* | *License* |
 | --- | --- | --- | --- |

@@ -1,0 +1,23 @@
+{
+  "fixture": "corstone-blinky",
+  "targets": [
+    "fvp",
+    "board"
+  ],
+  "budgets": {
+    "maxToolCalls": 25,
+    "maxTurns": 15,
+    "maxWallMs": 900000
+  },
+  "forbidden": {
+    "toolArgs": "add_logpoint|printf"
+  },
+  "id": "undefined-instruction",
+  "prompt": "The LEDs toggle once and then the firmware is dead in a fault handler. Find out what jumped where and why.",
+  "overlay": "overlays/undefined-instruction",
+  "expectedRootCause": "UNDEFINSTR|handlers\\[1\\]|scratch|0xde|function pointer",
+  "expectedTools": [
+    "diagnose_fault"
+  ],
+  "rootCause": "handlers[1] points into a RAM scratch buffer filled with 0xDE; the second tick calls it and executes data (UNDEFINSTR, PC in SRAM)."
+}

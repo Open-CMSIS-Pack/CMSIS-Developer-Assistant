@@ -22,6 +22,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { copilotBatchArgs, getCopilotInvocation, parseEvents, run as runCommand } from './lib/copilotCli.js';
 
 const SKILL_NAME = 'cmsis-debug-live';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -37,48 +38,8 @@ interface ToolEvent {
     data?: { toolName?: string; arguments?: { skill?: string } };
 }
 
-function run(command: string, args: string[], options: childProcess.SpawnSyncOptions = {}): string {
-    const result = childProcess.spawnSync(command, args, {
-        cwd: repoRoot,
-        encoding: 'utf8',
-        maxBuffer: 20 * 1024 * 1024,
-        ...options,
-    });
-    if (result.error) {
-        throw result.error;
-    }
-    if (result.status !== 0) {
-        throw new Error(
-            `${command} ${args.join(' ')} failed with exit code ${result.status}\n` +
-            `${result.stderr || result.stdout}`
-        );
-    }
-    return String(result.stdout);
-}
-
-function getCopilotInvocation(): { command: string; args: string[] } {
-    if (process.platform !== 'win32') {
-        return { command: 'copilot', args: [] };
-    }
-    const copilotPath = run(
-        'powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-Command', '(Get-Command copilot -ErrorAction Stop).Source']
-    ).trim();
-    return { command: 'powershell.exe', args: ['-NoProfile', '-NonInteractive', '-File', copilotPath] };
-}
-
-function parseEvents(output: string): ToolEvent[] {
-    return output
-        .split(/\r?\n/)
-        .filter(Boolean)
-        .flatMap(line => {
-            try {
-                return [JSON.parse(line) as ToolEvent];
-            } catch {
-                return [];
-            }
-        });
-}
+const run = (command: string, args: string[], options: childProcess.SpawnSyncOptions = {}) =>
+    runCommand(command, args, { cwd: repoRoot, ...options });
 
 try {
     run('git', ['worktree', 'add', '--detach', worktreePath, 'HEAD']);
@@ -89,18 +50,9 @@ try {
     fs.cpSync(sourceSkillPath, projectSkillPath, { recursive: true });
 
     const copilot = getCopilotInvocation();
-    const output = run(copilot.command, [...copilot.args,
-        '-C', worktreePath,
-        '-p', prompt,
-        '--output-format', 'json',
-        '--allow-all-tools',
-        '--no-custom-instructions',
-        '--no-remote',
-        '--no-remote-export',
-        '--log-level', 'none',
-    ], { cwd: worktreePath });
+    const output = run(copilot.command, [...copilot.args, ...copilotBatchArgs(worktreePath, prompt)], { cwd: worktreePath });
 
-    const toolCalls = parseEvents(output)
+    const toolCalls = parseEvents<ToolEvent>(output)
         .filter(event => event.type === 'tool.execution_start')
         .map(event => event.data);
     const firstToolCall = toolCalls[0];

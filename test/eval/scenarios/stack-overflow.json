@@ -1,0 +1,23 @@
+{
+  "fixture": "corstone-blinky",
+  "targets": [
+    "fvp",
+    "board"
+  ],
+  "budgets": {
+    "maxToolCalls": 25,
+    "maxTurns": 15,
+    "maxWallMs": 900000
+  },
+  "forbidden": {
+    "toolArgs": "add_logpoint|printf"
+  },
+  "id": "stack-overflow",
+  "prompt": "The firmware faults on the first LED update. Find the root cause; the answer must name the function responsible.",
+  "overlay": "overlays/stack-overflow",
+  "expectedRootCause": "STKOF|stack overflow|pattern_value|MSPLIM",
+  "expectedTools": [
+    "diagnose_fault"
+  ],
+  "rootCause": "pattern_value recurses forever on the '*' pattern (it never advances), each frame carrying a 64-byte scratch array, and crosses the MSPLIM set in Blinky \u2014 STKOF UsageFault."
+}

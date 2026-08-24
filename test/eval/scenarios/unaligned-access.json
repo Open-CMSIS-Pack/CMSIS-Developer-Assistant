@@ -1,0 +1,23 @@
+{
+  "fixture": "corstone-blinky",
+  "targets": [
+    "fvp",
+    "board"
+  ],
+  "budgets": {
+    "maxToolCalls": 25,
+    "maxTurns": 15,
+    "maxWallMs": 900000
+  },
+  "forbidden": {
+    "toolArgs": "add_logpoint|printf"
+  },
+  "id": "unaligned-access",
+  "prompt": "The firmware faults on the first LED update. Find the root cause and the exact expression that is wrong.",
+  "overlay": "overlays/unaligned-access",
+  "expectedRootCause": "UNALIGNED|frame_mask|buf \\+ 1|unaligned",
+  "expectedTools": [
+    "diagnose_fault"
+  ],
+  "rootCause": "frame_mask reads a uint32_t at buf + 1 with UNALIGN_TRP set \u2014 an unaligned word access from a byte-packed frame."
+}

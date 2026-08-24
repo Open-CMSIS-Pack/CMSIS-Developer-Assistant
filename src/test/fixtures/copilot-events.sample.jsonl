@@ -1,0 +1,12 @@
+{"type":"session.start","data":{"sessionId":"synthetic-0001"}}
+{"type":"user.message","data":{"content":"The Blinky firmware faults right after printing. Find the root cause."}}
+{"type":"assistant.message","data":{"content":"I will invoke the cmsis-debug-live skill and diagnose the fault."}}
+{"type":"tool.execution_start","data":{"toolCallId":"c1","toolName":"skill","arguments":{"skill":"cmsis-debug-live"}}}
+{"type":"tool.execution_complete","data":{"toolCallId":"c1","result":"# CMSIS Developer Assistant — Live Cortex-M Debugging ..."}}
+{"type":"tool.execution_start","data":{"toolCallId":"c2","toolName":"cmsis-developer-assistant-get_session_status","arguments":{}}}
+{"type":"tool.execution_complete","data":{"toolCallId":"c2","result":"State: stopped\nSession: Arm-FVP@GDB (launch)\n"}}
+{"type":"tool.execution_start","data":{"toolCallId":"c3","toolName":"cmsis-developer-assistant-diagnose_fault","arguments":{"levels":3}}}
+{"type":"tool.execution_complete","data":{"toolCallId":"c3","result":"=== Fault diagnosis ===\nClass: UsageFault — DIVBYZERO\n"}}
+{"type":"assistant.message","data":{"content":"Root cause: DIVBYZERO — delay_ms / blink_divider with blink_divider = 0 and DIV_0_TRP set in Blinky()."}}
+{"type":"session.usage","data":{"inputTokens":18250,"outputTokens":940}}
+{"type":"something.new","data":{}}

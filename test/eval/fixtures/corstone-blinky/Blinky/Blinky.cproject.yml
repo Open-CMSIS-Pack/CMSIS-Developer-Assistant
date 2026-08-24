@@ -1,0 +1,33 @@
+# Copyright (c) 2024 Arm Limited. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+project:
+  packs:
+    - pack: ARM::V2M_MPS3_SSE_300_BSP@1.5.0
+
+  groups:
+    - group: Documentation
+      files:
+        - file: ./Abstract.txt
+    - group: Main
+      files:
+        - file: ./main.c
+        - file: ./Blinky.c
+    - group: API
+      files:
+        - file: ./API/Include/led_port.h
+        - file: ./API/Source/led_port.c
+
+  components:
+    - component: CMSIS:CORE
+    - component: CMSIS Driver:USART
+    - component: Device:Definition
+    - component: Device:Native Driver:IO
+    - component: Device:Native Driver:SysCounter
+    - component: Device:Native Driver:SysTimer
+    - component: Device:Native Driver:Timeout
+    - component: Device:Native Driver:UART
+    - component: Device:Startup&C Startup
+    - component: Compiler:CORE
+    - component: Compiler:STDOUT:Custom
+    - component: Device:USART Retarget

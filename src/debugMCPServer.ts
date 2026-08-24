@@ -109,6 +109,35 @@ export const localSerialDispatch: SerialDispatch = (op, args) => {
 };
 
 /**
+ * Behaviour switches for one server instance.
+ *
+ * This module does not import `vscode`, so settings cannot be read here; the
+ * extension resolves them once at activation and hands them over through the
+ * constructor. The values are fixed for the lifetime of the instance and are
+ * applied when each MCP session's `McpServer` is built at `initialize`. A
+ * consumer must never toggle behaviour per call on them: the tool list a
+ * client sees has to stay stable between turns, otherwise the client's prompt
+ * cache is invalidated on every request. A changed setting therefore takes
+ * effect for the next client connection after a window reload.
+ */
+export interface DebugMCPServerOptions {
+    /**
+     * Register the `serial_*` tools. Default `true`. Off drops them from the
+     * tool list for clients that never touch a UART, which shrinks what every
+     * turn carries.
+     */
+    serialEnabled?: boolean;
+    /** Per-tool call telemetry. */
+    telemetry?: {
+        /**
+         * Append one JSON line per tool call to this file. Empty or unset
+         * disables the sink; the in-memory statistics are always kept.
+         */
+        jsonlPath?: string;
+    };
+}
+
+/**
  * Main MCP server class that exposes debugging functionality as tools and resources.
  * Uses the official @modelcontextprotocol/sdk with SSE transport over express.
  */
@@ -132,12 +161,17 @@ export class DebugMCPServer {
      */
     private transports: Record<string, StreamableHTTPServerTransport> = {};
 
+    /** See {@link DebugMCPServerOptions}; fixed for this instance. */
+    private readonly options: Readonly<DebugMCPServerOptions>;
+
     constructor(
         port: number,
         timeoutInSeconds: number,
         hardwareTimeouts?: Partial<HardwareTimeouts>,
         handlerFactory?: () => SessionHandlers,
+        options: DebugMCPServerOptions = {},
     ) {
+        this.options = Object.freeze({ ...options });
         if (handlerFactory) {
             this.handlerFactory = handlerFactory;
         } else {
@@ -149,6 +183,11 @@ export class DebugMCPServer {
             this.handlerFactory = () => ({ debug: handler, serial: localSerialDispatch });
         }
         this.port = port;
+    }
+
+    /** The options this instance was built with. */
+    public getOptions(): Readonly<DebugMCPServerOptions> {
+        return this.options;
     }
 
     /**

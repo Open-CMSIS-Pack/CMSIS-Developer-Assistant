@@ -157,6 +157,30 @@ async function main() {
     check('GET /mcp after DELETE is rejected', afterDelete.status === 400, `status=${afterDelete.status}`);
 
     await server.stop();
+
+    // 7. Server options are accepted, kept for the instance's lifetime and
+    //    readable back. Behaviour behind them (serial gating, telemetry) lands
+    //    with the packages that consume each field; here only the plumbing.
+    const configured = new DebugMCPServer(0, 30, undefined, undefined, { serialEnabled: false });
+    await configured.initialize();
+    await configured.start();
+    const cport = configured.getActualPort();
+    check('server options are readable back', configured.getOptions().serialEnabled === false,
+        JSON.stringify(configured.getOptions()));
+    const cinit = await request(cport, 'POST', {}, {
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'transport-check', version: '1.0.0' } },
+    });
+    const csid = cinit.headers['mcp-session-id'];
+    await request(cport, 'POST', { 'mcp-session-id': csid }, { jsonrpc: '2.0', method: 'notifications/initialized' });
+    const clist = await request(cport, 'POST', { 'mcp-session-id': csid }, {
+        jsonrpc: '2.0', id: 2, method: 'tools/list', params: {},
+    });
+    const ctools = parseSse(clist.body)?.result?.tools ?? [];
+    check('server with options still serves tools/list', ctools.length > 30, `${ctools.length} tools`);
+    await request(cport, 'DELETE', { 'mcp-session-id': csid });
+    await configured.stop();
+
     console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);
     process.exit(failures === 0 ? 0 : 1);
 }

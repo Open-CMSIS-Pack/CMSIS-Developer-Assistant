@@ -17,7 +17,7 @@
 import * as vscode from 'vscode';
 import { randomUUID } from 'node:crypto';
 import { ControlServer } from './controlServer';
-import { DebugMCPServer, PortInUseError, SessionHandlers } from './debugMCPServer';
+import { DebugMCPServer, DebugMCPServerOptions, PortInUseError, SessionHandlers } from './debugMCPServer';
 import { DebuggingExecutor, ConfigurationManager, DebuggingHandler } from '.';
 import { HardwareTimeouts } from './debuggingExecutor';
 import { RoutingDebuggingHandler } from './routingDebuggingHandler';
@@ -40,6 +40,12 @@ export interface CoordinatorOptions {
      * which is what two real windows look like.
      */
     registry?: WorkspaceRegistry;
+    /**
+     * Passed through to the `DebugMCPServer` this window builds when it wins
+     * the router port. Resolved from settings once at activation; see
+     * `DebugMCPServerOptions` for why it is fixed per instance.
+     */
+    serverOptions?: DebugMCPServerOptions;
 }
 
 /**
@@ -113,6 +119,7 @@ export class WindowCoordinator {
             this.options.timeoutInSeconds,
             this.options.hardwareTimeouts,
             () => this.sessionHandlers(),
+            this.options.serverOptions,
         );
 
         try {

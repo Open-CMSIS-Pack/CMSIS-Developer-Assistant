@@ -88,3 +88,16 @@ Each request creates a new `StreamableHTTPServerTransport` instance in stateless
 
 - `cmsis-developer-assistant.serverPort`: Port number (default: 3001)
 - `cmsis-developer-assistant.timeoutInSeconds`: Operation timeout (default: 180)
+
+### Server options
+
+`debugMCPServer.ts` deliberately does not import `vscode`, so it can run headless under `test/transport/vscode-stub.js`. Anything the server needs from settings therefore arrives through the constructor: the port, the operation timeout, the hardware timeouts, the per-session handler factory, and a trailing `DebugMCPServerOptions` object. `WindowCoordinator` passes that object through as `CoordinatorOptions.serverOptions`; `extension.ts` fills it from the settings it reads once at activation.
+
+The options are fixed for the lifetime of a server instance and are read when each MCP session's `McpServer` is built at `initialize`. A consumer must never toggle behaviour per call on them — the tool list a client sees has to stay stable between turns, or the client's prompt cache is invalidated on every request. A changed setting therefore takes effect for the next MCP client connection after a window reload, the same way `serverPort` does.
+
+| Field | Consumed by |
+|-------|-------------|
+| `serialEnabled` | Registration of the `serial_*` tools (issue #23) |
+| `telemetry.jsonlPath` | Per-tool call telemetry sink (issue #24) |
+
+`getOptions()` returns the object read-only, for tests and for later consumers.

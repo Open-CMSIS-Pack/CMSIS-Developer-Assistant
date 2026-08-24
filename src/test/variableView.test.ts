@@ -182,3 +182,54 @@ suite('Variable rendering with redaction', () => {
         assert.doesNotMatch(out, /NOTE: values matching/);
     });
 });
+
+suite('Variable rendering with listing caps', () => {
+
+    const bigScope = (count: number): DapScope[] => ([{
+        name: 'Local',
+        variables: Array.from({ length: count }, (_, i) => ({ name: `v${i}`, value: String(i), type: 'int' })),
+    }]);
+
+    test('an un-narrowed listing is cut at the cap with a footer that says how to widen', () => {
+        const out = renderScopes(bigScope(45), { header: 'Variables', limits: { maxVariables: 40, maxValueChars: 200 } });
+        assert.match(out, /v39: 39 \(int\)/);
+        assert.doesNotMatch(out, /v40: 40/);
+        assert.match(out, /… 5 more, truncated — narrow with variableNames/);
+    });
+
+    test('a listing within the cap has no footer', () => {
+        const out = renderScopes(bigScope(3), { header: 'Variables', limits: { maxVariables: 40, maxValueChars: 200 } });
+        assert.doesNotMatch(out, /truncated/);
+    });
+
+    test('long values are clipped and the clipped length stated', () => {
+        const long = '{' + Array.from({ length: 300 }, (_, i) => i).join(', ') + '}';
+        const out = renderScopes([{ name: 'Local', variables: [{ name: 'buf', value: long, type: 'int [300]' }] }],
+            { header: 'Variables', limits: { maxVariables: 40, maxValueChars: 200 } });
+        assert.match(out, /buf: \{0, 1, 2.{0,200}… \(\+\d+ chars\) \(int \[300\]\)/);
+    });
+
+    test('no limits means nothing is cut', () => {
+        const out = renderScopes(bigScope(45), { header: 'Variables' });
+        assert.match(out, /v44: 44/);
+        assert.doesNotMatch(out, /truncated/);
+    });
+
+    test('redaction runs before clipping, so a secret is never partially shown', () => {
+        const secret = '"sk-' + 'abcdefghijklmnopqrstuvwxyz0123456789'.repeat(8) + '"';
+        const out = renderScopes([{ name: 'Local', variables: [{ name: 'apiKey', value: secret }] }], {
+            header: 'Variables',
+            redact: (name, value) => redactVariableValue(name, value),
+            limits: { maxVariables: 40, maxValueChars: 20 },
+        });
+        assert.match(out, /apiKey: <redacted: possible secret>\n/, 'the placeholder is intact, not clipped');
+        assert.doesNotMatch(out, /sk-abc/);
+    });
+
+    test('the names listing is capped too, with its own hint', () => {
+        const out = renderVariableNames(bigScope(120), { maxVariables: 100 });
+        assert.match(out, /v99: int/);
+        assert.doesNotMatch(out, /v100: int/);
+        assert.match(out, /… 20 more — pass scope: 'local'/);
+    });
+});

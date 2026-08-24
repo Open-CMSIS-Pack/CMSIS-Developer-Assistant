@@ -513,7 +513,7 @@ export class DebugMCPServer {
         // Get variables tool
         mcpServer.registerTool('get_variables_values', {
             description: 'Inspect variable values at the current execution point. This is your window into program state - see what data looks like at runtime, verify assumptions, identify unexpected values, and understand why code behaves as it does. ' +
-                'Omit variableNames to dump the whole scope (usually fine on embedded targets, where frames are small); pass variableNames to read only what you need.',
+                'Omit variableNames to dump the whole scope (capped at 40 variables per scope and 200 chars per value); pass variableNames to read exactly what you need, uncapped.',
             inputSchema: {
                 scope: z.enum(['local', 'global', 'all']).optional().describe("Variable scope: 'local', 'global', or 'all'"),
                 variableNames: z.array(z.string()).min(1).max(50).optional().describe(
@@ -545,12 +545,12 @@ export class DebugMCPServer {
         mcpServer.registerTool('read_memory', {
             description: 'Read a range of bytes from the target\'s memory. ' +
                 'Use this for inspecting SRAM, Flash, peripheral registers, or the stack. ' +
-                'Returns hex dump and/or ASCII representation.',
+                'Returns hex dump and/or ASCII representation. Hex by default; format ascii or both on request.',
             annotations: { readOnlyHint: true, destructiveHint: false },
             inputSchema: {
                 address: z.string().describe("Memory address as hex string, e.g. '0x20000000'"),
                 length: z.number().int().min(1).max(4096).describe('Number of bytes to read (1-4096)'),
-                format: z.enum(['hex', 'ascii', 'both']).default('both').describe('Output format'),
+                format: z.enum(['hex', 'ascii', 'both']).default('hex').describe("'hex' (default), 'ascii', or 'both'"),
                 timeoutMs: z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC),
             },
         }, async (args: { address: string; length: number; format?: 'hex' | 'ascii' | 'both'; timeoutMs?: number }) => {
@@ -637,7 +637,7 @@ export class DebugMCPServer {
         mcpServer.registerTool('get_call_stack', {
             description: 'Return the full call stack (function names, source, line, frameId) for the active thread, ' +
                 'or a specific thread when threadId is provided. Use the returned frameId values with ' +
-                'get_frame_variables to inspect variables of caller frames without changing the active frame.',
+                'get_frame_variables to inspect variables of caller frames without changing the active frame. Paths are workspace-relative; beyond 20 frames the rest is counted unless levels is given.',
             annotations: { readOnlyHint: true, destructiveHint: false },
             inputSchema: {
                 threadId: z.number().int().optional().describe('Optional DAP thread id (from get_threads). Defaults to the active thread.'),
@@ -654,7 +654,7 @@ export class DebugMCPServer {
             description: 'List DAP threads reported by the debug adapter. With an RTOS-aware GDB server ' +
                 '(pyOCD --rtos, J-Link RTOS plugin) each FreeRTOS / RTX / ThreadX task appears as a thread, ' +
                 'matching the xRTOS viewer task list. Returns the thread id, name and top frame; pair with ' +
-                'get_call_stack(threadId=...) to inspect any task\'s call stack.',
+                'get_call_stack(threadId=...) to inspect any task\'s call stack. Lists up to 32 tasks inline.',
             annotations: { readOnlyHint: true, destructiveHint: false },
             inputSchema: { timeoutMs: z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC) },
         }, async (args: { timeoutMs?: number }) => {
@@ -666,7 +666,7 @@ export class DebugMCPServer {
         mcpServer.registerTool('get_frame_variables', {
             description: 'Inspect variables of a specific stack frame by its frameId (obtained from get_call_stack). ' +
                 'Lets you walk up the call stack and examine caller-frame state without changing the ' +
-                'editor\'s active frame.',
+                'editor\'s active frame. Without variableNames the listing is capped (40 per scope, 200 chars per value); with it, uncapped.',
             annotations: { readOnlyHint: true, destructiveHint: false },
             inputSchema: {
                 frameId: z.number().int().describe('DAP frame id, as returned by get_call_stack.'),

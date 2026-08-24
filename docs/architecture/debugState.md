@@ -28,6 +28,9 @@ Debugging operations are asynchronous - the debugger takes time to execute and u
 | `frameId` | `number \| null` | DAP frame identifier |
 | `threadId` | `number \| null` | DAP thread identifier |
 | `frameName` | `string \| null` | Current function/method name |
+| `stackTrace` | `StackFrame[]` | Frames of the active thread (up to 50 from the adapter) |
+| `breakpoints` | `string[]` | Every breakpoint in the window as `file:line [modifiers]` |
+| `configurationName` | `string \| null` | The launch configuration of the session |
 
 ## Key Methods
 
@@ -41,6 +44,8 @@ Debugging operations are asynchronous - the debugger takes time to execute and u
 | `updateContext()` | Set frame and thread IDs |
 | `updateLocation()` | Set file and line information |
 | `updateFrameName()` | Set the current frame name |
+| `toString()` | Full JSON snapshot — every field, every frame, every breakpoint. Used when a session comes up (`start_debugging`, `cmsis_action load_and_debug` / `attach`) |
+| `toCompactString({ includeBreakpoints })` | The form motion tools return after every step, continue, pause and `wait_for_stop`: location, frame ids, the top 5 frames with the rest counted (`get_call_stack` has them all), the breakpoint list only when the handler saw it change (a count otherwise); no `fileName` / `configurationName`. Paid on every move, so it keeps what the next step needs |
 
 ## Key Code Locations
 

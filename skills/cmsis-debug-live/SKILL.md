@@ -153,7 +153,10 @@ method.
    without reading values. On a slow probe that turns thirty reads into one.
 4. **Read what you need.** `get_variables_values` (optionally with
    `variableNames`), `get_call_stack` then `get_frame_variables` to inspect a
-   caller without disturbing the active frame.
+   caller without disturbing the active frame. Listings without
+   `variableNames` are capped (40 per scope, 200 chars per value) and say so;
+   pass names to lift the cap. Motion tools return a compact state — top
+   frames and the breakpoints only when they changed.
 5. **Cross-check against the hardware.** A variable and the peripheral can
    disagree — see below.
 

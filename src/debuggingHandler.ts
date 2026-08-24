@@ -15,8 +15,11 @@ import {
     formatMissingNames,
     renderScopes,
     renderVariableNames,
+    DEFAULT_LISTING_LIMITS,
+    DEFAULT_NAME_LISTING_LIMIT,
     selectVariables,
 } from './core/variableView';
+import { shortenPath, truncateList } from './core/textBudget';
 import { getRecentDiagnostics } from './utils/sessionStateTracker';
 import { logger } from './utils/logger';
 
@@ -112,6 +115,39 @@ export type CmsisAction =
  */
 export class DebuggingHandler implements IDebuggingHandler {
     private readonly numNextLines: number = 3;
+
+    /**
+     * The breakpoint list as last reported in a state snapshot. Motion tools
+     * repeat it only when it changed; otherwise the compact state carries a
+     * count. One per handler, i.e. per window — two agents on one window see
+     * each other's "unchanged", which is harmless (the list is a call away).
+     */
+    private lastEmittedBreakpoints: string | null = null;
+
+    /** Frames shown inline by get_call_stack when the caller did not ask for a depth. */
+    private static readonly CALL_STACK_INLINE_FRAMES = 20;
+
+    /** Threads shown inline by get_threads. */
+    private static readonly THREADS_INLINE = 32;
+
+    /** Full state, as when a session comes up; also seeds the breakpoint diff. */
+    private fullState(state: DebugState): string {
+        this.lastEmittedBreakpoints = state.breakpoints.join('\n');
+        return state.toString();
+    }
+
+    /** Compact state for motion tools; the breakpoint list only when it changed. */
+    private compactState(state: DebugState): string {
+        const key = state.breakpoints.join('\n');
+        const changed = key !== this.lastEmittedBreakpoints;
+        this.lastEmittedBreakpoints = key;
+        return state.toCompactString({ includeBreakpoints: changed });
+    }
+
+    /** Workspace roots, for shortening source paths in listings. */
+    private workspaceRoots(): string[] {
+        return vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [];
+    }
     private readonly executionDelay: number = 300; // ms to wait for debugger updates
     private readonly timeoutInSeconds: number;
 
@@ -193,7 +229,7 @@ export class DebuggingHandler implements IDebuggingHandler {
                     }
                     const currentState = await this.executor.getCurrentDebugState(this.numNextLines);
                     const target = fileFullPath || selectedConfigName;
-                    return `Debug session started successfully for: ${target} using configuration '${selectedConfigName}'. Current state: ${currentState.toString()}`;
+                    return `Debug session started successfully for: ${target} using configuration '${selectedConfigName}'. Current state: ${this.fullState(currentState)}`;
                 } else {
                     throw new Error(`Failed to start debug session with configuration '${selectedConfigName}'.`);
                 }
@@ -224,7 +260,7 @@ export class DebuggingHandler implements IDebuggingHandler {
                 const configInfo = selectedConfigName ? ` using configuration '${selectedConfigName}'` : ' with default configuration';
                 const testInfo = testName ? ` (test: ${testName})` : '';
                 const currentState = await this.executor.getCurrentDebugState(this.numNextLines);
-                return `Debug session started successfully for: ${fileFullPath}${configInfo}${testInfo}. Current state: ${currentState.toString()}`;
+                return `Debug session started successfully for: ${fileFullPath}${configInfo}${testInfo}. Current state: ${this.fullState(currentState)}`;
             } else {
                 throw new Error('Failed to start debug session. Make sure the appropriate language extension is installed.');
             }
@@ -430,7 +466,7 @@ export class DebuggingHandler implements IDebuggingHandler {
         if (result.sessionEnded) {
             return `Pause requested but the debug session ended. The target may have crashed.`;
         }
-        return `Target paused. ${result.state.toString()}`;
+        return `Target paused. ${this.compactState(result.state)}`;
     }
 
     /**
@@ -469,7 +505,7 @@ export class DebuggingHandler implements IDebuggingHandler {
             const head = result.kind === 'already-stopped'
                 ? `Target was already stopped (reason: ${result.reason ?? 'unknown'}).`
                 : `Target stopped (reason: ${result.reason ?? 'unknown'}${threadInfo}).`;
-            return `${head}\n\n${state.toString()}`;
+            return `${head}\n\n${this.compactState(state)}`;
         });
     }
 
@@ -939,7 +975,7 @@ export class DebuggingHandler implements IDebuggingHandler {
             if (scopes.length === 0) {
                 return 'No variable scopes available at current execution point.';
             }
-            return renderVariableNames(scopes);
+            return renderVariableNames(scopes, { maxVariables: DEFAULT_NAME_LISTING_LIMIT });
         });
     }
 
@@ -972,7 +1008,11 @@ export class DebuggingHandler implements IDebuggingHandler {
                     'Call list_variable_names to see what is available here.';
             }
 
-            out += renderScopes(selected, { header: 'Variables', redact: this.redactor() });
+            out += renderScopes(selected, {
+                header: 'Variables',
+                redact: this.redactor(),
+                limits: variableNames?.length ? undefined : DEFAULT_LISTING_LIMITS,
+            });
             out += formatMissingNames(missing);
             return out;
         });
@@ -1134,7 +1174,7 @@ export class DebuggingHandler implements IDebuggingHandler {
      * session termination so the MCP client sees an unambiguous outcome.
      */
     private formatAfterExecution(result: { state: DebugState; timedOut: boolean; sessionEnded: boolean }, op: string): string {
-        const body = result.state.toString();
+        const body = this.compactState(result.state);
         if (result.sessionEnded) {
             return `${body}\n\n⚠️ Debug session ended during '${op}'. The target may have run to completion, crashed, or lost its connection.`;
         }
@@ -1173,11 +1213,14 @@ export class DebuggingHandler implements IDebuggingHandler {
                 return lines.join('\n');
             }
 
-            // Read PC and current frame to localise the firmware.
+            // Read PC and LR to localise the firmware — two registers, not
+            // the full set; read_core_registers is a call away if needed.
             let pcText = '<unavailable>';
+            let lrText = '';
             try {
-                const regs = await this.executor.readCoreRegisters(5_000);
+                const regs = await this.executor.readCoreRegisters(5_000, ['pc', 'lr']);
                 if (regs.pc) { pcText = this.normalizeRegToHex(regs.pc); }
+                if (regs.lr) { lrText = `, LR = ${this.normalizeRegToHex(regs.lr)}`; }
             } catch (err) {
                 pcText = `<read failed: ${err instanceof Error ? err.message : String(err)}>`;
             }
@@ -1187,7 +1230,7 @@ export class DebuggingHandler implements IDebuggingHandler {
             const loc = state.fileName && state.currentLine !== null
                 ? ` at ${state.fileName}:${state.currentLine}`
                 : '';
-            lines.push(`Paused successfully. PC = ${pcText}${frame}${loc}.`);
+            lines.push(`Paused successfully. PC = ${pcText}${lrText}${frame}${loc}.`);
             if (state.currentLineContent) {
                 lines.push(`  Current line: ${state.currentLineContent}`);
             }
@@ -1239,7 +1282,7 @@ REQUIRED NEXT STEPS:
      * Read target memory
      */
     public async handleReadMemory(args: { address: string; length: number; format?: 'hex' | 'ascii' | 'both'; timeoutMs?: number }): Promise<string> {
-        const { address, length, format = 'both', timeoutMs } = args;
+        const { address, length, format = 'hex', timeoutMs } = args;
 
         return withHandlerTimeout('read_memory', timeoutMs, async () => {
             await this.ensureStoppedSession('read memory');
@@ -1430,13 +1473,23 @@ REQUIRED NEXT STEPS:
             if (frames.length === 0) {
                 return 'No stack frames available.';
             }
+            // Paths workspace-relative; a deep stack collapsed unless the
+            // caller asked for a depth — 50 frames of absolute paths is the
+            // kind of result that compacts an agent's context for nothing.
+            const roots = this.workspaceRoots();
+            const { shown, hidden } = args.levels !== undefined
+                ? { shown: frames, hidden: 0 }
+                : truncateList(frames, DebuggingHandler.CALL_STACK_INLINE_FRAMES);
             const lines: string[] = [];
             lines.push(`Call stack (${frames.length} frame${frames.length === 1 ? '' : 's'}):`);
-            frames.forEach((f, i) => {
-                const loc = f.source ? `${f.source}:${f.line ?? '?'}` : `<no source>:${f.line ?? '?'}`;
+            shown.forEach((f, i) => {
+                const loc = f.source ? `${shortenPath(f.source, roots)}:${f.line ?? '?'}` : `<no source>:${f.line ?? '?'}`;
                 const fid = f.frameId !== undefined ? ` [frameId=${f.frameId}]` : '';
                 lines.push(`  #${i.toString().padStart(2, ' ')}  ${f.name}  @ ${loc}${fid}`);
             });
+            if (hidden > 0) {
+                lines.push(`  … ${hidden} more frames — pass levels to see all`);
+            }
             lines.push('');
             lines.push('Tip: use get_frame_variables with a frameId to inspect variables of a specific frame.');
             return lines.join('\n');
@@ -1454,13 +1507,18 @@ REQUIRED NEXT STEPS:
             if (threads.length === 0) {
                 return 'No threads reported by the debug adapter.';
             }
+            const roots = this.workspaceRoots();
+            const { shown, hidden } = truncateList(threads, DebuggingHandler.THREADS_INLINE);
             const lines: string[] = [];
             lines.push(`Threads / RTOS tasks (${threads.length}):`);
-            for (const t of threads) {
+            for (const t of shown) {
                 const top = t.topFrame
-                    ? `  → ${t.topFrame.name} @ ${t.topFrame.source ?? '<no source>'}:${t.topFrame.line ?? '?'}`
+                    ? `  → ${t.topFrame.name} @ ${t.topFrame.source ? shortenPath(t.topFrame.source, roots) : '<no source>'}:${t.topFrame.line ?? '?'}`
                     : '';
                 lines.push(`  [${t.id}] ${t.name}${top}`);
+            }
+            if (hidden > 0) {
+                lines.push(`  … ${hidden} more threads`);
             }
             lines.push('');
             lines.push('Tip: pass a threadId to get_call_stack to inspect a specific task.');
@@ -1494,8 +1552,11 @@ REQUIRED NEXT STEPS:
                 return `None of the requested variables are in scope at frameId=${frameId}: ${variableNames.join(', ')}.`;
             }
 
-            return renderScopes(selected, { header: `Variables for frameId=${frameId}`, redact: this.redactor() })
-                + formatMissingNames(missing);
+            return renderScopes(selected, {
+                header: `Variables for frameId=${frameId}`,
+                redact: this.redactor(),
+                limits: variableNames?.length ? undefined : DEFAULT_LISTING_LIMITS,
+            }) + formatMissingNames(missing);
         });
     }
 
@@ -1799,7 +1860,7 @@ REQUIRED NEXT STEPS:
                     if (survived.stable) {
                         const state = await this.executor.getCurrentDebugState(this.numNextLines);
                         return `CMSIS '${args.action}' completed — debug session survived the connect ` +
-                            `(${survived.detail}). State: ${state.toString()}`;
+                            `(${survived.detail}). State: ${this.fullState(state)}`;
                     }
                     return `CMSIS '${args.action}' started a debug session but it did NOT survive the initial ` +
                         `connect — ${survived.detail}. ` +

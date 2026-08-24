@@ -75,7 +75,7 @@ export interface IDebuggingExecutor {
     readMemoryWord(address: string, timeoutMs?: number): Promise<number>;
     writeMemoryWord(address: string, value: number, timeoutMs?: number): Promise<void>;
     resetTarget(options: { method?: 'auto' | ResetMethod; halt?: boolean; timeoutMs?: number }): Promise<ResetOutcome>;
-    readCoreRegisters(timeoutMs?: number): Promise<Record<string, string>>;
+    readCoreRegisters(timeoutMs?: number, names?: string[]): Promise<Record<string, string>>;
     readCycleCounter(timeoutMs?: number): Promise<{ cycles: number; enabledNow: boolean; present: boolean }>;
     readPeripheralRegister(peripheral: string, register?: string, timeoutMs?: number): Promise<string>;
     getFaultInfo(timeoutMs?: number): Promise<string>;
@@ -1273,11 +1273,13 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     /**
      * Read Cortex-M core registers (R0-R15, xPSR, MSP, PSP, CONTROL, FAULTMASK, BASEPRI, PRIMASK).
      */
-    public async readCoreRegisters(timeoutMs?: number): Promise<Record<string, string>> {
+    public async readCoreRegisters(timeoutMs?: number, names?: string[]): Promise<Record<string, string>> {
         const session = resolveActiveSession();
         if (!session) { throw new Error('No active debug session'); }
 
-        const registerNames = [
+        // One DAP evaluate per register, so a caller that needs two (the
+        // recovery path wants PC and LR) should not pay for twenty-three.
+        const registerNames = names?.length ? names : [
             'r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7',
             'r8', 'r9', 'r10', 'r11', 'r12', 'sp', 'lr', 'pc',
             'xpsr', 'msp', 'psp', 'control', 'faultmask', 'basepri', 'primask',

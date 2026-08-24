@@ -179,7 +179,8 @@ Software breakpoints (which patch Flash without a comparator) are *not* an optio
 `list_variable_names` reports what is in scope by **name and type only**, reading no values. `get_variables_values` then reads them — pass `variableNames` to fetch just what you need, or omit it to dump the whole scope.
 
 - On a **slow probe or a large frame**, discover first and then request two names instead of thirty. That is one round trip instead of thirty.
-- On a small frame, omitting `variableNames` is fine and usually what you want — embedded frames are small.
+- On a small frame, omitting `variableNames` is fine and usually what you want — embedded frames are small. Without `variableNames` a listing is capped at 40 variables per scope and 200 characters per value, with a footer saying how many were left out; with `variableNames` nothing is capped.
+- Step, continue, pause and `wait_for_stop` return a compact state: the location, the top 5 frames (the rest counted — `get_call_stack` has them all, workspace-relative, 20 inline unless you pass `levels`), and the breakpoint list only when it changed.
 - Names that match nothing are reported back explicitly, so a typo does not look like "the variable does not exist".
 - To inspect a **caller's** frame without disturbing the active one: `get_call_stack` → take a `frameId` → `get_frame_variables`.
 - `evaluate_expression` evaluates C expressions in the current frame; `-exec …` passes a GDB command through (`-exec x/8xw $sp`, `-exec info registers`).

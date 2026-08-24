@@ -138,6 +138,23 @@ async function main() {
         check(`tools/list includes ${expected}`, names.includes(expected));
     }
 
+    // 4b. get_debug_instructions serves one topic on request and a small
+    //     overview with the topic list by default.
+    const topicCall = await request(port, 'POST', { 'mcp-session-id': sid }, {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'get_debug_instructions', arguments: { topic: 'breakpoints' } },
+    });
+    const topicText = parseSse(topicCall.body)?.result?.content?.[0]?.text ?? '';
+    check('get_debug_instructions serves the breakpoints topic', /FPB/.test(topicText) && !/CFSR/.test(topicText),
+        `${topicText.length} chars`);
+    const overviewCall = await request(port, 'POST', { 'mcp-session-id': sid }, {
+        jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'get_debug_instructions', arguments: {} },
+    });
+    const overviewText = parseSse(overviewCall.body)?.result?.content?.[0]?.text ?? '';
+    check('get_debug_instructions defaults to the overview with the topic list',
+        /## Topics/.test(overviewText) && overviewText.length < 3500 && overviewText.length < topicText.length * 2,
+        `${overviewText.length} chars`);
+
     // 5. REGRESSION: three consecutive get_threads on one session must all return.
     for (let i = 1; i <= 3; i++) {
         const call = await Promise.race([
@@ -161,15 +178,16 @@ async function main() {
     let statsJson = null;
     try { statsJson = JSON.parse(statsText); } catch { /* reported by the check */ }
     check('stats resource counts the tool calls',
-        !!statsJson && statsJson.session.calls >= 3 && statsJson.session.perTool.get_threads?.calls === 3,
+        !!statsJson && statsJson.session.calls >= 5 && statsJson.session.perTool.get_threads?.calls === 3
+            && statsJson.session.perTool.get_debug_instructions?.calls === 2,
         statsJson ? `session.calls=${statsJson.session.calls}` : statsText.slice(0, 120));
     const status = await request(port, 'POST', { 'mcp-session-id': sid }, {
         jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
     });
     const statusText = parseSse(status.body)?.result?.content?.[0]?.text ?? '';
-    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 3 calls/m.test(statusText),
+    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 5 calls/m.test(statusText),
         statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
-    check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 4,
+    check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 6,
         `${server.getMetrics().totals().calls} calls`);
 
     // 7. DELETE tears the session down

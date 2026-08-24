@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Changed
+- **`get_debug_instructions` takes a `topic`** — the guide for harnesses that do not load skills (GitHub Copilot Chat) no longer arrives as one 21 KB block. Without `topic` the tool returns a ~2 KB overview (the critical steps, the debugger-first rule) plus the list of topics; `session`, `build`, `breakpoints`, `inspection`, `faults` and `troubleshooting` return one section each. The guide itself was restructured around those topics (marker comments a Markdown reader never sees), gained a `faults` section (EXC_RETURN, the stacked frame, resolving BFAR, the usual cause per flag) and a `build` section (cmsis_action result line, long builds, flash, attach), and its inherited root-cause examples about `getUserById()`, `parseFloat()` and payment forms were replaced by Cortex-M ones (stale D-cache after DMA, an unclocked peripheral, a watchdog fed from a blocking task, a stale `SystemCoreClock`). The full guide stays available as the `cmsis-developer-assistant://docs/debug_instructions` resource; shipped docs are now read once per server instance.
+
 ## [2.3.5] - 2026-08-24
 
 ### Added

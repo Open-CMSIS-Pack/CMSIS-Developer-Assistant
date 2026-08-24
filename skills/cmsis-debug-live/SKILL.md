@@ -87,8 +87,10 @@ If those files are missing, build first (`cmsis_action` with `action='build'`).
 If `launch.json` is stale, the user has to regenerate it: **CMSIS Solution →
 Manage Solution → Debugger → Apply**. You cannot do that step for them.
 
-`get_debug_instructions` returns the full version of this, including the pack
-documentation notes.
+`get_debug_instructions` with `topic: 'build'` returns the full version of this,
+including the pack documentation notes; without `topic` it returns a short
+overview and the list of topics (`session`, `build`, `breakpoints`,
+`inspection`, `faults`, `troubleshooting`).
 
 ---
 

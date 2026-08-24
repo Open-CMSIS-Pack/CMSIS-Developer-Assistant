@@ -19,6 +19,7 @@ import { SerialOpName } from './core/opTable';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { MeasuredMcpServer } from './core/measuredMcpServer';
 import { ToolMetrics, ToolSample, formatBytes } from './core/toolMetrics';
+import { TOPICS, Topic, sliceTopic } from './core/instructionTopics';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'node:crypto';
@@ -291,14 +292,30 @@ export class DebugMCPServer {
     ) {
         const TIMEOUT_DESC = 'Optional per-call timeout in milliseconds (capped to 60 000). Overrides the default for this single tool call. Use it when you can estimate the work and want a tighter or looser bound.';
 
-        // Get debug instructions tool (for clients that don't support MCP resources like GitHub Copilot)
+        // Get debug instructions tool (for clients that don't support MCP
+        // resources like GitHub Copilot). Served by topic so a harness pays for
+        // one section, not the whole guide, on every session.
         mcpServer.registerTool('get_debug_instructions', {
-            description: 'Get the debugging guide with step-by-step instructions for effective debugging. ' +
-                'Returns comprehensive guidance including breakpoint strategies, root cause analysis framework, ' +
-                'and best practices. Call this before starting a debug session.',
-        }, async () => {
+            description: 'The debugging guide for harnesses that do not load the "cmsis-debug-live" Agent Skill. ' +
+                'Without `topic` it returns a short overview plus the list of topics; pass `topic` for one section: ' +
+                'session (state gate, several windows), build (target awareness, cmsis_action / flash / start_debugging), ' +
+                'breakpoints (strategy, conditions, logpoints, FPB budget), inspection (run-and-wait, reset, cycle timing, ' +
+                'variables, registers, peripherals), faults (decoding a HardFault), troubleshooting (root cause, not symptom).',
+            annotations: { readOnlyHint: true, destructiveHint: false },
+            inputSchema: {
+                topic: z.enum(TOPICS).optional().describe('Section to return. Default: overview (~2 KB) with the topic list.'),
+            },
+        }, async (args: { topic?: Topic }) => {
             const content = await this.loadMarkdownFile('agent-resources/debug_instructions.md');
-            return { content: [{ type: 'text' as const, text: content }] };
+            let text: string;
+            try {
+                text = sliceTopic(content, args.topic);
+            } catch (err) {
+                // A broken marker in the shipped guide must not take the tool down.
+                logger.warn(`get_debug_instructions: cannot slice topics (${err instanceof Error ? err.message : String(err)}); serving the whole guide`);
+                text = content;
+            }
+            return { content: [{ type: 'text' as const, text }] };
         });
 
         // Start debugging tool
@@ -1026,20 +1043,40 @@ export class DebugMCPServer {
         );
     }
 
+    /** Shipped docs are immutable per install, so each is read once per server instance. */
+    private readonly markdownCache = new Map<string, string>();
+
     /**
      * Load content from a Markdown file in the docs directory
      */
     private async loadMarkdownFile(relativePath: string): Promise<string> {
+        const cached = this.markdownCache.get(relativePath);
+        if (cached !== undefined) {
+            return cached;
+        }
+        // Packaged, docs/ sits next to dist/; compiled to out/src for the
+        // headless transport harness it is one level further up.
+        const candidates = [
+            path.join(__dirname, '..', 'docs', relativePath),
+            path.join(__dirname, '..', '..', 'docs', relativePath),
+        ];
         try {
-            // Get the extension's installation directory
-            const extensionPath = __dirname; // This points to the compiled extension's directory
-            const docsPath = path.join(extensionPath, '..', 'docs', relativePath);
-
-            console.log(`Loading markdown file from: ${docsPath}`);
-
-            // Read the file content
-            const content = await fs.promises.readFile(docsPath, 'utf8');
-            console.log(`Successfully loaded ${relativePath}, content length: ${content.length}`);
+            let content: string | undefined;
+            let docsPath = candidates[0];
+            for (const candidate of candidates) {
+                try {
+                    content = await fs.promises.readFile(candidate, 'utf8');
+                    docsPath = candidate;
+                    break;
+                } catch {
+                    // try the next location
+                }
+            }
+            if (content === undefined) {
+                throw new Error(`not found at ${candidates.join(' or ')}`);
+            }
+            logger.debug(`Loaded ${relativePath} (${content.length} chars) from ${docsPath}`);
+            this.markdownCache.set(relativePath, content);
 
             return content;
         } catch (error) {

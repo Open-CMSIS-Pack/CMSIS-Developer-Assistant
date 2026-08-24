@@ -4,6 +4,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { sliceTopic } from '../core/instructionTopics';
 
 /**
  * The skill's frontmatter description and the MCP `instructions` block are
@@ -75,5 +76,17 @@ suite('Debug skill guidance', () => {
         // consistent (skills/cmsis-debug-live/README.md).
         matches(instructionsDoc, /^## .*DEBUGGER FIRST/m, 'instructionsDoc');
         matches(instructionsDoc, /printf/, 'instructionsDoc');
+        // …and the rule is in the overview a topic-less call returns, not
+        // buried in a section the harness has to ask for.
+        const overview = sliceTopic(instructionsDoc);
+        matches(overview, /^## .*DEBUGGER FIRST/m, 'overview');
+        matches(overview, /printf/, 'overview');
+    });
+
+    test('the guide speaks Cortex-M, not web apps', () => {
+        // The inherited root-cause examples (getUserById, processOrder,
+        // parseFloat) were replaced by embedded ones; they must not creep back.
+        doesNotMatch(instructionsDoc, /getUserById|processOrder|parseFloat|"def" in python/, 'instructionsDoc');
+        matches(instructionsDoc, /BFAR/, 'instructionsDoc');
     });
 });

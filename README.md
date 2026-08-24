@@ -129,7 +129,7 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 |------|-------------|
 | `get_session_status` | Classifies the session as `no-session`, `initializing`, `running`, `stopped`, or `unresponsive`, with a hint for each state. Never throws. |
 | `check_target_connection` | Low-cost liveness check of the debug adapter and probe. |
-| `get_debug_instructions` | Returns the debugging guide for agents that cannot read MCP resources (such as GitHub Copilot). |
+| `get_debug_instructions` | Returns the debugging guide for agents that cannot read MCP resources (such as GitHub Copilot): a short overview with the topic list by default, or one section with `topic` (`session`, `build`, `breakpoints`, `inspection`, `faults`, `troubleshooting`). |
 | `list_debug_windows`, `select_debug_window` | Shows the VS Code windows the server can reach and pins one for this session. Relevant when more than one window is open. |
 
 ### MCP resources

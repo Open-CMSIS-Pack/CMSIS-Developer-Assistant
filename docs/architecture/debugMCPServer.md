@@ -58,7 +58,7 @@ Each request creates a new `StreamableHTTPServerTransport` instance in stateless
 
 | Tool | Description |
 |------|-------------|
-| `get_debug_instructions` | Get debugging guide (for clients that don't support resources) |
+| `get_debug_instructions` | Debugging guide for clients that don't support resources — overview and topic list by default, one section with `topic` (sliced by `src/core/instructionTopics.ts` from marker comments in the guide) |
 | `start_debugging` | Start a debug session (supports `configurationName` passthrough for CMSIS `gdbtarget` configs) |
 | `stop_debugging` | Stop current session |
 | `step_over/into/out` | Stepping commands |

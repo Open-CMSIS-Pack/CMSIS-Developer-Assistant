@@ -85,7 +85,10 @@ function buildTests(cfg: BoardConfig): TestCase[] {
 
     return [
         // ── Phase 1: no-session probes ─────────────────────────────────
-        { name: 'get_debug_instructions',  tool: 'get_debug_instructions', estimatedMs: 500 },
+        { name: 'get_debug_instructions',  tool: 'get_debug_instructions', estimatedMs: 500,
+          validate: t => /## Topics/.test(t) || 'overview without the topic list' },
+        { name: 'get_debug_instructions (faults)', tool: 'get_debug_instructions', args: { topic: 'faults' }, estimatedMs: 500,
+          validate: t => /CFSR/.test(t) || 'faults topic without CFSR' },
         { name: 'get_session_status (idle)', tool: 'get_session_status',   estimatedMs: 500 },
         { name: 'check_target_connection (idle)', tool: 'check_target_connection', estimatedMs: 1000 },
 

@@ -2,6 +2,7 @@
 // Copyright 2026 Arm Limited and contributors
 
 import * as vscode from 'vscode';
+import type { FaultRegisters } from './core/faultDecoder';
 import { DebugState, StackFrame, formatBreakpointModifiers } from './debugState';
 import { customRequestWithTimeout, HardwareTimeoutError, withTimeout } from './utils/timeout';
 import {
@@ -79,6 +80,8 @@ export interface IDebuggingExecutor {
     readCycleCounter(timeoutMs?: number): Promise<{ cycles: number; enabledNow: boolean; present: boolean }>;
     readPeripheralRegister(peripheral: string, register?: string, timeoutMs?: number): Promise<string>;
     getFaultInfo(timeoutMs?: number): Promise<string>;
+    readFaultRegisters(timeoutMs?: number): Promise<FaultRegisters>;
+    readExceptionFrame(stackPointer: number, timeoutMs?: number): Promise<Buffer>;
     getDeviceInfo(): Promise<string>;
     checkTargetConnection(): Promise<string>;
     hasDebugSession(): boolean;
@@ -1376,20 +1379,43 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * Read and decode Cortex-M fault status registers.
      */
     public async getFaultInfo(timeoutMs?: number): Promise<string> {
-        const { FAULT_REGISTER_ADDRESSES, decodeFaultRegisters } = await import('./core/faultDecoder.js');
+        const { decodeFaultRegisters } = await import('./core/faultDecoder.js');
+        return decodeFaultRegisters(await this.readFaultRegisters(timeoutMs));
+    }
 
-        // Bound the whole 6-register sweep to the supplied (or default) cap.
+    /**
+     * The six fault status registers. They are contiguous in the SCS, so one
+     * 24-byte read covers them; a server that rejects block reads of the PPB
+     * gets the word-by-word fallback.
+     */
+    public async readFaultRegisters(timeoutMs?: number): Promise<FaultRegisters> {
+        const { FAULT_REGISTER_ADDRESSES, FAULT_REGISTER_BLOCK, faultRegistersFromBlock } = await import('./core/faultDecoder.js');
         const overallMs = capTimeout(timeoutMs, this.timeouts.memoryReadMs);
-        return withTimeout('getFaultInfo', overallMs, async () => {
+        return withTimeout('readFaultRegisters', overallMs, async () => {
             const dapMs = capTimeout(timeoutMs, this.timeouts.dapRequestMs);
+            try {
+                const block = await this.readMemory(FAULT_REGISTER_BLOCK.address, FAULT_REGISTER_BLOCK.bytes, dapMs);
+                if (block.length >= FAULT_REGISTER_BLOCK.bytes) {
+                    return faultRegistersFromBlock(block);
+                }
+            } catch (err) {
+                if (err instanceof HardwareTimeoutError) { throw err; }
+                // fall through to single words
+            }
             const CFSR  = await this.readMemoryWord(FAULT_REGISTER_ADDRESSES.CFSR, dapMs);
             const HFSR  = await this.readMemoryWord(FAULT_REGISTER_ADDRESSES.HFSR, dapMs);
             const DFSR  = await this.readMemoryWord(FAULT_REGISTER_ADDRESSES.DFSR, dapMs);
             const MMFAR = await this.readMemoryWord(FAULT_REGISTER_ADDRESSES.MMFAR, dapMs);
             const BFAR  = await this.readMemoryWord(FAULT_REGISTER_ADDRESSES.BFAR, dapMs);
             const AFSR  = await this.readMemoryWord(FAULT_REGISTER_ADDRESSES.AFSR, dapMs);
-            return decodeFaultRegisters({ CFSR, HFSR, DFSR, MMFAR, BFAR, AFSR });
+            return { CFSR, HFSR, DFSR, MMFAR, BFAR, AFSR };
         });
+    }
+
+    /** The basic exception frame (8 words) at `stackPointer`. */
+    public async readExceptionFrame(stackPointer: number, timeoutMs?: number): Promise<Buffer> {
+        const dapMs = capTimeout(timeoutMs, this.timeouts.dapRequestMs);
+        return this.readMemory(`0x${(stackPointer >>> 0).toString(16)}`, 32, dapMs);
     }
 
     /**

@@ -395,11 +395,9 @@ export class DebugMCPServer {
         // Wait-for-stop tool — blocks until the target next stops, without
         // issuing any execution command itself.
         mcpServer.registerTool('wait_for_stop', {
-            description: 'Block until the target next stops (breakpoint, fault, step-complete, pause) and return the stop ' +
-                'reason plus the current debug state, or a structured timeout. Use after continue_execution returned while ' +
-                'the target was still running, after issuing execution through evaluate_expression ("-exec continue"), or to ' +
-                'catch the first breakpoint of a free-running session — this replaces blind sleeping. Returns immediately ' +
-                'with the recorded reason if the target is already stopped. Issues no execution commands itself.',
+            description: 'Block until the target next stops (breakpoint, fault, step, pause) and return the reason and ' +
+                'state, or a structured timeout — instead of sleeping blind after continue_execution or "-exec continue". ' +
+                'Returns at once if already stopped; issues no execution commands.',
             annotations: { readOnlyHint: true, destructiveHint: false },
             inputSchema: { timeoutMs: z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC) },
         }, async (args: { timeoutMs?: number }) => {
@@ -571,11 +569,9 @@ export class DebugMCPServer {
 
         // DWT cycle counter tool — cycle-accurate timing on the target.
         mcpServer.registerTool('read_cycle_counter', {
-            description: 'Read the DWT cycle counter (CYCCNT) for cycle-accurate timing between two points on the ' +
-                'target: read here, continue_execution / wait_for_stop to the end point, read again, subtract (mod 2^32). ' +
-                'The 32-bit counter wraps (~10.7 s @ 400 MHz) and stops while the core is halted and during WFE sleep — ' +
-                'it counts ACTIVE cycles only. Enables DWT trace (DEMCR.TRCENA) and CYCCNT on first use — a one-time, ' +
-                'benign debug-unit state change. Reports when the core has no cycle counter.',
+            description: 'Read the DWT cycle counter for cycle-accurate timing: read, run to the end point, read again, ' +
+                'subtract mod 2^32. Wraps (~10.7 s @ 400 MHz); counts ACTIVE cycles only (stops while halted and in ' +
+                'WFE). Enables DWT/CYCCNT on first use; reports cores without one.',
             annotations: { readOnlyHint: true, destructiveHint: false },
             inputSchema: { timeoutMs: z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC) },
         }, async (args: { timeoutMs?: number }) => {
@@ -601,13 +597,29 @@ export class DebugMCPServer {
 
         // Get fault info tool
         mcpServer.registerTool('get_fault_info', {
-            description: 'Read and decode Cortex-M fault status registers (CFSR, HFSR, BFAR, MMFAR, DFSR, AFSR). ' +
-                'Call this when the target hits a HardFault, BusFault, MemManage, or UsageFault. ' +
-                'Returns a human-readable analysis of which fault bits are set and what they mean.',
+            description: 'Read and decode the Cortex-M fault status registers (CFSR, HFSR, BFAR, MMFAR, DFSR, AFSR) ' +
+                'bit by bit. For a one-call triage with the stacked frame, the call stack and hypotheses, ' +
+                'prefer diagnose_fault.',
             annotations: { readOnlyHint: true, destructiveHint: false },
             inputSchema: { timeoutMs: z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC) },
         }, async (args: { timeoutMs?: number }) => {
             const result = await debuggingHandler.handleGetFaultInfo(args);
+            return { content: [{ type: 'text' as const, text: result }] };
+        });
+
+        // One-call fault triage.
+        mcpServer.registerTool('diagnose_fault', {
+            description: 'Triage a HardFault / BusFault / MemManage / UsageFault in one call on a stopped target: decoded ' +
+                'fault registers, the stacked exception frame (PC of the faulting instruction, its caller), the top ' +
+                'frames, the faulting address resolved against the SVD, and up to three ranked hypotheses each with ' +
+                'the next tool call. Reports a short stop context when no fault flag is set.',
+            annotations: { readOnlyHint: true, destructiveHint: false },
+            inputSchema: {
+                levels: z.number().int().min(1).max(20).optional().describe('Call-stack frames to include (default 3)'),
+                timeoutMs: z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC),
+            },
+        }, async (args: { levels?: number; timeoutMs?: number }) => {
+            const result = await debuggingHandler.handleDiagnoseFault(args);
             return { content: [{ type: 'text' as const, text: result }] };
         });
 
@@ -817,12 +829,9 @@ export class DebugMCPServer {
             });
 
             mcpServer.registerTool('serial_subscribe_monitor', {
-                description: 'Subscribe to the MS Serial Monitor extension\'s public data event so the agent can ' +
-                    'read bytes the *user\'s* UI session receives — no port fight, no closing the panel. ' +
-                    'Probes ext.exports for any of: onDidReceiveData / onDataReceived / onData / onSerialData / ' +
-                    'onDidReadData / subscribeData. If the installed Serial Monitor build does not expose a data ' +
-                    'event yet, returns a clear error and you should fall back to serial_open (owned port). ' +
-                    "After subscribing, read with serial_read from='monitor'.",
+                description: 'Subscribe to the MS Serial Monitor extension\'s data event to read the bytes the user\'s ' +
+                    'UI session receives — no port fight. Errors clearly when the installed build exposes no data ' +
+                    "event (then serial_open). Read with serial_read from='monitor'.",
             }, async () => {
                 const result = await serial('handleSubscribeMonitor');
                 return { content: [{ type: 'text' as const, text: result }] };
@@ -886,13 +895,9 @@ export class DebugMCPServer {
 
         // Get session status tool
         mcpServer.registerTool('get_session_status', {
-            description: 'Report the current debug-session state in one of five categories: ' +
-                '`no-session`, `initializing`, `running`, `stopped`, or `unresponsive`. ' +
-                'Use this whenever you are unsure whether a session is alive — e.g. after a tool ' +
-                'returned "Debug session is not ready", after a long continue_execution, or after ' +
-                'an apparent timeout. This tool never hangs and never throws: it always returns a ' +
-                'classification plus a hint about what to do next. Prefer this over guessing from ' +
-                'failed tool calls.',
+            description: 'Report the debug-session state: no-session, initializing, running, stopped or unresponsive, ' +
+                'with the right next action and the session\'s tool-call totals. Never hangs, never throws — call it ' +
+                'whenever a tool said the session is not ready or a call seemed to time out.',
             annotations: { readOnlyHint: true, destructiveHint: false },
         }, async () => {
             const result = await debuggingHandler.handleGetSessionStatus();

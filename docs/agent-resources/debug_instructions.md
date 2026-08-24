@@ -209,6 +209,7 @@ This is tuned for firmware and should rarely get in your way:
 <!-- topic: faults | Decode a HardFault, BusFault, MemManage or UsageFault: get_fault_info, the stacked exception frame, resolving the faulting address, the usual causes -->
 ## 💥 When it faulted
 
+0. **`diagnose_fault` does steps 1–4 in one call** — decoded registers, stacked frame, top frames, resolved address, ranked hypotheses with the next call. Use the individual steps when you need one piece alone or want to verify.
 1. **`get_fault_info` first.** It reads and decodes CFSR / HFSR / DFSR / MMFAR / BFAR / AFSR bit by bit and usually names the fault class outright. `FORCED` in HFSR means a configurable fault escalated to HardFault because its own handler was disabled — the CFSR bits still say which one.
 2. **`read_core_registers`** for PC, LR, MSP, PSP and xPSR. Halted inside the handler, LR holds `EXC_RETURN` (`0xFFFFFFxx`): bit 2 set → the exception frame was pushed on **PSP**, clear → on **MSP**; bit 4 clear → an FP-extended frame (26 words) instead of the basic 8. The low nine bits of xPSR are the active exception number (3 HardFault, 4 MemManage, 5 BusFault, 6 UsageFault).
 3. **`read_memory` 32 bytes at that stack pointer**: R0, R1, R2, R3, R12, LR, PC, xPSR in that order. The stacked **PC is the faulting instruction** for a precise fault; the stacked LR is its caller. `get_call_stack` walks up from there; `get_frame_variables` on a `frameId` shows the locals at the fault site.

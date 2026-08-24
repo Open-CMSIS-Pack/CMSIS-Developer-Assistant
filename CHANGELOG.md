@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+- **`diagnose_fault`** — one call replaces the six-call HardFault loop: the decoded fault registers (read as one 24-byte SCS block), the stacked exception frame located through EXC_RETURN (PSP or MSP, basic or FP-extended) with the PC of the faulting instruction and its caller, the top frames, the faulting address resolved against the SVD or the Cortex-M system map (an unclocked `I2C1.CR1`, a null pointer plus offset, SRAM), and up to three ranked hypotheses each with the next tool call — unclocked peripheral, null pointer, wild pointer, imprecise write, stack overflow (with MSPLIM/PSPLIM when the core has them), corrupted function pointer, missing Thumb bit, unaligned access, divide by zero, FPU off, bad VTOR. Every section after the fault registers degrades to a note instead of failing the call; with no fault flag set it returns a short stop context. `get_fault_info` now also names `STKOF` (Armv8-M stack limit) and `DEBUGEVT`, and its text is otherwise unchanged. Four long tool descriptions were shortened to keep the tool list within its byte budget.
+
 ## [2.3.6] - 2026-08-24
 
 ### Added

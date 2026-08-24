@@ -135,7 +135,7 @@ async function main() {
     const tools = parseSse(list.body)?.result?.tools ?? [];
     const names = tools.map((t) => t.name);
     check('tools/list returns the tool surface', tools.length > 30, `${tools.length} tools`);
-    for (const expected of ['add_logpoint', 'list_variable_names', 'add_breakpoint', 'get_variables_values']) {
+    for (const expected of ['add_logpoint', 'list_variable_names', 'add_breakpoint', 'get_variables_values', 'diagnose_fault', 'lookup_register']) {
         check(`tools/list includes ${expected}`, names.includes(expected));
     }
     // The tool list rides along on every agent turn, so its size is a

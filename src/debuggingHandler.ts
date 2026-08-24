@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as jsonc from 'jsonc-parser';
 import { IDebugConfigurationManager } from './utils/debugConfigurationManager';
-import { DebugState, formatBreakpointModifiers } from './debugState';
+import { DebugState, formatBreakpointModifiers, StackFrame } from './debugState';
 import { IDebuggingExecutor } from './debuggingExecutor';
 import { HardwareTimeoutError, withTimeout } from './utils/timeout';
 import { fileExists, flashWithPyocd, probePyocd } from './core/flashController';
@@ -22,7 +22,11 @@ import {
 import { shortenPath, truncateList } from './core/textBudget';
 import { SvdDevice, findPeripheral, findRegister, listPeripheralNames, loadSvdForLookup } from './core/svdParser';
 import { lookupAddress, matchName, parseAddress, renderAddressHit, renderPeripheral, renderPeripheralList, renderRegister } from './core/svdLookup';
-import { getRecentDiagnostics } from './utils/sessionStateTracker';
+import { getRecentDiagnostics, getStoppedReason, resolveActiveSession } from './utils/sessionStateTracker';
+import { decodeFault } from './core/faultDecoder';
+import {
+    classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, AddressInfo, DiagnosisInput,
+} from './core/faultTriage';
 import { logger } from './utils/logger';
 
 const HARD_HANDLER_CAP_MS = 60_000;
@@ -92,6 +96,7 @@ export interface IDebuggingHandler {
     handleReadCycleCounter(args?: { timeoutMs?: number }): Promise<string>;
     handleReadPeripheralRegister(args: { peripheral: string; register?: string; timeoutMs?: number }): Promise<string>;
     handleGetFaultInfo(args?: { timeoutMs?: number }): Promise<string>;
+    handleDiagnoseFault(args?: { levels?: number; timeoutMs?: number }): Promise<string>;
     handleLookupPeripheral(args?: { name?: string; address?: string; filter?: string; svdFile?: string; pname?: string; timeoutMs?: number }): Promise<string>;
     handleLookupRegister(args: { peripheral: string; register: string; svdFile?: string; pname?: string; timeoutMs?: number }): Promise<string>;
     handleGetDeviceInfo(): Promise<string>;
@@ -1427,6 +1432,90 @@ REQUIRED NEXT STEPS:
         return withHandlerTimeout('get_fault_info', args?.timeoutMs, async () => {
             await this.ensureStoppedSession('read fault info');
             return await this.executor.getFaultInfo(args?.timeoutMs);
+        });
+    }
+
+    /** A GDB register string as a number, or undefined when it is not one. */
+    private regNumber(raw: string | undefined): number | undefined {
+        if (!raw || raw.startsWith('<')) { return undefined; }
+        const normalized = this.normalizeRegToHex(raw);
+        if (!/^0x[0-9a-fA-F]+$/.test(normalized)) { return undefined; }
+        return Number.parseInt(normalized, 16) >>> 0;
+    }
+
+    /**
+     * One-call fault triage: fault registers, the stacked exception frame,
+     * the top frames and the faulting address resolved against the SVD, with
+     * ranked hypotheses. Every section after the fault registers degrades to
+     * a note instead of failing the call.
+     */
+    public async handleDiagnoseFault(args: { levels?: number; timeoutMs?: number } = {}): Promise<string> {
+        return withHandlerTimeout('diagnose_fault', args.timeoutMs, async () => {
+            await this.ensureStoppedSession('diagnose the fault');
+            const skipped: string[] = [];
+            const decoded = decodeFault(await this.executor.readFaultRegisters(args.timeoutMs));
+
+            let core: Record<string, string> = {};
+            try {
+                core = await this.executor.readCoreRegisters(args.timeoutMs,
+                    ['sp', 'lr', 'pc', 'xpsr', 'msp', 'psp', 'control', 'msplim', 'psplim']);
+            } catch {
+                skipped.push('core registers');
+            }
+            const regs: DiagnosisInput['regs'] = {
+                sp: this.regNumber(core.sp), lr: this.regNumber(core.lr), pc: this.regNumber(core.pc),
+                xpsr: this.regNumber(core.xpsr), msp: this.regNumber(core.msp), psp: this.regNumber(core.psp),
+                msplim: this.regNumber(core.msplim), psplim: this.regNumber(core.psplim),
+            };
+
+            const selection = selectExceptionFrame(regs.lr, regs.msp, regs.psp);
+            let frame = null;
+            let frameNote: string | undefined;
+            if (!selection.isExcReturn) {
+                frameNote = regs.lr === undefined
+                    ? 'LR unavailable — read_core_registers, then read_memory at PSP/MSP'
+                    : 'LR is not an EXC_RETURN value — halted deeper inside the handler; get_call_stack has the frames';
+            } else if (selection.sp === null) {
+                frameNote = `${selection.source} unavailable — read_core_registers`;
+            } else {
+                try {
+                    frame = parseStackedFrame(await this.executor.readExceptionFrame(selection.sp, args.timeoutMs));
+                    if (!frame) { frameNote = `short read at ${selection.source}`; }
+                } catch {
+                    skipped.push('exception frame');
+                }
+            }
+
+            let frames: StackFrame[] = [];
+            try {
+                frames = await this.executor.getCallStack(undefined, args.levels ?? 3, args.timeoutMs);
+            } catch {
+                skipped.push('call stack');
+            }
+
+            let device = null;
+            let svdNote: string | undefined;
+            try {
+                const loaded = await loadSvdForLookup({});
+                device = loaded.device;
+                if (!device) { svdNote = 'no SVD found — addresses are classified by the Cortex-M system map only; pass svdFile to lookup_peripheral to resolve them'; }
+            } catch {
+                svdNote = 'SVD could not be loaded';
+            }
+
+            const faultAddress: AddressInfo | undefined = decoded.faultAddress
+                ? classifyAddress(decoded.faultAddress.value, device) : undefined;
+            const pcValue = frame?.pc ?? regs.pc;
+            const pcInfo = pcValue !== undefined ? classifyAddress(pcValue, device) : undefined;
+
+            const session = resolveActiveSession();
+            const stopReason = session ? getStoppedReason(session) : null;
+
+            return renderDiagnosis({
+                decoded, frame, selection, regs, faultAddress, pcInfo, stopReason,
+                frames: frames.map(f => ({ ...f, source: f.source ? shortenPath(f.source, this.workspaceRoots()) : f.source })),
+                frameNote, skipped, svdNote, maxFrames: args.levels ?? 3,
+            });
         });
     }
 

@@ -35,6 +35,7 @@ allowed-tools:
   - read_cycle_counter
   - read_peripheral_register
   - get_fault_info
+  - diagnose_fault
   - lookup_peripheral
   - lookup_register
   - serial_list_ports
@@ -204,13 +205,18 @@ This is the characteristic embedded bug, and the reason the memory tools exist.
 
 ## When it faulted
 
-`get_fault_info` decodes CFSR/HFSR/DFSR/MMFAR/BFAR bit by bit. Read it before
-theorising — it usually names the fault class outright (`PRECISERR`,
-`IACCVIOL`, `STKOF`, `UNALIGNED`).
+`diagnose_fault` does the whole first pass in one call: the decoded fault
+registers, the stacked exception frame (the PC of the faulting instruction and
+its caller — on a stacked exception the interesting PC is in the frame, not in
+the current registers), the top frames, the faulting address resolved against
+the SVD, and up to three ranked hypotheses each with the next call. Read it
+before theorising — it usually names the cause outright (an unclocked
+peripheral at BFAR, a null pointer, a stack overflow, a missing Thumb bit).
 
-Then: `read_core_registers` for the PC and the stack pointers, and
-`get_call_stack` to walk up. On a stacked exception the interesting PC is in the
-exception frame, not in the current registers.
+The pieces stay available when you need one of them alone: `get_fault_info`
+(CFSR/HFSR/DFSR/MMFAR/BFAR bit by bit), `read_core_registers`,
+`read_memory` at PSP/MSP for the frame, `get_call_stack` to walk up,
+`lookup_peripheral { address }` for an address.
 
 `references/cmsis-embedded-guide.md` has the SCS memory map and the decode
 recipes. `references/troubleshooting/embedded.md` covers probe-not-detected,

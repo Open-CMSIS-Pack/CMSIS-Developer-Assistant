@@ -145,6 +145,8 @@ function buildTests(cfg: BoardConfig): TestCase[] {
             args: () => ({ peripheral: cfg.peripheralProbe.peripheral, ...(cfg.peripheralProbe.register ? { register: cfg.peripheralProbe.register } : {}) }),
             estimatedMs: 15_000, softHintAfterMs: 8000 },
         { name: 'get_fault_info', tool: 'get_fault_info', estimatedMs: 10_000 },
+        { name: 'diagnose_fault', tool: 'diagnose_fault', estimatedMs: 20_000,
+          validate: t => /=== (Fault diagnosis|No fault flags set) ===/.test(t) || 'no diagnosis header' },
 
         // ── Phase 4: breakpoints & motion ─────────────────────────────
         { name: 'list_breakpoints (initial)', tool: 'list_breakpoints', estimatedMs: 500 },

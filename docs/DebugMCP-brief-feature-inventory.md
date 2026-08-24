@@ -46,6 +46,7 @@ Upstream has no concept of a GDB target server, hardware memory or registers, fa
 | `read_memory` | Memory | Read a byte range from SRAM / Flash / peripherals via DAP `readMemory` with multi-strategy GDB fallback. |
 | `read_core_registers` | Registers | R0–R15, xPSR, MSP, PSP, CONTROL, FAULTMASK, BASEPRI, PRIMASK — crash state & stack analysis. |
 | `read_peripheral_register` | Peripheral | Named peripheral/register reads backed by SVD (Peripheral Inspector API, with a standalone SVD-parser fallback). |
+| `lookup_peripheral` / `lookup_register` | Peripheral | SVD queries that touch nothing: peripheral list, register map, address → peripheral/register (resolve a BFAR), bit fields with enumerated values; work before the first session. |
 | `get_fault_info` | Fault | Read & decode CFSR / HFSR / DFSR / MMFAR / BFAR / AFSR bit-by-bit for HardFault / BusFault / MemManage / UsageFault. |
 | `get_device_info` | Introspect | Device, probe, processor, GDB server + port, program path, cbuild-run reference. |
 

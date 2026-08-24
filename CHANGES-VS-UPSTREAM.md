@@ -120,6 +120,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 - `read_cycle_counter(timeoutMs?)` — DWT CYCCNT with trace/counter enable, NOCYCCNT detection, wrap/halt/WFE caveats
 - `read_peripheral_register(peripheral, register?, timeoutMs?)` — SVD-backed, names like `GPIOA`/`ODR`
 - `get_fault_info(timeoutMs?)` — decoded CFSR/HFSR/DFSR/MMFAR/BFAR/AFSR
+- `lookup_peripheral(name?, address?, filter?, svdFile?, pname?)` / `lookup_register(peripheral, register, svdFile?, pname?)` — SVD queries, no session, no target access
 - `get_device_info()` — probe, device, GDB server, port, CMSIS config
 - `get_call_stack(threadId?, levels?, timeoutMs?)` — full frames with `frameId`
 - `get_threads(timeoutMs?)` — DAP threads, RTOS tasks with pyOCD/J-Link RTOS plugins

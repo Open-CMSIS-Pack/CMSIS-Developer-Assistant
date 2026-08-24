@@ -35,6 +35,8 @@ allowed-tools:
   - read_cycle_counter
   - read_peripheral_register
   - get_fault_info
+  - lookup_peripheral
+  - lookup_register
   - serial_list_ports
   - serial_open
   - serial_close
@@ -187,6 +189,10 @@ This is the characteristic embedded bug, and the reason the memory tools exist.
 - **Read the peripheral, not the shadow copy.** `read_peripheral_register` goes
   through the SVD, so ask for `GPIOA`/`ODR` by name. If the SVD is missing, the
   `cbuild-run.yml` says where it should be.
+- **Ask the SVD first.** `lookup_register` (`RCC`, `APB1ENR`) says which bit is
+  the clock enable before you read anything; `lookup_peripheral` with an
+  `address` turns a BFAR into a peripheral and register. Neither needs a
+  session or touches the target.
 - **Read the address directly.** `read_memory` on the register address tells you
   what the bus sees. A mismatch against the C variable means the write never
   landed — wrong alias, missing `volatile`, or a peripheral clock that is off.

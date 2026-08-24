@@ -141,7 +141,7 @@ async function main() {
     // The tool list rides along on every agent turn, so its size is a
     // per-turn cost. Budget for the single-window surface (42 tools); a
     // regression must be attributable to one tool, hence the per-description cap.
-    const TOOLS_LIST_BUDGET_BYTES = 28_000;
+    const TOOLS_LIST_BUDGET_BYTES = 30_000; // 44 tools; raised from 28 000 for lookup_peripheral / lookup_register
     const DESCRIPTION_CAP_CHARS = 700;
     const toolsBytes = Buffer.byteLength(JSON.stringify(tools));
     check(`tools/list stays under the ${TOOLS_LIST_BUDGET_BYTES} byte budget`, toolsBytes <= TOOLS_LIST_BUDGET_BYTES, `${toolsBytes} bytes`);
@@ -167,6 +167,17 @@ async function main() {
         /## Topics/.test(overviewText) && overviewText.length < 3500 && overviewText.length < topicText.length * 2,
         `${overviewText.length} chars`);
 
+    // 4c. The SVD lookups need no session; with no workspace (this stub) they
+    //     explain where an SVD was looked for instead of failing.
+    const lookup = await request(port, 'POST', { 'mcp-session-id': sid }, {
+        jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'lookup_peripheral', arguments: {} },
+    });
+    const lookupParsed = parseSse(lookup.body);
+    const lookupText = lookupParsed?.result?.content?.[0]?.text ?? '';
+    check('lookup_peripheral without an SVD explains what it tried',
+        !lookupParsed?.error && lookupParsed?.result?.isError !== true && /No SVD file found.*Tried:/s.test(lookupText),
+        lookupText.split('\n')[0]);
+
     // 5. REGRESSION: three consecutive get_threads on one session must all return.
     for (let i = 1; i <= 3; i++) {
         const call = await Promise.race([
@@ -190,16 +201,16 @@ async function main() {
     let statsJson = null;
     try { statsJson = JSON.parse(statsText); } catch { /* reported by the check */ }
     check('stats resource counts the tool calls',
-        !!statsJson && statsJson.session.calls >= 5 && statsJson.session.perTool.get_threads?.calls === 3
+        !!statsJson && statsJson.session.calls >= 6 && statsJson.session.perTool.get_threads?.calls === 3
             && statsJson.session.perTool.get_debug_instructions?.calls === 2,
         statsJson ? `session.calls=${statsJson.session.calls}` : statsText.slice(0, 120));
     const status = await request(port, 'POST', { 'mcp-session-id': sid }, {
         jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
     });
     const statusText = parseSse(status.body)?.result?.content?.[0]?.text ?? '';
-    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 5 calls/m.test(statusText),
+    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 6 calls/m.test(statusText),
         statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
-    check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 6,
+    check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 7,
         `${server.getMetrics().totals().calls} calls`);
 
     // 7. DELETE tears the session down

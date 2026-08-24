@@ -74,7 +74,7 @@ the agents the user selected in the setup) exposes these tool groups:
 - **Run control** — `start_debugging`, `stop_debugging`, `restart_debugging`, `continue_execution`, `pause_execution`, `step_over`, `step_into`, `step_out`, `wait_for_stop`, `reset`.
 - **Breakpoints** — `add_breakpoint` (by line, optional condition), `add_logpoint`, `remove_breakpoint`, `list_breakpoints`, `clear_all_breakpoints`.
 - **Inspection** — `get_call_stack`, `get_threads`, `get_frame_variables`, `list_variable_names`, `get_variables_values`, `evaluate_expression`.
-- **Cortex-M** — `read_memory`, `read_core_registers`, `read_peripheral_register` (SVD), `get_fault_info` (CFSR/HFSR decode), `read_cycle_counter`, `get_device_info`.
+- **Cortex-M** — `read_memory`, `read_core_registers`, `read_peripheral_register` (SVD), `lookup_peripheral` / `lookup_register` (SVD map and bit fields, no session needed), `get_fault_info` (CFSR/HFSR decode), `read_cycle_counter`, `get_device_info`.
 - **Serial ports** — `serial_list_ports`, `serial_open`, `serial_read`, `serial_write`, `serial_close`, `serial_status`, `serial_clear_buffer`, and the Serial Monitor bridge `serial_subscribe_monitor` / `serial_unsubscribe_monitor` / `serial_open_monitor`.
 - **Session health and windows** — `get_session_status`, `check_target_connection`, `get_debug_instructions`; with several VS Code windows `list_debug_windows` and `select_debug_window`.
 

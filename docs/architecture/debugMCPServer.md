@@ -73,6 +73,7 @@ Each request creates a new `StreamableHTTPServerTransport` instance in stateless
 | `read_core_registers` | Read Cortex-M core registers (R0-R15, xPSR, MSP, PSP, CONTROL, FAULTMASK, BASEPRI, PRIMASK) |
 | `read_peripheral_register` | Read peripheral registers using SVD (Peripheral Inspector API or SVD fallback) |
 | `get_fault_info` | Read and decode CFSR / HFSR / DFSR / MMFAR / BFAR / AFSR |
+| `lookup_peripheral` / `lookup_register` | SVD queries with no target access and no session required: peripheral list, register map, address → peripheral/register, bit fields (`src/core/svdLookup.ts`) |
 | `get_device_info` | Summarize active session — device, probe, processor, GDB server |
 
 ## Exposed Resources

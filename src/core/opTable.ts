@@ -60,6 +60,8 @@ export const DEBUG_OPS = [
     'handleReadCycleCounter',
     'handleReadPeripheralRegister',
     'handleGetFaultInfo',
+    'handleLookupPeripheral',
+    'handleLookupRegister',
     'handleGetDeviceInfo',
     'handleCheckTargetConnection',
     'handleGetSessionStatus',

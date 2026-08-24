@@ -301,6 +301,12 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     handleGetFaultInfo(args?: { timeoutMs?: number }): Promise<string> {
         return this.forward('handleGetFaultInfo', args);
     }
+    handleLookupPeripheral(args?: { name?: string; address?: string; filter?: string; svdFile?: string; pname?: string; timeoutMs?: number }): Promise<string> {
+        return this.forward('handleLookupPeripheral', args);
+    }
+    handleLookupRegister(args: { peripheral: string; register: string; svdFile?: string; pname?: string; timeoutMs?: number }): Promise<string> {
+        return this.forward('handleLookupRegister', args);
+    }
     handleGetDeviceInfo(): Promise<string> {
         return this.forward('handleGetDeviceInfo');
     }

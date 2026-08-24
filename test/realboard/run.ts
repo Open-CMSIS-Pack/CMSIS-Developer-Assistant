@@ -89,6 +89,9 @@ function buildTests(cfg: BoardConfig): TestCase[] {
           validate: t => /## Topics/.test(t) || 'overview without the topic list' },
         { name: 'get_debug_instructions (faults)', tool: 'get_debug_instructions', args: { topic: 'faults' }, estimatedMs: 500,
           validate: t => /CFSR/.test(t) || 'faults topic without CFSR' },
+        { name: 'lookup_peripheral (no session)', tool: 'lookup_peripheral', estimatedMs: 2000 },
+        { name: 'lookup_register (no session)', tool: 'lookup_register', estimatedMs: 2000,
+          args: { peripheral: cfg.peripheralProbe.peripheral, register: cfg.peripheralProbe.register ?? '' } },
         { name: 'get_session_status (idle)', tool: 'get_session_status',   estimatedMs: 500 },
         { name: 'check_target_connection (idle)', tool: 'check_target_connection', estimatedMs: 1000 },
 

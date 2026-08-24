@@ -611,6 +611,42 @@ export class DebugMCPServer {
             return { content: [{ type: 'text' as const, text: result }] };
         });
 
+        // SVD lookups — no target access, no session required.
+        mcpServer.registerTool('lookup_peripheral', {
+            description: 'Answer "which peripheral is at this address" or "which registers does this peripheral have" ' +
+                'from the device SVD — no session, no target access. name: the register map; address: the peripheral ' +
+                'and register containing it (resolve a BFAR); neither: the peripheral list. Unknown names get suggestions.',
+            annotations: { readOnlyHint: true, destructiveHint: false },
+            inputSchema: {
+                name: z.string().optional().describe('Peripheral name, e.g. RCC (case-insensitive)'),
+                address: z.string().optional().describe('Address to resolve, e.g. 0x40005400'),
+                filter: z.string().optional().describe('Name prefix to narrow the list or the register map'),
+                svdFile: z.string().optional().describe('Explicit .svd path; default: session, cbuild-run.yml, workspace'),
+                pname: z.string().optional().describe('Processor name selecting the SVD in a multi-core cbuild-run'),
+                timeoutMs: z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC),
+            },
+        }, async (args: { name?: string; address?: string; filter?: string; svdFile?: string; pname?: string; timeoutMs?: number }) => {
+            const result = await debuggingHandler.handleLookupPeripheral(args);
+            return { content: [{ type: 'text' as const, text: result }] };
+        });
+
+        mcpServer.registerTool('lookup_register', {
+            description: 'Describe one register from the device SVD without reading the target: address, access, reset ' +
+                'value, bit fields with their enumerated values. Use it to learn which bit is the clock enable before ' +
+                'read_peripheral_register or read_memory.',
+            annotations: { readOnlyHint: true, destructiveHint: false },
+            inputSchema: {
+                peripheral: z.string().describe('Peripheral name, e.g. RCC'),
+                register: z.string().describe('Register name, e.g. APB1ENR'),
+                svdFile: z.string().optional().describe('Explicit .svd path; default: session, cbuild-run.yml, workspace'),
+                pname: z.string().optional().describe('Processor name selecting the SVD in a multi-core cbuild-run'),
+                timeoutMs: z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC),
+            },
+        }, async (args: { peripheral: string; register: string; svdFile?: string; pname?: string; timeoutMs?: number }) => {
+            const result = await debuggingHandler.handleLookupRegister(args);
+            return { content: [{ type: 'text' as const, text: result }] };
+        });
+
         // Get device info tool
         mcpServer.registerTool('get_device_info', {
             description: 'Return information about the connected debug target: session name, debug type, program path, ' +

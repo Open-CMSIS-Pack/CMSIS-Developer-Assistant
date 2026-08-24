@@ -20,6 +20,8 @@ import {
     selectVariables,
 } from './core/variableView';
 import { shortenPath, truncateList } from './core/textBudget';
+import { SvdDevice, findPeripheral, findRegister, listPeripheralNames, loadSvdForLookup } from './core/svdParser';
+import { lookupAddress, matchName, parseAddress, renderAddressHit, renderPeripheral, renderPeripheralList, renderRegister } from './core/svdLookup';
 import { getRecentDiagnostics } from './utils/sessionStateTracker';
 import { logger } from './utils/logger';
 
@@ -90,6 +92,8 @@ export interface IDebuggingHandler {
     handleReadCycleCounter(args?: { timeoutMs?: number }): Promise<string>;
     handleReadPeripheralRegister(args: { peripheral: string; register?: string; timeoutMs?: number }): Promise<string>;
     handleGetFaultInfo(args?: { timeoutMs?: number }): Promise<string>;
+    handleLookupPeripheral(args?: { name?: string; address?: string; filter?: string; svdFile?: string; pname?: string; timeoutMs?: number }): Promise<string>;
+    handleLookupRegister(args: { peripheral: string; register: string; svdFile?: string; pname?: string; timeoutMs?: number }): Promise<string>;
     handleGetDeviceInfo(): Promise<string>;
     handleCheckTargetConnection(): Promise<string>;
     handleGetSessionStatus(): Promise<string>;
@@ -1423,6 +1427,83 @@ REQUIRED NEXT STEPS:
         return withHandlerTimeout('get_fault_info', args?.timeoutMs, async () => {
             await this.ensureStoppedSession('read fault info');
             return await this.executor.getFaultInfo(args?.timeoutMs);
+        });
+    }
+
+    /**
+     * The device description for the lookup tools, or the text explaining
+     * where an SVD was looked for. No session is required: with one, its SVD
+     * is used (the same file read_peripheral_register reads).
+     */
+    private async svdForLookup(opts: { svdFile?: string; pname?: string }): Promise<{ device: SvdDevice; path: string } | { error: string }> {
+        const loaded = await loadSvdForLookup(opts);
+        if (loaded.device) {
+            return { device: loaded.device, path: loaded.path };
+        }
+        const tried = loaded.tried.length ? `\nTried:\n  - ${loaded.tried.join('\n  - ')}` : '';
+        return {
+            error: `No SVD file found for a lookup.${tried}\n` +
+                'Pass svdFile (the device .svd from the DFP; ${CMSIS_PACK_ROOT} is expanded), or build the solution so ' +
+                'out/<context>.cbuild-run.yml names it, or add "svdFile" to the launch configuration. ' +
+                'For a multi-core device pass pname to pick the core.',
+        };
+    }
+
+    /**
+     * Answer "what is this peripheral / what is at this address" from the SVD
+     * without touching the target.
+     */
+    public async handleLookupPeripheral(args: { name?: string; address?: string; filter?: string; svdFile?: string; pname?: string; timeoutMs?: number } = {}): Promise<string> {
+        return withHandlerTimeout('lookup_peripheral', args.timeoutMs, async () => {
+            const svd = await this.svdForLookup(args);
+            if ('error' in svd) { return svd.error; }
+            const { device } = svd;
+
+            if (args.address !== undefined && args.address !== '') {
+                const addr = parseAddress(args.address);
+                if (addr === null) {
+                    return `'${args.address}' is not an address — pass hex like 0x40005400 or a decimal number.`;
+                }
+                return renderAddressHit(addr, lookupAddress(device, addr), device.name);
+            }
+
+            if (args.name) {
+                const { exact, suggestions } = matchName(listPeripheralNames(device), args.name);
+                const peripheral = exact ? findPeripheral(device, exact) : undefined;
+                if (!peripheral) {
+                    return `Peripheral '${args.name}' is not in the SVD of ${device.name}.` +
+                        (suggestions.length ? ` Did you mean: ${suggestions.join(', ')}?` : '') +
+                        '\nCall lookup_peripheral without name for the full list.';
+                }
+                return renderPeripheral(peripheral, { filter: args.filter });
+            }
+
+            return renderPeripheralList(device, { filter: args.filter });
+        });
+    }
+
+    /** Describe one register — offset, access, reset value, bit fields — from the SVD, without reading it. */
+    public async handleLookupRegister(args: { peripheral: string; register: string; svdFile?: string; pname?: string; timeoutMs?: number }): Promise<string> {
+        return withHandlerTimeout('lookup_register', args.timeoutMs, async () => {
+            const svd = await this.svdForLookup(args);
+            if ('error' in svd) { return svd.error; }
+            const { device } = svd;
+
+            const pMatch = matchName(listPeripheralNames(device), args.peripheral ?? '');
+            const peripheral = pMatch.exact ? findPeripheral(device, pMatch.exact) : undefined;
+            if (!peripheral) {
+                return `Peripheral '${args.peripheral}' is not in the SVD of ${device.name}.` +
+                    (pMatch.suggestions.length ? ` Did you mean: ${pMatch.suggestions.join(', ')}?` : '') +
+                    '\nCall lookup_peripheral without name for the full list.';
+            }
+            const rMatch = matchName(peripheral.registers.map(r => r.name), args.register ?? '');
+            const register = rMatch.exact ? findRegister(peripheral, rMatch.exact) : undefined;
+            if (!register) {
+                return `Register '${args.register}' is not in ${peripheral.name}.` +
+                    (rMatch.suggestions.length ? ` Did you mean: ${rMatch.suggestions.join(', ')}?` : '') +
+                    `\nCall lookup_peripheral { name: '${peripheral.name}' } for its register map.`;
+            }
+            return renderRegister(peripheral, register);
         });
     }
 

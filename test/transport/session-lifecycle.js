@@ -25,7 +25,8 @@
 //      return — the bug the old per-request model was built to fix.
 //   6. Every tool call is measured: the stats resource, the
 //      get_session_status trailer and the server aggregate all count them.
-//   7. Server options are accepted and readable back.
+//   7. Server options are accepted and readable back; serialEnabled:false
+//      drops the serial tools. The tool list has a byte budget.
 
 require('./vscode-stub.js');
 
@@ -137,6 +138,17 @@ async function main() {
     for (const expected of ['add_logpoint', 'list_variable_names', 'add_breakpoint', 'get_variables_values']) {
         check(`tools/list includes ${expected}`, names.includes(expected));
     }
+    // The tool list rides along on every agent turn, so its size is a
+    // per-turn cost. Budget for the single-window surface (42 tools); a
+    // regression must be attributable to one tool, hence the per-description cap.
+    const TOOLS_LIST_BUDGET_BYTES = 28_000;
+    const DESCRIPTION_CAP_CHARS = 700;
+    const toolsBytes = Buffer.byteLength(JSON.stringify(tools));
+    check(`tools/list stays under the ${TOOLS_LIST_BUDGET_BYTES} byte budget`, toolsBytes <= TOOLS_LIST_BUDGET_BYTES, `${toolsBytes} bytes`);
+    const longest = tools.map((t) => ({ name: t.name, len: (t.description ?? '').length })).sort((a, b) => b.len - a.len)[0];
+    check(`no tool description exceeds ${DESCRIPTION_CAP_CHARS} chars`, longest.len <= DESCRIPTION_CAP_CHARS, `${longest.name} ${longest.len}`);
+    const serialCount = names.filter((n) => n.startsWith('serial_')).length;
+    check('the serial tools are registered by default', serialCount === 10, `${serialCount} serial tools`);
 
     // 4b. get_debug_instructions serves one topic on request and a small
     //     overview with the topic list by default.
@@ -217,7 +229,10 @@ async function main() {
         jsonrpc: '2.0', id: 2, method: 'tools/list', params: {},
     });
     const ctools = parseSse(clist.body)?.result?.tools ?? [];
-    check('server with options still serves tools/list', ctools.length > 30, `${ctools.length} tools`);
+    const cnames = ctools.map((t) => t.name);
+    check('serialEnabled:false leaves the serial tools out',
+        cnames.every((n) => !n.startsWith('serial_')) && ctools.length === tools.length - serialCount,
+        `${ctools.length} tools`);
     await request(cport, 'DELETE', { 'mcp-session-id': csid });
     await configured.stop();
 

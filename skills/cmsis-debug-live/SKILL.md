@@ -84,6 +84,11 @@ order, and stop as soon as you have the device, core, ELF path and probe:
    pass as `configurationName`.
 
 If those files are missing, build first (`cmsis_action` with `action='build'`).
+It waits for cbuild and ends with ✅ or ❌ plus the exit code — read that line
+rather than polling for output files. Pack resolution or a first build can
+exceed a call's 60 s cap; the reply then says the call did not complete and
+the build is still running — wait, then run `build` again for the real result.
+Every tool that takes `timeoutMs` accepts up to 60000 ms for that one call.
 If `launch.json` is stale, the user has to regenerate it: **CMSIS Solution →
 Manage Solution → Debugger → Apply**. You cannot do that step for them.
 

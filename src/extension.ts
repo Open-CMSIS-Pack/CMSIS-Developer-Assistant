@@ -42,6 +42,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const dapRequestTimeoutMs = config.get<number>('dapRequestTimeoutMs', 10000);
     const memoryReadTimeoutMs = config.get<number>('memoryReadTimeoutMs', 30000);
     const telemetryJsonlPath = resolveTelemetryPath(config.get<string>('telemetry.jsonlPath', ''));
+    const serialEnabled = config.get<boolean>('serial.enabled', true);
 
     logger.info(`Using timeoutInSeconds: ${timeoutInSeconds} seconds`);
     logger.info(`Using serverPort: ${serverPort}`);
@@ -49,6 +50,9 @@ export async function activate(context: vscode.ExtensionContext) {
     logger.info(`Using memoryReadTimeoutMs: ${memoryReadTimeoutMs} ms`);
     if (telemetryJsonlPath) {
         logger.info(`Tool telemetry JSONL: ${telemetryJsonlPath}`);
+    }
+    if (!serialEnabled) {
+        logger.info('Serial tools are disabled (cmsis-developer-assistant.serial.enabled)');
     }
 
     // Track DAP stopped/continued events so we can answer "is the target
@@ -91,6 +95,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 memoryReadMs: memoryReadTimeoutMs,
             },
             serverOptions: {
+                serialEnabled,
                 telemetry: { jsonlPath: telemetryJsonlPath },
             },
         });

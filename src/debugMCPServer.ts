@@ -269,7 +269,8 @@ export class DebugMCPServer {
                 'the session-status gate, breakpoint strategy, step-and-inspect workflow, fault decode and ' +
                 'root-cause guidance needed to use these tools effectively instead of guessing or adding ' +
                 'temporary printf/UART logging. Harnesses that do not load skills (GitHub Copilot Chat) ' +
-                'should call get_debug_instructions instead.',
+                'should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call ' +
+                'override of the default, capped at 60 s; set it when you can estimate the work.',
         }, metrics);
         const handlers = this.handlerFactory();
         this.setupTools(mcpServer, handlers.debug, handlers.serial, metrics);
@@ -290,17 +291,16 @@ export class DebugMCPServer {
         serial: SerialDispatch,
         metrics: ToolMetrics,
     ) {
-        const TIMEOUT_DESC = 'Optional per-call timeout in milliseconds (capped to 60 000). Overrides the default for this single tool call. Use it when you can estimate the work and want a tighter or looser bound.';
+        // One short line per tool; the rationale lives once in the server instructions.
+        const TIMEOUT_DESC = 'Per-call timeout in ms, max 60000 (see server instructions).';
 
         // Get debug instructions tool (for clients that don't support MCP
         // resources like GitHub Copilot). Served by topic so a harness pays for
         // one section, not the whole guide, on every session.
         mcpServer.registerTool('get_debug_instructions', {
-            description: 'The debugging guide for harnesses that do not load the "cmsis-debug-live" Agent Skill. ' +
-                'Without `topic` it returns a short overview plus the list of topics; pass `topic` for one section: ' +
-                'session (state gate, several windows), build (target awareness, cmsis_action / flash / start_debugging), ' +
-                'breakpoints (strategy, conditions, logpoints, FPB budget), inspection (run-and-wait, reset, cycle timing, ' +
-                'variables, registers, peripherals), faults (decoding a HardFault), troubleshooting (root cause, not symptom).',
+            description: 'Debugging guide for harnesses that do not load the "cmsis-debug-live" Agent Skill. ' +
+                'Default: a short overview plus the topic list; pass topic for one section ' +
+                '(session, build, breakpoints, inspection, faults, troubleshooting).',
             annotations: { readOnlyHint: true, destructiveHint: false },
             inputSchema: {
                 topic: z.enum(TOPICS).optional().describe('Section to return. Default: overview (~2 KB) with the topic list.'),
@@ -320,33 +320,16 @@ export class DebugMCPServer {
 
         // Start debugging tool
         mcpServer.registerTool('start_debugging', {
-            description: 'Start a debug session via the standard VS Code debug pipeline (uses launch.json + the debug tab). ' +
-                'Invoke the "cmsis-debug-live" skill first.' +
-                '\n\n⚠️ FOR CMSIS / CORTEX-M PROJECTS: prefer `cmsis_action` with `action="load_and_debug"` ' +
-                '(same as clicking *Debug* in the CMSIS Solution panel — builds if needed, flashes, then attaches). ' +
-                '`start_debugging` skips the flash step and is the wrong tool for embedded targets that need ' +
-                'fresh firmware on the chip.' +
-                '\n\nUSE start_debugging FOR:' +
-                '\n• Non-CMSIS projects (Python, Java, JavaScript/TypeScript, C#, Go, Rust, …)' +
-                '\n• Attaching to an already-flashed CMSIS target where you specifically do NOT want to ' +
-                'reprogram (use `cmsis_action attach` instead if you want the CMSIS panel\'s attach behavior)' +
-                '\n\nUSE THIS WHEN debugging a code-side bug (wrong values, null/undefined, unexpected behavior, ' +
-                'failing tests).' +
-                '\n\n⚠️ CRITICAL: Before using this tool, first call get_debug_instructions or read ' +
-                'cmsis-developer-assistant://docs/debug_instructions resource!',
+            description: 'Start a debug session through the VS Code debug pipeline (launch.json). ' +
+                'Invoke the "cmsis-debug-live" skill first. For CMSIS / Cortex-M projects prefer cmsis_action ' +
+                'load_and_debug (builds, flashes, attaches); start_debugging skips the flash step and suits ' +
+                'non-CMSIS projects or attaching to an already-flashed target. Refuses while a session is active.',
             inputSchema: {
-                fileFullPath: z.string().optional().describe('Full path to the source code file to debug. Optional when configurationName is provided (e.g. for embedded/CMSIS gdbtarget configs).'),
+                fileFullPath: z.string().optional().describe('Source file to debug; optional when configurationName is given.'),
                 workingDirectory: z.string().describe('Working directory for the debug session'),
-                testName: z.string().optional().describe(
-                    'Name of a specific test name to debug. ' +
-                    'Only provide this when debugging a single test method. ' +
-                    'Leave empty to debug the entire file or test class.'
-                ),
+                testName: z.string().optional().describe('Only when debugging a single test; empty for the whole file.'),
                 configurationName: z.string().optional().describe(
-                    'Name of a specific debug configuration from launch.json to use. ' +
-                    'For embedded/CMSIS debugging, provide the configuration name (e.g. "CMSIS Debugger: pyOCD"). ' +
-                    'Leave empty to be prompted to select a configuration interactively.'
-                ),
+                    'launch.json configuration name, e.g. "CMSIS Debugger: pyOCD"; empty prompts the user.'),
                 timeoutMs: z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC),
             },
         }, async (args: { fileFullPath?: string; workingDirectory: string; testName?: string; configurationName?: string; timeoutMs?: number }) => {
@@ -435,17 +418,14 @@ export class DebugMCPServer {
 
         // Reset tool — resets the target inside the live session, verified.
         mcpServer.registerTool('reset', {
-            description: 'Reset the target via GDB monitor commands (pyOCD / J-Link) and VERIFY the reset actually took ' +
-                'effect — the PC is compared against the reset vector read from the vector table, and the result says ' +
-                'honestly when the target did NOT appear to reset (silent non-resets are common on attach configurations). ' +
-                'Unlike restart_debugging, the debug session and its breakpoints survive. A running target is halted ' +
-                'first. method: auto (system → core → hardware escalation, default), system (SYSRESETREQ), core ' +
-                '(VECTRESET), hardware (nSRST — requires the reset line wired from probe to target). halt=true (default) ' +
-                'leaves the target stopped at the reset vector; halt=false resumes after verification.',
+            description: 'Reset the target inside the live session (breakpoints survive, unlike restart_debugging) ' +
+                'and verify it: the PC is compared against the reset vector and the result says when the target ' +
+                'did NOT reset. A running target is halted first.',
             annotations: { readOnlyHint: false, destructiveHint: true },
             inputSchema: {
                 method: z.enum(['auto', 'system', 'core', 'hardware']).optional()
-                    .describe("Reset method. 'auto' (default) escalates system → core → hardware until one verifies."),
+                    .describe("'auto' (default) escalates system (SYSRESETREQ) → core (VECTRESET) → hardware " +
+                        '(nSRST, needs the reset line wired) until one verifies.'),
                 halt: z.boolean().optional()
                     .describe('Leave the target halted at the reset vector (default true). false resumes after verification.'),
                 timeoutMs: z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC),
@@ -457,19 +437,15 @@ export class DebugMCPServer {
 
         // Add breakpoint tool
         mcpServer.registerTool('add_breakpoint', {
-            description: 'Set a breakpoint to pause execution at a critical line of code. Essential for debugging: pause before potential errors, examine state at decision points, or verify code paths. ' +
-                'On Cortex-M the number of simultaneously bound breakpoints is limited by the FPB unit (commonly 6 on Cortex-M4/M7, 4 on Cortex-M0+) — clear ones you no longer need.',
+            description: 'Set a breakpoint at a line. Cortex-M binds only a few at once (FPB comparators, ' +
+                'typically 4–8) — clear ones you no longer need.',
             inputSchema: {
                 fileFullPath: z.string().describe('Full path to the file'),
-                line: z.number().int().min(1).optional().describe('Line number (1-based) where the breakpoint should be set. Preferred.'),
+                line: z.number().int().min(1).optional().describe('Line number (1-based). Preferred.'),
                 condition: z.string().optional().describe(
-                    'Optional condition expression in target-language syntax, e.g. "i == 100" or "p != 0". ' +
-                    'Applied as GDB\'s native `if` clause, so the CPU is only halted when it holds — important in hot loops.',
-                ),
+                    'Optional condition, e.g. "i == 100" — GDB-native, so the core halts only when it holds.'),
                 lineContent: z.string().optional().describe(
-                    'DEPRECATED: substring of the line to break on. Sets a breakpoint on EVERY line containing this text, ' +
-                    'which in C routinely matches dozens of lines. Pass `line` instead. Only used when `line` is omitted.',
-                ),
+                    'DEPRECATED: substring match that breaks on EVERY line containing the text; pass line instead.'),
             },
         }, async (args: { fileFullPath: string; line?: number; condition?: string; lineContent?: string }) => {
             const result = await debuggingHandler.handleAddBreakpoint(args);
@@ -478,16 +454,14 @@ export class DebugMCPServer {
 
         // Add logpoint tool
         mcpServer.registerTool('add_logpoint', {
-            description: 'Add a logpoint: a breakpoint that prints a message and resumes instead of pausing. Useful for tracing values across many iterations. ' +
-                'Embed expressions in curly braces to interpolate runtime values, e.g. "adc={sample} state={fsm}". ' +
-                'GDB needs an explicit printf conversion per value: {expr} defaults to %d, use {expr:%s} / {expr:%f} / {expr:%p} to override; {{ and }} are literal braces. ' +
-                'NOTE for Cortex-M: this is NOT free — the core halts on each hit while GDB formats and prints, then resumes. ' +
-                'In an ISR or a hot loop it distorts timing badly; prefer read_cycle_counter or a firmware RAM buffer read back with read_memory.',
+            description: 'Breakpoint that prints a message and resumes. Interpolate with {expr} (%d) or ' +
+                '{expr:%s|%f|%p|%08lx}; {{ }} are literal braces. On Cortex-M the core still halts on every hit ' +
+                'while GDB prints — in an ISR or hot loop prefer read_cycle_counter or a RAM buffer read with read_memory.',
             inputSchema: {
                 fileFullPath: z.string().describe('Full path to the file'),
-                line: z.number().int().min(1).describe('Line number (1-based) where the logpoint should be set'),
-                logMessage: z.string().describe('Message to log. Wrap expressions in {curly braces} to interpolate runtime values.'),
-                condition: z.string().optional().describe('Optional condition expression; the message is only logged when it evaluates true.'),
+                line: z.number().int().min(1).describe('Line number (1-based)'),
+                logMessage: z.string().describe('Message; {expr} interpolates runtime values.'),
+                condition: z.string().optional().describe('Optional condition; logs only when true.'),
             },
         }, async (args: { fileFullPath: string; line: number; logMessage: string; condition?: string }) => {
             const result = await debuggingHandler.handleAddLogpoint(args);
@@ -720,144 +694,135 @@ export class DebugMCPServer {
         // the OWNED backend will fail to open. Use serial_subscribe_monitor
         // in that case (zero conflict — taps via API, not the kernel).
 
-        mcpServer.registerTool('serial_list_ports', {
-            description: 'List available serial ports. Tries the MS Serial Monitor API first (friendly names), ' +
-                'falls back to the bundled serialport library.',
-            annotations: { readOnlyHint: true, destructiveHint: false },
-        }, async () => {
-            const result = await serial('handleListPorts');
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+        // Gated per server instance (never per call — the tool list a client
+        // sees must stay stable between turns) by the serial.enabled setting.
+        if (this.options.serialEnabled !== false) {
+            mcpServer.registerTool('serial_list_ports', {
+                description: 'List available serial ports. Tries the MS Serial Monitor API first (friendly names), ' +
+                    'falls back to the bundled serialport library.',
+                annotations: { readOnlyHint: true, destructiveHint: false },
+            }, async () => {
+                const result = await serial('handleListPorts');
+                return { content: [{ type: 'text' as const, text: result }] };
+            });
 
-        mcpServer.registerTool('serial_open', {
-            description: 'Open an OWNED serial port. The MCP server holds the connection and buffers RX. ' +
-                'Use only when no MS Serial Monitor UI session is active on the same path — the OS allows ' +
-                'one reader per tty. Defaults: 115200 baud, 8N1, no flow control.',
-            inputSchema: {
-                path: z.string().describe("Device path, e.g. '/dev/tty.usbmodemABCD' on macOS or 'COM3' on Windows"),
-                baudRate: z.number().int().optional().describe('Baud rate (default 115200)'),
-                dataBits: z.union([z.literal(5), z.literal(6), z.literal(7), z.literal(8)]).optional(),
-                parity: z.enum(['none', 'even', 'odd', 'mark', 'space']).optional(),
-                stopBits: z.union([z.literal(1), z.literal(1.5), z.literal(2)]).optional(),
-                rtscts: z.boolean().optional().describe('RTS/CTS hardware flow control (default false)'),
-            },
-        }, async (args: { path: string; baudRate?: number; dataBits?: 5 | 6 | 7 | 8; parity?: 'none' | 'even' | 'odd' | 'mark' | 'space'; stopBits?: 1 | 1.5 | 2; rtscts?: boolean }) => {
-            const result = await serial('handleOpen', args);
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+            mcpServer.registerTool('serial_open', {
+                description: 'Open an OWNED serial port. The MCP server holds the connection and buffers RX. ' +
+                    'Use only when no MS Serial Monitor UI session is active on the same path — the OS allows ' +
+                    'one reader per tty. Defaults: 115200 baud, 8N1, no flow control.',
+                inputSchema: {
+                    path: z.string().describe("Device path, e.g. '/dev/tty.usbmodemABCD' on macOS or 'COM3' on Windows"),
+                    baudRate: z.number().int().optional().describe('Baud rate (default 115200)'),
+                    dataBits: z.union([z.literal(5), z.literal(6), z.literal(7), z.literal(8)]).optional(),
+                    parity: z.enum(['none', 'even', 'odd', 'mark', 'space']).optional(),
+                    stopBits: z.union([z.literal(1), z.literal(1.5), z.literal(2)]).optional(),
+                    rtscts: z.boolean().optional().describe('RTS/CTS hardware flow control (default false)'),
+                },
+            }, async (args: { path: string; baudRate?: number; dataBits?: 5 | 6 | 7 | 8; parity?: 'none' | 'even' | 'odd' | 'mark' | 'space'; stopBits?: 1 | 1.5 | 2; rtscts?: boolean }) => {
+                const result = await serial('handleOpen', args);
+                return { content: [{ type: 'text' as const, text: result }] };
+            });
 
-        mcpServer.registerTool('serial_close', {
-            description: 'Close the OWNED serial port (does not affect the MS Serial Monitor UI).',
-        }, async () => {
-            const result = await serial('handleClose');
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+            mcpServer.registerTool('serial_close', {
+                description: 'Close the OWNED serial port (does not affect the MS Serial Monitor UI).',
+            }, async () => {
+                const result = await serial('handleClose');
+                return { content: [{ type: 'text' as const, text: result }] };
+            });
 
-        mcpServer.registerTool('serial_status', {
-            description: 'Report state of both backends: owned port (open / buffer size) and Serial Monitor ' +
-                'bridge (extension installed / activated / data-subscription available / subscribed). ' +
-                'Includes the discovered API keys so you can see what MS exposes in the installed build.',
-            annotations: { readOnlyHint: true, destructiveHint: false },
-        }, async () => {
-            const result = await serial('handleStatus');
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+            mcpServer.registerTool('serial_status', {
+                description: 'Report state of both backends: owned port (open / buffer size) and Serial Monitor ' +
+                    'bridge (extension installed / activated / data-subscription available / subscribed). ' +
+                    'Includes the discovered API keys so you can see what MS exposes in the installed build.',
+                annotations: { readOnlyHint: true, destructiveHint: false },
+            }, async () => {
+                const result = await serial('handleStatus');
+                return { content: [{ type: 'text' as const, text: result }] };
+            });
 
-        mcpServer.registerTool('serial_write', {
-            description: 'Write to the OWNED serial port. Encoding utf8 (default) or hex.',
-            inputSchema: {
-                data: z.string().describe("Payload. For encoding='hex' use a hex string like '0a 1b 2c'."),
-                encoding: z.enum(['utf8', 'hex']).optional(),
-                appendNewline: z.boolean().optional().describe("Append '\\n' to utf8 payloads (default false)"),
-            },
-        }, async (args: { data: string; encoding?: 'utf8' | 'hex'; appendNewline?: boolean }) => {
-            const result = await serial('handleWrite', args);
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+            mcpServer.registerTool('serial_write', {
+                description: 'Write to the OWNED serial port. Encoding utf8 (default) or hex.',
+                inputSchema: {
+                    data: z.string().describe("Payload. For encoding='hex' use a hex string like '0a 1b 2c'."),
+                    encoding: z.enum(['utf8', 'hex']).optional(),
+                    appendNewline: z.boolean().optional().describe("Append '\\n' to utf8 payloads (default false)"),
+                },
+            }, async (args: { data: string; encoding?: 'utf8' | 'hex'; appendNewline?: boolean }) => {
+                const result = await serial('handleWrite', args);
+                return { content: [{ type: 'text' as const, text: result }] };
+            });
 
-        mcpServer.registerTool('serial_read', {
-            description: 'Read buffered RX bytes from either backend. ' +
-                "Set from='owned' (default) for the MCP-owned port, from='monitor' for bytes captured " +
-                'via the Serial Monitor bridge subscription. consume=true (default) drains the buffer; ' +
-                'consume=false peeks. waitMs blocks up to that many ms when buffer is empty.',
-            annotations: { readOnlyHint: true, destructiveHint: false },
-            inputSchema: {
-                maxBytes: z.number().int().min(1).optional(),
-                waitMs: z.number().int().min(0).max(60000).optional(),
-                consume: z.boolean().optional(),
-                format: z.enum(['utf8', 'hex', 'both']).optional(),
-                from: z.enum(['owned', 'monitor']).optional().describe("Backend to read from (default 'owned')"),
-            },
-        }, async (args: { maxBytes?: number; waitMs?: number; consume?: boolean; format?: 'utf8' | 'hex' | 'both'; from?: 'owned' | 'monitor' }) => {
-            const result = await serial('handleRead', args);
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+            mcpServer.registerTool('serial_read', {
+                description: 'Read buffered RX bytes from either backend. ' +
+                    "Set from='owned' (default) for the MCP-owned port, from='monitor' for bytes captured " +
+                    'via the Serial Monitor bridge subscription. consume=true (default) drains the buffer; ' +
+                    'consume=false peeks. waitMs blocks up to that many ms when buffer is empty.',
+                annotations: { readOnlyHint: true, destructiveHint: false },
+                inputSchema: {
+                    maxBytes: z.number().int().min(1).optional(),
+                    waitMs: z.number().int().min(0).max(60000).optional(),
+                    consume: z.boolean().optional(),
+                    format: z.enum(['utf8', 'hex', 'both']).optional(),
+                    from: z.enum(['owned', 'monitor']).optional().describe("Backend to read from (default 'owned')"),
+                },
+            }, async (args: { maxBytes?: number; waitMs?: number; consume?: boolean; format?: 'utf8' | 'hex' | 'both'; from?: 'owned' | 'monitor' }) => {
+                const result = await serial('handleRead', args);
+                return { content: [{ type: 'text' as const, text: result }] };
+            });
 
-        mcpServer.registerTool('serial_clear_buffer', {
-            description: "Discard buffered RX without reading. from='owned' (default) or 'monitor'.",
-            inputSchema: {
-                from: z.enum(['owned', 'monitor']).optional(),
-            },
-        }, async (args: { from?: 'owned' | 'monitor' }) => {
-            const result = await serial('handleClearBuffer', args);
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+            mcpServer.registerTool('serial_clear_buffer', {
+                description: "Discard buffered RX without reading. from='owned' (default) or 'monitor'.",
+                inputSchema: {
+                    from: z.enum(['owned', 'monitor']).optional(),
+                },
+            }, async (args: { from?: 'owned' | 'monitor' }) => {
+                const result = await serial('handleClearBuffer', args);
+                return { content: [{ type: 'text' as const, text: result }] };
+            });
 
-        mcpServer.registerTool('serial_subscribe_monitor', {
-            description: 'Subscribe to the MS Serial Monitor extension\'s public data event so the agent can ' +
-                'read bytes the *user\'s* UI session receives — no port fight, no closing the panel. ' +
-                'Probes ext.exports for any of: onDidReceiveData / onDataReceived / onData / onSerialData / ' +
-                'onDidReadData / subscribeData. If the installed Serial Monitor build does not expose a data ' +
-                'event yet, returns a clear error and you should fall back to serial_open (owned port). ' +
-                "After subscribing, read with serial_read from='monitor'.",
-        }, async () => {
-            const result = await serial('handleSubscribeMonitor');
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+            mcpServer.registerTool('serial_subscribe_monitor', {
+                description: 'Subscribe to the MS Serial Monitor extension\'s public data event so the agent can ' +
+                    'read bytes the *user\'s* UI session receives — no port fight, no closing the panel. ' +
+                    'Probes ext.exports for any of: onDidReceiveData / onDataReceived / onData / onSerialData / ' +
+                    'onDidReadData / subscribeData. If the installed Serial Monitor build does not expose a data ' +
+                    'event yet, returns a clear error and you should fall back to serial_open (owned port). ' +
+                    "After subscribing, read with serial_read from='monitor'.",
+            }, async () => {
+                const result = await serial('handleSubscribeMonitor');
+                return { content: [{ type: 'text' as const, text: result }] };
+            });
 
-        mcpServer.registerTool('serial_unsubscribe_monitor', {
-            description: 'Stop the Serial Monitor data subscription (the user\'s UI session is unaffected).',
-        }, async () => {
-            const result = await serial('handleUnsubscribeMonitor');
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+            mcpServer.registerTool('serial_unsubscribe_monitor', {
+                description: 'Stop the Serial Monitor data subscription (the user\'s UI session is unaffected).',
+            }, async () => {
+                const result = await serial('handleUnsubscribeMonitor');
+                return { content: [{ type: 'text' as const, text: result }] };
+            });
 
-        mcpServer.registerTool('serial_open_monitor', {
-            description: 'Focus the Microsoft Serial Monitor panel so the user can see / drive their existing ' +
-                'session. UI-only — does not open or read a port. Pair with serial_subscribe_monitor to also ' +
-                'feed bytes back to the agent.',
-        }, async () => {
-            const result = await serial('handleOpenInUi');
-            return { content: [{ type: 'text' as const, text: result }] };
-        });
+            mcpServer.registerTool('serial_open_monitor', {
+                description: 'Focus the Microsoft Serial Monitor panel so the user can see / drive their existing ' +
+                    'session. UI-only — does not open or read a port. Pair with serial_subscribe_monitor to also ' +
+                    'feed bytes back to the agent.',
+            }, async () => {
+                const result = await serial('handleOpenInUi');
+                return { content: [{ type: 'text' as const, text: result }] };
+            });
+        }
 
         // CMSIS Solution flash / debug control tool — wraps the CMSIS panel buttons.
         mcpServer.registerTool('cmsis_action', {
-            description: '⭐ PREFERRED entry point for CMSIS / Cortex-M debugging. Drives the CMSIS Solution ' +
-                'extension — same as clicking the buttons in the CMSIS Solution panel. Operates on the ' +
-                'currently active csolution context (the one selected in the panel).\n\n' +
-                'For embedded debug, ALWAYS choose cmsis_action over start_debugging — start_debugging uses the ' +
-                'plain VS Code debug tab and skips the build / flash pipeline that CMSIS Solution orchestrates.\n\n' +
-                'build / load / erase / load_and_run WAIT for the cbuild/flash task to finish and return a ' +
-                'terminal ✅ success / ❌ failure with the task exit code. On failure, read the errors and fix ' +
-                'the source — do NOT poll for an output file or call get_session_status. load_and_debug / attach ' +
-                'return quickly and hand off to get_session_status polling.\n' +
-                'Actions:\n' +
-                '  • build           — build the active context. Returns the build result (exit code).\n' +
-                '  • load            — flash download to the target. Returns the flash result.\n' +
-                '  • erase           — erase target flash. Returns the result.\n' +
-                '  • load_and_run    — flash and run (no debug session). Returns the result.\n' +
-                '  • load_and_debug  — flash and start a debug session (the "Debug" button). Waits for the session to be ready.\n' +
-                '  • attach          — attach debugger to an already-flashed target (skips programming). Waits for the session to be ready.\n' +
-                '  • detach          — detach debugger\n' +
-                '  • stop_run        — stop a previous load_and_run',
+            description: 'The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on ' +
+                'the active csolution context, like the panel buttons. build / load / erase / load_and_run wait ' +
+                'for the task and end with ✅ or ❌ plus the exit code — read that line, do not poll for files. ' +
+                'load_and_debug (flash + debug, the Debug button) and attach (no programming) return with the ' +
+                'session state; detach and stop_run are immediate. Long builds: get_debug_instructions topic build.',
             inputSchema: {
                 action: z.enum([
                     'build', 'load', 'erase',
                     'load_and_run', 'load_and_debug',
                     'attach', 'detach', 'stop_run',
                 ]).describe('Which CMSIS Solution action to invoke'),
-                timeoutMs: z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC + ' Applies to the session-readiness wait for load_and_debug / attach.'),
+                timeoutMs: z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC + ' For load_and_debug / attach: the session-readiness wait.'),
             },
         }, async (args: { action: 'build' | 'load' | 'erase' | 'load_and_run' | 'load_and_debug' | 'attach' | 'detach' | 'stop_run'; timeoutMs?: number }) => {
             const result = await debuggingHandler.handleCmsisCommand(args);
@@ -867,20 +832,16 @@ export class DebugMCPServer {
         // Flash tool — programs the target via `pyocd load --cbuild-run` and
         // returns bytes programmed / structured error synchronously.
         mcpServer.registerTool('flash', {
-            description: 'Program the target flash via `pyocd load --cbuild-run` and return a synchronous result: ' +
-                'bytes programmed + rate on success, or the exit code with the pyOCD error/output tail on failure. ' +
-                'Programs ALL images listed under `output:` in the cbuild-run file (multi-core safe). ' +
-                'REFUSES while a debug session is active (programming under a live session wedges most probes) — ' +
-                'stop_debugging first, then flash, then cmsis_action attach or load_and_debug. ' +
-                'The cbuild-run file is auto-resolved from the active launch.json / out/ when cbuildRunFile is omitted. ' +
-                'Requires pyocd on PATH (pip install pyocd); cmsis_action load is the alternative that uses the CMSIS ' +
-                'extension\'s bundled flash pipeline.',
+            description: 'Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and ' +
+                'return bytes programmed, or the exit code with pyOCD\'s error lines. Refuses while a debug session ' +
+                'is active: stop_debugging → flash → cmsis_action attach. The cbuild-run file is auto-resolved when ' +
+                'omitted; needs pyocd on PATH.',
             annotations: { readOnlyHint: false, destructiveHint: true },
             inputSchema: {
                 cbuildRunFile: z.string().optional()
                     .describe('Path to the .cbuild-run.yml to program. Omit to auto-resolve from launch.json / out/.'),
                 timeoutMs: z.number().int().min(1_000).max(60_000).optional()
-                    .describe(TIMEOUT_DESC + ' Flash defaults to the full 60 s budget.'),
+                    .describe(TIMEOUT_DESC + ' Flash defaults to 60 s.'),
             },
         }, async (args: { cbuildRunFile?: string; timeoutMs?: number }) => {
             const result = await debuggingHandler.handleFlash(args);

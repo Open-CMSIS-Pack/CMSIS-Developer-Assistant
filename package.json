@@ -144,6 +144,11 @@
           "type": "string",
           "default": "",
           "markdownDescription": "Append one JSON line per MCP tool call — tool name, argument and result size in bytes, duration, outcome — to this file, for offline analysis of what an agent session costs. Empty (the default) keeps the file off; the in-memory statistics behind `get_session_status` and the `cmsis-developer-assistant://stats` resource are always kept. A relative path is resolved against the first workspace folder. Read once at activation: changing it needs a window reload. The file records names and sizes only, never tool arguments or results."
+        },
+        "cmsis-developer-assistant.serial.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Offer the `serial_*` tools (UART ports and the Serial Monitor) to AI agents. Off removes the ten serial tools from the MCP tool list, which every agent turn carries — worth it when your workflow never reads a UART. Read once at activation: changing it needs a window reload, and it applies to the next agent connection."
         }
       }
     }

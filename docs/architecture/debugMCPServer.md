@@ -98,10 +98,14 @@ The options are fixed for the lifetime of a server instance and are read when ea
 
 | Field | Consumed by |
 |-------|-------------|
-| `serialEnabled` | Registration of the `serial_*` tools (issue #23) |
+| `serialEnabled` | Registration of the `serial_*` tools (`cmsis-developer-assistant.serial.enabled`); off leaves them out of the tool list for the whole instance |
 | `telemetry.jsonlPath` | The tool-call telemetry file sink (see below) |
 
 `getOptions()` returns the object read-only, for tests and for later consumers.
+
+## Tool list budget
+
+The tool list is sent to every MCP client at `initialize` and sits in the model's context on every turn, so its size is a per-turn cost. Descriptions carry the trigger and the one caveat an agent needs at call time; the reasoning behind them lives in the `cmsis-debug-live` skill and the `get_debug_instructions` topics. The shared `timeoutMs` note is one short line per tool, with the rationale once in the server instructions. `test/transport/session-lifecycle.js` asserts the serialized single-window `tools/list` stays under a byte budget and that no single description exceeds 700 characters, so a regression is attributable to one tool.
 
 ## Tool call telemetry
 

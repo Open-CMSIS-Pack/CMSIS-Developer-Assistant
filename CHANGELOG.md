@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+- **`cmsis-developer-assistant.serial.enabled`** (default on) — off leaves the ten `serial_*` tools out of the MCP tool list, which every agent turn carries. Fixed per server instance (window reload), so the tool list a client sees never changes between turns.
+
 ### Changed
+- **Smaller tool list.** The serialized `tools/list` every client receives at `initialize` — and re-sends to the model on every turn — shrank by a fifth (33.2 → 26.7 kB for the single-window surface): the per-call `timeoutMs` note is one short line per tool with the rationale once in the server instructions, and the `start_debugging`, `cmsis_action`, `reset`, `add_breakpoint`, `add_logpoint`, `flash` and `get_debug_instructions` descriptions carry the trigger and the one caveat an agent needs at call time; the reasoning moved to the `cmsis-debug-live` skill and the `get_debug_instructions` topics (`build` for the result line and long builds, `breakpoints`, `inspection` for reset methods). The transport test now asserts a byte budget for the tool list and a 700-character cap per description.
 - **`get_debug_instructions` takes a `topic`** — the guide for harnesses that do not load skills (GitHub Copilot Chat) no longer arrives as one 21 KB block. Without `topic` the tool returns a ~2 KB overview (the critical steps, the debugger-first rule) plus the list of topics; `session`, `build`, `breakpoints`, `inspection`, `faults` and `troubleshooting` return one section each. The guide itself was restructured around those topics (marker comments a Markdown reader never sees), gained a `faults` section (EXC_RETURN, the stacked frame, resolving BFAR, the usual cause per flag) and a `build` section (cmsis_action result line, long builds, flash, attach), and its inherited root-cause examples about `getUserById()`, `parseFloat()` and payment forms were replaced by Cortex-M ones (stale D-cache after DMA, an unclocked peripheral, a watchdog fed from a blocking task, a stale `SystemCoreClock`). The full guide stays available as the `cmsis-developer-assistant://docs/debug_instructions` resource; shipped docs are now read once per server instance.
 
 ## [2.3.5] - 2026-08-24

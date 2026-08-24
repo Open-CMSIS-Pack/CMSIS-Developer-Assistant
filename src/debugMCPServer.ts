@@ -17,6 +17,8 @@ import { logger } from './utils/logger';
 import { serialHandler } from './serialHandler';
 import { SerialOpName } from './core/opTable';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { MeasuredMcpServer } from './core/measuredMcpServer';
+import { ToolMetrics, ToolSample, formatBytes } from './core/toolMetrics';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'node:crypto';
@@ -138,6 +140,25 @@ export interface DebugMCPServerOptions {
 }
 
 /**
+ * Append one JSON line per tool sample to `file`. The first write failure is
+ * reported once and the sink goes quiet — telemetry must never turn into a
+ * warning on every tool call.
+ */
+function createJsonlSink(file: string | undefined): ((sample: ToolSample) => void) | undefined {
+    if (!file) { return undefined; }
+    let muted = false;
+    return (sample) => {
+        if (muted) { return; }
+        fs.appendFile(file, JSON.stringify(sample) + '\n', (err) => {
+            if (err && !muted) {
+                muted = true;
+                logger.warn(`Tool telemetry: cannot append to ${file} (${err.message}); the JSONL sink is off for this server instance`);
+            }
+        });
+    };
+}
+
+/**
  * Main MCP server class that exposes debugging functionality as tools and resources.
  * Uses the official @modelcontextprotocol/sdk with SSE transport over express.
  */
@@ -164,6 +185,12 @@ export class DebugMCPServer {
     /** See {@link DebugMCPServerOptions}; fixed for this instance. */
     private readonly options: Readonly<DebugMCPServerOptions>;
 
+    /** Every tool call of every session on this instance (bounded ring, running totals). */
+    private readonly aggregate = new ToolMetrics(500);
+
+    /** Optional JSONL file sink, from `options.telemetry.jsonlPath`. */
+    private readonly sampleSink: ((sample: ToolSample) => void) | undefined;
+
     constructor(
         port: number,
         timeoutInSeconds: number,
@@ -172,6 +199,7 @@ export class DebugMCPServer {
         options: DebugMCPServerOptions = {},
     ) {
         this.options = Object.freeze({ ...options });
+        this.sampleSink = createJsonlSink(this.options.telemetry?.jsonlPath);
         if (handlerFactory) {
             this.handlerFactory = handlerFactory;
         } else {
@@ -188,6 +216,11 @@ export class DebugMCPServer {
     /** The options this instance was built with. */
     public getOptions(): Readonly<DebugMCPServerOptions> {
         return this.options;
+    }
+
+    /** Tool-call statistics across every session this instance has served. */
+    public getMetrics(): ToolMetrics {
+        return this.aggregate;
     }
 
     /**
@@ -210,7 +243,17 @@ export class DebugMCPServer {
      * while GET /mcp still has a real stream to attach to.
      */
     private createMcpServer(): McpServer {
-        const mcpServer = new McpServer({
+        // One metrics ring per session: the stats resource and the
+        // get_session_status trailer report the session, the aggregate keeps
+        // the instance-wide picture, the sink and the log see every sample.
+        const metrics = new ToolMetrics(200, (sample) => {
+            this.aggregate.record(sample);
+            this.sampleSink?.(sample);
+            logger.info(`tool=${sample.tool} ms=${sample.ms} in=${formatBytes(sample.argBytes)} ` +
+                `out=${formatBytes(sample.resultBytes)} outcome=${sample.outcome}` +
+                (sample.sessionId ? ` session=${sample.sessionId.slice(0, 8)}` : ''));
+        });
+        const mcpServer = new MeasuredMcpServer({
             name: 'cmsis-developer-assistant',
             version: SERVER_VERSION,
         }, {
@@ -226,10 +269,10 @@ export class DebugMCPServer {
                 'root-cause guidance needed to use these tools effectively instead of guessing or adding ' +
                 'temporary printf/UART logging. Harnesses that do not load skills (GitHub Copilot Chat) ' +
                 'should call get_debug_instructions instead.',
-        });
+        }, metrics);
         const handlers = this.handlerFactory();
-        this.setupTools(mcpServer, handlers.debug, handlers.serial);
-        this.setupResources(mcpServer);
+        this.setupTools(mcpServer, handlers.debug, handlers.serial, metrics);
+        this.setupResources(mcpServer, metrics);
         return mcpServer;
     }
 
@@ -244,6 +287,7 @@ export class DebugMCPServer {
         mcpServer: McpServer,
         debuggingHandler: IDebuggingHandler,
         serial: SerialDispatch,
+        metrics: ToolMetrics,
     ) {
         const TIMEOUT_DESC = 'Optional per-call timeout in milliseconds (capped to 60 000). Overrides the default for this single tool call. Use it when you can estimate the work and want a tighter or looser bound.';
 
@@ -838,7 +882,9 @@ export class DebugMCPServer {
             annotations: { readOnlyHint: true, destructiveHint: false },
         }, async () => {
             const result = await debuggingHandler.handleGetSessionStatus();
-            return { content: [{ type: 'text' as const, text: result }] };
+            // The session's tool-call statistics ride along here so an agent
+            // (or its user) sees the running cost without a separate call.
+            return { content: [{ type: 'text' as const, text: `${result}\n\n${metrics.formatTotals()}` }] };
         });
 
         // ========== Multi-window routing ==========
@@ -875,7 +921,25 @@ export class DebugMCPServer {
     /**
      * Setup MCP resources for documentation
      */
-    private setupResources(mcpServer: McpServer) {
+    private setupResources(mcpServer: McpServer, metrics: ToolMetrics) {
+        // Live tool-call statistics: what this session and this server
+        // instance have sent so far. JSON, so a driver can diff it around a run.
+        mcpServer.registerResource('Tool call statistics', 'cmsis-developer-assistant://stats', {
+            description: 'Per-tool call counts, bytes in/out, durations and outcomes for this MCP session ' +
+                'and for the whole server instance, plus the most recent samples',
+            mimeType: 'application/json',
+        }, async (uri: URL) => ({
+            contents: [{
+                uri: uri.href,
+                mimeType: 'application/json',
+                text: JSON.stringify({
+                    session: metrics.totals(),
+                    server: this.aggregate.totals(),
+                    recent: metrics.samples().slice(-50),
+                }, null, 2),
+            }],
+        }));
+
         // Add MCP resources for debugging documentation
         mcpServer.registerResource('Debugging Instructions Guide', 'cmsis-developer-assistant://docs/debug_instructions', {
             description: 'Step-by-step instructions for debugging with CMSIS Developer Assistant',

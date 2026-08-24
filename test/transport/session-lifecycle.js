@@ -23,6 +23,9 @@
 //   4. DELETE /mcp tears the session down
 //   5. REGRESSION: three consecutive get_threads calls on one session all
 //      return — the bug the old per-request model was built to fix.
+//   6. Every tool call is measured: the stats resource, the
+//      get_session_status trailer and the server aggregate all count them.
+//   7. Server options are accepted and readable back.
 
 require('./vscode-stub.js');
 
@@ -150,7 +153,26 @@ async function main() {
             call.status === 200 ? '' : call.body);
     }
 
-    // 6. DELETE tears the session down
+    // 6. Tool telemetry: the calls above were measured at the MCP boundary.
+    const stats = await request(port, 'POST', { 'mcp-session-id': sid }, {
+        jsonrpc: '2.0', id: 20, method: 'resources/read', params: { uri: 'cmsis-developer-assistant://stats' },
+    });
+    const statsText = parseSse(stats.body)?.result?.contents?.[0]?.text ?? '';
+    let statsJson = null;
+    try { statsJson = JSON.parse(statsText); } catch { /* reported by the check */ }
+    check('stats resource counts the tool calls',
+        !!statsJson && statsJson.session.calls >= 3 && statsJson.session.perTool.get_threads?.calls === 3,
+        statsJson ? `session.calls=${statsJson.session.calls}` : statsText.slice(0, 120));
+    const status = await request(port, 'POST', { 'mcp-session-id': sid }, {
+        jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
+    });
+    const statusText = parseSse(status.body)?.result?.content?.[0]?.text ?? '';
+    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 3 calls/m.test(statusText),
+        statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
+    check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 4,
+        `${server.getMetrics().totals().calls} calls`);
+
+    // 7. DELETE tears the session down
     const del = await request(port, 'DELETE', { 'mcp-session-id': sid });
     check('DELETE /mcp accepts a valid session', del.status === 200 || del.status === 204, `status=${del.status}`);
     const afterDelete = await openStream(port, sid);
@@ -158,7 +180,7 @@ async function main() {
 
     await server.stop();
 
-    // 7. Server options are accepted, kept for the instance's lifetime and
+    // 8. Server options are accepted, kept for the instance's lifetime and
     //    readable back. Behaviour behind them (serial gating, telemetry) lands
     //    with the packages that consume each field; here only the plumbing.
     const configured = new DebugMCPServer(0, 30, undefined, undefined, { serialEnabled: false });

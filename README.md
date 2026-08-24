@@ -181,6 +181,7 @@ Turning `cmsis-developer-assistant.aiSkills.enabled` off switches the pack off: 
 | `cmsis-developer-assistant.dapRequestTimeoutMs` | `10000` | Per-request timeout for traffic to the debug adapter and probe. Increase for slow targets or large memory reads. |
 | `cmsis-developer-assistant.memoryReadTimeoutMs` | `30000` | Overall timeout for a single `read_memory` or `read_core_registers` call. |
 | `cmsis-developer-assistant.redactSecrets` | `true` | Withholds variable and expression values that look like credentials. |
+| `cmsis-developer-assistant.telemetry.jsonlPath` | `""` | Append one JSON line per MCP tool call — name, bytes in/out, duration, outcome; never arguments or results — to this file for offline analysis. Off when empty; `get_session_status` and the `cmsis-developer-assistant://stats` resource always show the in-memory statistics. |
 
 ### Networking and multiple windows
 

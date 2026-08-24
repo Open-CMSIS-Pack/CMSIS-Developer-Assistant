@@ -139,6 +139,11 @@
           "default": 30000,
           "minimum": 1000,
           "description": "Overall timeout (in milliseconds) for a single read_memory / read_core_registers tool call. Caps the total time spent talking to the hardware, even across many word-level fallback reads."
+        },
+        "cmsis-developer-assistant.telemetry.jsonlPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Append one JSON line per MCP tool call — tool name, argument and result size in bytes, duration, outcome — to this file, for offline analysis of what an agent session costs. Empty (the default) keeps the file off; the in-memory statistics behind `get_session_status` and the `cmsis-developer-assistant://stats` resource are always kept. A relative path is resolved against the first workspace folder. Read once at activation: changing it needs a window reload. The file records names and sizes only, never tool arguments or results."
         }
       }
     }

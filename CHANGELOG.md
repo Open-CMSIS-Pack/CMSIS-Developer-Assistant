@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+- **Per-tool call telemetry** — every MCP tool call is measured at the server boundary: argument and result bytes, wall time and outcome (`ok` / `timeout` / `error`). `get_session_status` now ends with a two-line summary for the session, the new `cmsis-developer-assistant://stats` resource returns the per-tool totals as JSON (session and server instance, plus the last 50 samples) so a test driver can diff it around a run, one INFO line per call goes to the output channel, and the new **`cmsis-developer-assistant.telemetry.jsonlPath`** setting (default off) appends one JSON line per call to a file — names and sizes only, never arguments or results. `test/realboard/run.ts` writes the statistics into its report. Groundwork for measuring the response-size work and for agent evaluation runs.
+
 ## [2.3.3] - 2026-08-21
 
 ### Changed

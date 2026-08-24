@@ -318,9 +318,21 @@ async function main() {
     console.log(` ${pass} pass · ${fail} fail · ${skip} skip · ${results.length} total`);
     console.log('=================================================');
 
+    // Tool-call statistics from the server — bytes and time per tool for this
+    // run — when the server is new enough to expose them.
+    const toolStats = await client.readResource({ uri: 'cmsis-developer-assistant://stats' })
+        .then(r => {
+            const text = (r.contents[0] as { text?: unknown } | undefined)?.text;
+            return typeof text === 'string' ? JSON.parse(text) as { session?: { calls: number; bytesOut: number } } : undefined;
+        })
+        .catch(() => undefined);
+    if (toolStats?.session) {
+        console.log(`# tool stats: ${toolStats.session.calls} calls · ${toolStats.session.bytesOut} bytes returned`);
+    }
+
     // JSON report next to the driver
     const reportPath = path.join(__dirname, `realboard.report.${Date.now()}.json`);
-    fs.writeFileSync(reportPath, JSON.stringify({ endpoint: cfg.endpoint, results }, null, 2));
+    fs.writeFileSync(reportPath, JSON.stringify({ endpoint: cfg.endpoint, toolStats, results }, null, 2));
     console.log(`# report: ${reportPath}`);
 
     await client.close().catch(() => { /* ignore */ });

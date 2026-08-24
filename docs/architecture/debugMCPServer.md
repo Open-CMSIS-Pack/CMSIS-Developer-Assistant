@@ -83,6 +83,7 @@ Each request creates a new `StreamableHTTPServerTransport` instance in stateless
 | `cmsis-developer-assistant://docs/cmsis-embedded-guide` | Cortex-M debugging expertise |
 | `cmsis-developer-assistant://docs/troubleshooting/embedded` | Embedded-specific troubleshooting |
 | `cmsis-developer-assistant://docs/troubleshooting/*` | Language-specific tips |
+| `cmsis-developer-assistant://stats` | Tool-call statistics as JSON: per-tool calls, bytes in/out, time and outcomes for the session and for the server instance, plus the last 50 samples |
 
 ## Configuration
 
@@ -98,6 +99,12 @@ The options are fixed for the lifetime of a server instance and are read when ea
 | Field | Consumed by |
 |-------|-------------|
 | `serialEnabled` | Registration of the `serial_*` tools (issue #23) |
-| `telemetry.jsonlPath` | Per-tool call telemetry sink (issue #24) |
+| `telemetry.jsonlPath` | The tool-call telemetry file sink (see below) |
 
 `getOptions()` returns the object read-only, for tests and for later consumers.
+
+## Tool call telemetry
+
+Every session's `McpServer` is a `MeasuredMcpServer` (`src/core/measuredMcpServer.ts`), whose `registerTool` wraps each callback. The wrapper sits at the MCP boundary, so it measures what the client experiences: argument bytes after schema parsing, result bytes as handed to the transport (after every handler, redaction and routing step), wall time including a forward to another window, and the outcome — `ok`, `timeout` (a handler that returned its fence text instead of finishing) or `error` (a thrown error or an `isError` result), classified by `classifyOutcome` in `src/core/toolMetrics.ts`.
+
+One `ToolMetrics` ring per session feeds three consumers: the `cmsis-developer-assistant://stats` resource and the two-line trailer on `get_session_status` report the session; the instance-wide aggregate (`getMetrics()`) keeps every session; an INFO line per call goes to the output channel, and, when `telemetry.jsonlPath` is set, one JSON line per call goes to that file (names and sizes only — never arguments or results). The worker side logs a matching `control op=… ms=…` line in `ControlServer.dispatch`, so a slow call can be attributed to the window that did the work or to the hop. `test/realboard/run.ts` reads the stats resource into its report.

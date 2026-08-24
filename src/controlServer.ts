@@ -114,6 +114,18 @@ export class ControlServer {
             return Promise.reject(new Error(`Control op ${op} is not implemented in this window`));
         }
 
-        return Promise.resolve((method as (a: unknown) => Promise<string>).call(target, args));
+        // Worker-side timing next to the router's per-tool line, so a slow
+        // call can be attributed to the window that did the work or to the hop.
+        const started = Date.now();
+        return Promise.resolve((method as (a: unknown) => Promise<string>).call(target, args)).then(
+            (result) => {
+                logger.info(`control op=${op} ms=${Date.now() - started} out=${Buffer.byteLength(result ?? '')} B`);
+                return result;
+            },
+            (err: unknown) => {
+                logger.info(`control op=${op} ms=${Date.now() - started} failed: ${err instanceof Error ? err.message : String(err)}`);
+                throw err;
+            },
+        );
     }
 }

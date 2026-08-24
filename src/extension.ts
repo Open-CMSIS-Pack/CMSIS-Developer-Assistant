@@ -2,6 +2,7 @@
 // Copyright 2026 Arm Limited and contributors
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { SERVER_VERSION } from './debuggingExecutor';
 import { AgentConfigurationManager } from './utils/agentConfigurationManager';
 import { clearSvdCache } from './core/svdParser';
@@ -11,6 +12,24 @@ import { WindowCoordinator } from './windowCoordinator';
 
 let coordinator: WindowCoordinator | null = null;
 let agentConfigManager: AgentConfigurationManager | null = null;
+
+/**
+ * Where the tool-telemetry JSONL goes: empty means off, an absolute path is
+ * used as given, a relative one lives in the first workspace folder (and is
+ * off when there is none — a bare relative path in an empty window would land
+ * wherever the extension host happens to run).
+ */
+function resolveTelemetryPath(setting: string): string | undefined {
+    const trimmed = setting.trim();
+    if (!trimmed) { return undefined; }
+    if (path.isAbsolute(trimmed)) { return trimmed; }
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!root) {
+        logger.warn(`telemetry.jsonlPath "${trimmed}" is relative and no workspace folder is open; telemetry file is off`);
+        return undefined;
+    }
+    return path.join(root, trimmed);
+}
 
 export async function activate(context: vscode.ExtensionContext) {
     // Initialize logging first
@@ -22,11 +41,15 @@ export async function activate(context: vscode.ExtensionContext) {
     const serverPort = config.get<number>('serverPort', 3001);
     const dapRequestTimeoutMs = config.get<number>('dapRequestTimeoutMs', 10000);
     const memoryReadTimeoutMs = config.get<number>('memoryReadTimeoutMs', 30000);
+    const telemetryJsonlPath = resolveTelemetryPath(config.get<string>('telemetry.jsonlPath', ''));
 
     logger.info(`Using timeoutInSeconds: ${timeoutInSeconds} seconds`);
     logger.info(`Using serverPort: ${serverPort}`);
     logger.info(`Using dapRequestTimeoutMs: ${dapRequestTimeoutMs} ms`);
     logger.info(`Using memoryReadTimeoutMs: ${memoryReadTimeoutMs} ms`);
+    if (telemetryJsonlPath) {
+        logger.info(`Tool telemetry JSONL: ${telemetryJsonlPath}`);
+    }
 
     // Track DAP stopped/continued events so we can answer "is the target
     // currently paused?" reliably, regardless of what activeStackItem says.
@@ -66,6 +89,9 @@ export async function activate(context: vscode.ExtensionContext) {
             hardwareTimeouts: {
                 dapRequestMs: dapRequestTimeoutMs,
                 memoryReadMs: memoryReadTimeoutMs,
+            },
+            serverOptions: {
+                telemetry: { jsonlPath: telemetryJsonlPath },
             },
         });
         await coordinator.start(context);

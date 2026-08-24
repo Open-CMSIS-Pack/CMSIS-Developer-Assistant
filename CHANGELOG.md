@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.3.6] - 2026-08-24
+
 ### Added
 - **`lookup_peripheral` and `lookup_register`** — answer SVD questions without a debug session and without touching the target: the peripheral list, a peripheral's register map (offsets, absolute addresses, access), which peripheral and register sit at an address (turn a BFAR into `I2C1.CR1`), and one register's bit fields with their enumerated values (which bit is the clock enable). The SVD is resolved from an explicit `svdFile`, the active session, `out/**/*.cbuild-run.yml` (`pname` picks the core) or a single workspace `.svd`, and the failure text lists what was tried. Unknown names get suggestions instead of the full name list — `read_peripheral_register` now does the same and points at `lookup_peripheral`. The parser reads `addressBlock`s, `enumeratedValues` and `dim` register arrays, and no longer borrows a field's `access` for its register.
 - **`cmsis-developer-assistant.serial.enabled`** (default on) — off leaves the ten `serial_*` tools out of the MCP tool list, which every agent turn carries. Fixed per server instance (window reload), so the tool list a client sees never changes between turns.

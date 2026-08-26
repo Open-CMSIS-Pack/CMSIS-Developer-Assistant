@@ -56,6 +56,10 @@ Embedded debugging without target context is guesswork. Before issuing any debug
 | 4 | `out/<context>.cbuild-run.yml` | Debug runtime: GDB server (pyOCD / J-Link), port, programming algorithms, reset / debug sequences, SVD path. This is what the CMSIS Debugger extension hands to the gdbtarget config. |
 | 5 | `.vscode/launch.json` | The actual VS Code debug configurations. Look for `type: gdbtarget` entries — their `name` field is what you pass as `configurationName` to `start_debugging`. Should be auto-generated/refreshed by the user from the **CMSIS Solution → Manage Solution → Debugger** dialog. |
 
+### Which target the panel will act on
+
+A csolution can declare several `target-types` (a board and an FVP, the HE and HP cores of a dual-core device), each with its own `target-set` debugger configuration. `cmsis_action` acts on whichever one the CMSIS Solution panel has selected — exactly like its buttons — and every result names that target (`… on HP@debug`): read it. On a multi-target solution pass `target` (`MPS3` or `HP@debug`, the names from `<name>.csolution.yml`). When it differs from the active one the tool switches the selection (`.vscode/cmsis.json`, then a solution re-activation) and verifies through the extension before it builds, flashes or attaches; when the switch cannot be verified, or the target is not declared, it refuses and lists the declared targets. A switch is refused under a live debug session — `stop_debugging` first.
+
 ### If `launch.json` is missing or out of date
 
 Ask the user to:
@@ -73,20 +77,21 @@ Some projects expose **documentation links** in the CMSIS Solution dialog (board
 
 ### Cross-check with `get_device_info`
 
-After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_info` once to confirm the live session matches what the YAMLs said: program path, GDB server, port, `cbuildRunFile` reference. A mismatch means the user picked a different `configurationName` than the one you analysed.
+After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_info` once to confirm the live session matches what the YAMLs said: program path, GDB server, port, `cbuildRunFile` reference, and the `CMSIS target:` line (the panel's target-type@set). A mismatch means the user picked a different `configurationName` or target than the one you analysed.
 
 ### Quick checklist
 
 - [ ] Found `<name>.cbuild-idx.yml` and identified the active context.
 - [ ] Read the matching `<context>.cbuild.yml` — know the device, core, ELF path.
 - [ ] Read the matching `<context>.cbuild-run.yml` — know the probe, port, SVD.
+- [ ] Know which target-type the panel is on; on a multi-target solution pass `target` and check the `on <target>` in the reply.
 - [ ] Confirmed `launch.json` has a `gdbtarget` entry whose name to pass to `start_debugging`.
 - [ ] Skimmed any pack documentation linked from the CMSIS dialog.
 - [ ] (After attaching) `get_device_info` matches expectations.
 
 ## 🔨 Build, flash, attach
 
-`cmsis_action` drives the CMSIS Solution extension on the currently active csolution context — the same as clicking the panel's buttons. For embedded debugging it is the entry point; `start_debugging` uses the plain VS Code debug tab and skips the build / flash pipeline.
+`cmsis_action` drives the CMSIS Solution extension on the currently active csolution target — the same as clicking the panel's buttons. `target` (`MPS3` or `HP@debug`) selects the target-type / target-set: a differing one is switched and verified first, an undeclared one is refused with the declared list; every result names the target it ran on. For embedded debugging it is the entry point; `start_debugging` uses the plain VS Code debug tab and skips the build / flash pipeline.
 
 | Action | What it does | What comes back |
 | ------ | ------------ | --------------- |

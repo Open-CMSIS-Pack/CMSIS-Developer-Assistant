@@ -86,6 +86,13 @@ order, and stop as soon as you have the device, core, ELF path and probe:
 5. `.vscode/launch.json` — the `type: gdbtarget` entry whose `name` you would
    pass as `configurationName`.
 
+A solution can declare several `target-types` (board and FVP, the HE and HP
+cores of a dual-core device); `cmsis_action` acts on the one the CMSIS
+Solution panel has selected, and every reply names it (`… on HP@debug`).
+On a multi-target solution pass `target` (`MPS3` or `HP@debug`): a differing
+target is switched and verified before anything runs, an undeclared one is
+refused with the declared list.
+
 If those files are missing, build first (`cmsis_action` with `action='build'`).
 It waits for cbuild and ends with ✅ or ❌ plus the exit code — read that line
 rather than polling for output files. Pack resolution or a first build can

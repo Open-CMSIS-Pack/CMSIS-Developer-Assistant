@@ -2,8 +2,13 @@
 // Copyright 2026 Arm Limited and contributors
 
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as jsonc from 'jsonc-parser';
+import {
+    TargetRef, TargetTypeInfo, applyTargetSelection, formatTargetChoices, listTargetTypes, parseTargetRef,
+    resolveTargetSelection, solutionDisplayName, targetMatches,
+} from './core/cmsisTarget';
 import { IDebugConfigurationManager } from './utils/debugConfigurationManager';
 import { DebugState, formatBreakpointModifiers, StackFrame } from './debugState';
 import { IDebuggingExecutor } from './debuggingExecutor';
@@ -105,7 +110,7 @@ export interface IDebuggingHandler {
     handleGetCallStack(args: { threadId?: number; levels?: number; timeoutMs?: number }): Promise<string>;
     handleGetThreads(args?: { timeoutMs?: number }): Promise<string>;
     handleGetFrameVariables(args: { frameId: number; scope?: 'local' | 'global' | 'all'; variableNames?: string[]; timeoutMs?: number }): Promise<string>;
-    handleCmsisCommand(args: { action: CmsisAction; timeoutMs?: number }): Promise<string>;
+    handleCmsisCommand(args: { action: CmsisAction; target?: string; timeoutMs?: number }): Promise<string>;
     handleFlash(args: { cbuildRunFile?: string; timeoutMs?: number }): Promise<string>;
 }
 
@@ -1606,7 +1611,11 @@ REQUIRED NEXT STEPS:
             if (!this.executor.hasDebugSession()) {
                 throw new Error('No active debug session. Start debugging first.');
             }
-            return await this.executor.getDeviceInfo();
+            const info = await this.executor.getDeviceInfo();
+            // Which csolution target the panel is on — the cross-check the
+            // build topic asks for after load_and_debug. Best-effort.
+            const target = await this.queryActiveTargetSet();
+            return target.name ? `${info.trimEnd()}\n  CMSIS target: ${target.name}` : info;
         } catch (error) {
             throw new Error(`Error getting device info: ${error}`);
         }
@@ -1738,7 +1747,7 @@ REQUIRED NEXT STEPS:
      * check; do not infer it from the presence of `.vscode/cmsis.json`, which
      * is legitimately empty/absent for single-target solutions.
      */
-    private async queryActiveCmsisSolution(): Promise<{ active: boolean; describe: string }> {
+    private async queryActiveCmsisSolution(): Promise<{ active: boolean; path?: string; describe: string }> {
         try {
             const result = await withTimeout(
                 'cmsis getSolutionFile',
@@ -1756,11 +1765,104 @@ REQUIRED NEXT STEPS:
                 const r = result as Record<string, any>;
                 path = r.solutionFile ?? r.fsPath ?? r.path ?? r.uri?.fsPath ?? r.uri?.path;
             }
-            return { active: true, describe: path ?? '<active, path unknown>' };
+            return { active: true, path, describe: path ?? '<active, path unknown>' };
         } catch (err) {
             // Command missing → CMSIS Solution extension not installed/active.
             return { active: false, describe: `query failed: ${err instanceof Error ? err.message : String(err)}` };
         }
+    }
+
+    /**
+     * Ask the CMSIS Solution extension which target-type / target-set is
+     * active. `cmsis-csolution.getActiveTargetSet` returns `type`, `type@set`
+     * (the panel's Run and Debug configuration), or '' when nothing is
+     * active. Never throws.
+     */
+    private async queryActiveTargetSet(): Promise<{ name: string | undefined; describe: string }> {
+        try {
+            const result = await withTimeout(
+                'cmsis getActiveTargetSet',
+                5_000,
+                Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.getActiveTargetSet')),
+            );
+            const name = typeof result === 'string' ? result.trim() : '';
+            return { name: name || undefined, describe: name || 'none' };
+        } catch (err) {
+            return { name: undefined, describe: `query failed: ${err instanceof Error ? err.message : String(err)}` };
+        }
+    }
+
+    /**
+     * Make `wanted` the active target of the solution. The CMSIS Solution
+     * extension (1.70) has no command for this: the selection lives in
+     * `.vscode/cmsis.json`, which it re-reads when the solution is
+     * (re)activated. So: validate the request against the csolution's
+     * target-types, write the selection, deactivate and re-activate the
+     * solution by path (no picker), then poll getActiveTargetSet until it
+     * agrees. Nothing proceeds on an unverified switch — the reason says what
+     * was done and what the extension still reports.
+     */
+    private async switchActiveTarget(
+        solutionPath: string | undefined,
+        wanted: TargetRef,
+        active: string | undefined,
+    ): Promise<{ ok: true; active: string } | { ok: false; reason: string }> {
+        const manual = 'Switch it by hand in the CMSIS Solution panel (Manage Solution → Target) and repeat the call.';
+        const was = active || '(none)';
+        const errText = (err: unknown) => err instanceof Error ? err.message : String(err);
+
+        if (!solutionPath || !fs.existsSync(solutionPath)) {
+            return { ok: false, reason: `the active target is '${was}' and the csolution path could not be resolved ` +
+                `from the CMSIS Solution extension, so the target cannot be switched. ${manual}` };
+        }
+        let types: TargetTypeInfo[];
+        try {
+            types = listTargetTypes(await fs.promises.readFile(solutionPath, 'utf8'));
+        } catch (err) {
+            return { ok: false, reason: `the active target is '${was}' and ${solutionPath} could not be read ` +
+                `(${errText(err)}). ${manual}` };
+        }
+        const resolved = resolveTargetSelection(types, wanted);
+        if (!resolved.ok) {
+            return { ok: false, reason: `${resolved.reason}. Active target: '${was}'. Declared targets: ` +
+                `${formatTargetChoices(types) || '(none found)'}.` };
+        }
+
+        const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(solutionPath))?.uri.fsPath
+            ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+            ?? path.dirname(solutionPath);
+        const cmsisJson = path.join(folder, '.vscode', 'cmsis.json');
+        try {
+            await fs.promises.mkdir(path.dirname(cmsisJson), { recursive: true });
+            const before = fs.existsSync(cmsisJson) ? await fs.promises.readFile(cmsisJson, 'utf8') : '';
+            const after = applyTargetSelection(before, solutionDisplayName(folder, solutionPath), resolved.type, resolved.setIndex);
+            await fs.promises.writeFile(cmsisJson, after, 'utf8');
+        } catch (err) {
+            return { ok: false, reason: `could not write ${cmsisJson} to select '${resolved.name}' (${errText(err)}). ${manual}` };
+        }
+
+        try {
+            await withTimeout('cmsis deactivateSolution', 10_000,
+                Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.deactivateSolution')));
+            await withTimeout('cmsis activateSolution', 10_000,
+                Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.activateSolution', solutionPath)));
+        } catch (err) {
+            return { ok: false, reason: `wrote '${resolved.name}' to ${cmsisJson} but re-activating the solution ` +
+                `so the extension picks it up failed (${errText(err)}). ${manual}` };
+        }
+
+        const deadline = Date.now() + 15_000;
+        let seen: string | undefined;
+        for (;;) {
+            seen = (await this.queryActiveTargetSet()).name;
+            if (seen && targetMatches(seen, wanted)) {
+                return { ok: true, active: seen };
+            }
+            if (Date.now() >= deadline) { break; }
+            await new Promise<void>((resolve) => setTimeout(resolve, 500));
+        }
+        return { ok: false, reason: `wrote '${resolved.name}' to ${cmsisJson} and re-activated the solution, but the ` +
+            `CMSIS Solution extension still reports '${seen || '(none)'}' as the active target after 15 s. ${manual}` };
     }
 
     /**
@@ -1912,7 +2014,7 @@ REQUIRED NEXT STEPS:
      * actions the buttons in the CMSIS Solution panel invoke. They operate on
      * the currently active csolution context (no arguments).
      */
-    public async handleCmsisCommand(args: { action: CmsisAction; timeoutMs?: number }): Promise<string> {
+    public async handleCmsisCommand(args: { action: CmsisAction; target?: string; timeoutMs?: number }): Promise<string> {
         // build / load / erase / load_and_run run a cbuild/flash task that can
         // take tens of seconds. Give them the full handler budget by default
         // so the tool can wait for the task's real exit code and return a
@@ -1944,6 +2046,35 @@ REQUIRED NEXT STEPS:
                     `confirm a solution + active context is selected; (3) if the solution is open in a different ` +
                     `window, drive cmsis_action from that window's MCP server.`;
             }
+
+            // Which target-type / target-set the panel will act on. A `target`
+            // that differs from it is switched (cmsis.json + solution
+            // re-activation) and verified before anything runs; every result
+            // line names the target it ran on so the agent can never be blind
+            // to a wrong-target build or flash.
+            let activeTarget = (await this.queryActiveTargetSet()).name;
+            let switchedFrom: string | undefined;
+            const wanted = parseTargetRef(args.target);
+            if (args.target !== undefined && !wanted) {
+                return `CMSIS '${args.action}' not attempted: target '${args.target}' is not a valid reference — ` +
+                    `pass a target-type name or type@set as declared in the csolution, e.g. 'MPS3' or 'HP@debug'.`;
+            }
+            if (wanted && !targetMatches(activeTarget, wanted)) {
+                if (this.executor.hasDebugSession()) {
+                    return `CMSIS '${args.action}' not attempted: the active target is '${activeTarget || '(none)'}' and ` +
+                        `switching to '${args.target}' re-activates the solution, which is not done under a live debug ` +
+                        `session. Call stop_debugging first, then repeat this call.`;
+                }
+                const switched = await this.switchActiveTarget(solution.path, wanted, activeTarget);
+                if (!switched.ok) {
+                    return `CMSIS '${args.action}' not attempted: ${switched.reason}`;
+                }
+                switchedFrom = activeTarget || '(none)';
+                activeTarget = switched.active;
+            }
+            const targetTag = activeTarget
+                ? ` on ${activeTarget}${switchedFrom ? `, switched from ${switchedFrom}` : ''}`
+                : '';
 
             const map: Record<CmsisAction, string> = {
                 build:           'cmsis-csolution.build',
@@ -2029,17 +2160,17 @@ REQUIRED NEXT STEPS:
                     const survived = await this.confirmSessionSurvives();
                     if (survived.stable) {
                         const state = await this.executor.getCurrentDebugState(this.numNextLines);
-                        return `CMSIS '${args.action}' completed — debug session survived the connect ` +
+                        return `CMSIS '${args.action}' completed${targetTag} — debug session survived the connect ` +
                             `(${survived.detail}). State: ${this.fullState(state)}`;
                     }
-                    return `CMSIS '${args.action}' started a debug session but it did NOT survive the initial ` +
+                    return `CMSIS '${args.action}'${targetTag} started a debug session but it did NOT survive the initial ` +
                         `connect — ${survived.detail}. ` +
                         `For 'attach' this almost always means no GDB server is listening on the configured port: ` +
                         `start the GDB server first, or use 'load_and_debug' (which launches one). ` +
                         `Confirm with get_session_status / check_target_connection.` +
                         this.diagnosticsSuffix();
                 }
-                return `CMSIS '${args.action}' issued via '${cmd}'. The flash/connect pipeline is running in the ` +
+                return `CMSIS '${args.action}'${targetTag} issued via '${cmd}'. The flash/connect pipeline is running in the ` +
                     `CMSIS extension (a multi-core flash + attach typically takes 20-40 s). This tool does not ` +
                     `block for the whole pipeline — poll get_session_status until it reports 'running' or ` +
                     `'stopped'. If get_session_status keeps reporting 'no-session' with liveSessionsInThisWindow=0, ` +
@@ -2063,11 +2194,11 @@ REQUIRED NEXT STEPS:
                 const outcome = await taskWaiter;
 
                 if (outcome.done && outcome.exitCode === 0) {
-                    return `✅ CMSIS '${args.action}' succeeded (task '${outcome.taskName}' exited 0).` +
+                    return `✅ CMSIS '${args.action}' succeeded${targetTag} (task '${outcome.taskName}' exited 0).` +
                         (nextStep[args.action] ?? '');
                 }
                 if (outcome.done && typeof outcome.exitCode === 'number') {
-                    return `❌ CMSIS '${args.action}' FAILED — task '${outcome.taskName}' exited with code ` +
+                    return `❌ CMSIS '${args.action}' FAILED${targetTag} — task '${outcome.taskName}' exited with code ` +
                         `${outcome.exitCode}. Open the CMSIS/cbuild terminal or the Problems panel to read the ` +
                         `compiler/linker errors, fix them in the source, then re-run cmsis_action ${args.action}. ` +
                         `This is a terminal result — do not wait for an output file.`;
@@ -2075,14 +2206,14 @@ REQUIRED NEXT STEPS:
                 if (outcome.done) {
                     // Task ended but the platform reported no exit code (e.g. it
                     // was cancelled) — don't claim success.
-                    return `CMSIS '${args.action}' task '${outcome.taskName}' ended without an exit code ` +
+                    return `CMSIS '${args.action}'${targetTag} — task '${outcome.taskName}' ended without an exit code ` +
                         `(it may have been cancelled). Re-run cmsis_action ${args.action} to get a definite result.`;
                 }
                 if (!outcome.started) {
                     // No cbuild/flash task ever started. Usually means the
                     // active context is already up to date (nothing to build),
                     // or the CMSIS panel is waiting on a manual picker.
-                    return `CMSIS '${args.action}' issued via '${cmd}', but no cbuild/flash task ran within the ` +
+                    return `CMSIS '${args.action}'${targetTag} issued via '${cmd}', but no cbuild/flash task ran within the ` +
                         `wait window. This usually means the active context is already up to date (nothing to ` +
                         `${args.action}), or the CMSIS Solution panel is showing a picker that needs manual ` +
                         `selection. This is a terminal result — do not wait for an output file. Re-run the ` +
@@ -2090,14 +2221,14 @@ REQUIRED NEXT STEPS:
                 }
                 // Task started but is still running at the deadline.
                 const waitedS = Math.round((Math.max(5_000, effectiveTimeoutMs - 3_000)) / 1000);
-                return `CMSIS '${args.action}' is still running after ${waitedS}s (task '${outcome.taskName ?? cmd}' ` +
+                return `CMSIS '${args.action}'${targetTag} is still running after ${waitedS}s (task '${outcome.taskName ?? cmd}' ` +
                     `has not finished). Large clean builds can take longer than this. The tool returned so you are ` +
                     `not blocked — re-run cmsis_action ${args.action} to get the final exit status, or watch the ` +
                     `CMSIS terminal. Do NOT poll for an output file.`;
             }
 
             // detach / stop_run — instant control ops, nothing to wait on.
-            return `CMSIS '${args.action}' command '${cmd}' issued. It runs in the CMSIS extension — ` +
+            return `CMSIS '${args.action}'${targetTag} issued via '${cmd}'. It runs in the CMSIS extension — ` +
                 `check the CMSIS output channel if you need to confirm.`;
         });
     }

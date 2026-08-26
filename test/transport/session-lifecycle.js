@@ -28,9 +28,11 @@
 //   7. Server options are accepted and readable back; serialEnabled:false
 //      drops the serial tools. The tool list has a byte budget.
 
-require('./vscode-stub.js');
+const stub = require('./vscode-stub.js');
 
+const fs = require('fs');
 const http = require('http');
+const os = require('os');
 const path = require('path');
 const OUT = path.resolve(__dirname, '..', '..', 'out', 'src');
 
@@ -178,6 +180,70 @@ async function main() {
         !lookupParsed?.error && lookupParsed?.result?.isError !== true && /No SVD file found.*Tried:/s.test(lookupText),
         lookupText.split('\n')[0]);
 
+    // 4d. cmsis_action names the target it acts on, refuses an undeclared
+    //     target, and switches a declared one through cmsis.json + solution
+    //     re-activation — verified through getActiveTargetSet before it acts.
+    //     `detach` is the action under test because it runs no cbuild task.
+    const solDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmsis-target-'));
+    const solutionFile = path.join(solDir, 'demo.csolution.yml');
+    fs.writeFileSync(solutionFile, [
+        'solution:', '  target-types:',
+        '    - type: HE', '      device: X:HE', '      target-set:', '        - set:',
+        '          debugger:', '            name: CMSIS-DAP@pyOCD',
+        '    - type: HP', '      device: X:HP', '      target-set:', '        - set: debug', '        - set: release',
+        '  build-types:', '    - type: Debug',
+        '  projects:', '    - project: app.cproject.yml', '',
+    ].join('\n'));
+    const cmsisJsonPath = path.join(solDir, '.vscode', 'cmsis.json');
+    let activeTarget = 'HE';
+    const commandLog = [];
+    stub.workspace.workspaceFolders = [{ uri: { fsPath: solDir } }];
+    stub.commandHandlers = {
+        'cmsis-csolution.getSolutionFile': async () => solutionFile,
+        'cmsis-csolution.getActiveTargetSet': async () => activeTarget,
+        'cmsis-csolution.deactivateSolution': async () => { commandLog.push('deactivate'); activeTarget = ''; },
+        'cmsis-csolution.activateSolution': async (p) => {
+            // The extension re-reads cmsis.json on activation; mimic that.
+            commandLog.push(`activate ${p}`);
+            const sel = JSON.parse(fs.readFileSync(cmsisJsonPath, 'utf8')).targetSet?.demo;
+            activeTarget = sel?.activeTargetType === 'HP' ? (sel.HP === 1 ? 'HP@release' : 'HP@debug') : 'HE';
+        },
+        'cmsis-csolution.cmsisDetachDebugger': async () => undefined,
+    };
+    const cmsisAction = async (args, id) => {
+        const r = await request(port, 'POST', { 'mcp-session-id': sid }, {
+            jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'cmsis_action', arguments: args },
+        });
+        return parseSse(r.body)?.result?.content?.[0]?.text ?? '';
+    };
+    const plain = await cmsisAction({ action: 'detach' }, 6);
+    check('cmsis_action names the active target', /CMSIS 'detach' on HE issued/.test(plain), plain.split('\n')[0]);
+    const undeclared = await cmsisAction({ action: 'detach', target: 'Nope' }, 7);
+    check('cmsis_action refuses an undeclared target and lists the choices',
+        /not attempted.*'Nope' is not declared.*Declared targets: HE, HP@debug, HP@release/s.test(undeclared)
+            && commandLog.length === 0 && !fs.existsSync(cmsisJsonPath),
+        undeclared.split('\n')[0]);
+    const switched = await cmsisAction({ action: 'detach', target: 'HP@release' }, 8);
+    const written = fs.existsSync(cmsisJsonPath) ? JSON.parse(fs.readFileSync(cmsisJsonPath, 'utf8')) : {};
+    check('cmsis_action switches a declared target via cmsis.json + re-activation and verifies it',
+        /CMSIS 'detach' on HP@release, switched from HE issued/.test(switched)
+            && commandLog.join(',') === `deactivate,activate ${solutionFile}`
+            && written.targetSet?.demo?.activeTargetType === 'HP' && written.targetSet?.demo?.HP === 1,
+        `${switched.split('\n')[0]} | ${commandLog.join(',')} | ${JSON.stringify(written)}`);
+    const matching = await cmsisAction({ action: 'detach', target: 'HP' }, 9);
+    check('cmsis_action leaves a matching target alone', /CMSIS 'detach' on HP@release issued/.test(matching) && commandLog.length === 2,
+        matching.split('\n')[0]);
+    // An extension that ignores the written selection: the panel stays on HE.
+    activeTarget = 'HE';
+    stub.commandHandlers['cmsis-csolution.deactivateSolution'] = async () => { commandLog.push('deactivate'); };
+    stub.commandHandlers['cmsis-csolution.activateSolution'] = async (p) => { commandLog.push(`activate ${p}`); };
+    const unverified = await cmsisAction({ action: 'detach', target: 'HP', timeoutMs: 20_000 }, 10);
+    check('cmsis_action refuses when the switch cannot be verified',
+        /not attempted: wrote 'HP' to .*still reports 'HE'.*Manage Solution/s.test(unverified), unverified.split('\n')[0]);
+    stub.commandHandlers = {};
+    stub.workspace.workspaceFolders = [];
+    fs.rmSync(solDir, { recursive: true, force: true });
+
     // 5. REGRESSION: three consecutive get_threads on one session must all return.
     for (let i = 1; i <= 3; i++) {
         const call = await Promise.race([
@@ -208,7 +274,7 @@ async function main() {
         jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
     });
     const statusText = parseSse(status.body)?.result?.content?.[0]?.text ?? '';
-    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 6 calls/m.test(statusText),
+    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 11 calls/m.test(statusText),
         statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
     check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 7,
         `${server.getMetrics().totals().calls} calls`);

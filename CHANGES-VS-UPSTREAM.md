@@ -102,7 +102,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 
 **CMSIS Solution panel control:**
 
-- `cmsis_action(action, timeoutMs?)` — `build` / `load` / `erase` / `load_and_run` / `load_and_debug` / `attach` / `detach` / `stop_run`. ⭐ Preferred entry point for embedded.
+- `cmsis_action(action, target?, timeoutMs?)` — `build` / `load` / `erase` / `load_and_run` / `load_and_debug` / `attach` / `detach` / `stop_run`; `target` (`type` or `type@set`) switches and verifies the active target first, results name the target they ran on. ⭐ Preferred entry point for embedded.
 - `flash(cbuildRunFile?, timeoutMs?)` — `pyocd load --cbuild-run` as a synchronous operation: bytes programmed + structured flash error; refuses under an active session.
 
 **Session lifecycle & state:**

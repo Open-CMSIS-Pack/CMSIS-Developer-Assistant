@@ -71,7 +71,7 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 
 | Tool | Description |
 |------|-------------|
-| `cmsis_action` | Runs the action buttons of the CMSIS Solution view: `build`, `load`, `erase`, `load_and_run`, `load_and_debug`, `attach`, `detach`, `stop_run`. `load_and_debug` builds (if needed), programs the device, and attaches the debugger in one step. |
+| `cmsis_action` | Runs the action buttons of the CMSIS Solution view: `build`, `load`, `erase`, `load_and_run`, `load_and_debug`, `attach`, `detach`, `stop_run`. `load_and_debug` builds (if needed), programs the device, and attaches the debugger in one step. Every result names the target-type / target-set it ran on; the optional `target` (`MPS3` or `HP@debug`) switches a differing one first and verifies it through the extension. |
 
 ### Run control
 

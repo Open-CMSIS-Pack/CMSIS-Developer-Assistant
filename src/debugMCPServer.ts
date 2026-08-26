@@ -857,19 +857,22 @@ export class DebugMCPServer {
         // CMSIS Solution flash / debug control tool — wraps the CMSIS panel buttons.
         mcpServer.registerTool('cmsis_action', {
             description: 'The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on ' +
-                'the active csolution context, like the panel buttons. build / load / erase / load_and_run wait ' +
-                'for the task and end with ✅ or ❌ plus the exit code — read that line, do not poll for files. ' +
-                'load_and_debug (flash + debug, the Debug button) and attach (no programming) return with the ' +
-                'session state; detach and stop_run are immediate. Long builds: get_debug_instructions topic build.',
+                'the active csolution target, like the panel buttons; every result names the target it ran on. ' +
+                'build / load / erase / load_and_run wait for the task and end with ✅ or ❌ plus the exit code — ' +
+                'read that line, do not poll for files. load_and_debug (flash + debug, the Debug button) and ' +
+                'attach (no programming) return with the session state; detach and stop_run are immediate. ' +
+                'Long builds: get_debug_instructions topic build.',
             inputSchema: {
                 action: z.enum([
                     'build', 'load', 'erase',
                     'load_and_run', 'load_and_debug',
                     'attach', 'detach', 'stop_run',
                 ]).describe('Which CMSIS Solution action to invoke'),
+                target: z.string().optional().describe('Target-type or type@set from the csolution (e.g. "MPS3", ' +
+                    '"HP@debug"). Switched and verified when it differs from the active one; omit to use the panel selection.'),
                 timeoutMs: z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC + ' For load_and_debug / attach: the session-readiness wait.'),
             },
-        }, async (args: { action: 'build' | 'load' | 'erase' | 'load_and_run' | 'load_and_debug' | 'attach' | 'detach' | 'stop_run'; timeoutMs?: number }) => {
+        }, async (args: { action: 'build' | 'load' | 'erase' | 'load_and_run' | 'load_and_debug' | 'attach' | 'detach' | 'stop_run'; target?: string; timeoutMs?: number }) => {
             const result = await debuggingHandler.handleCmsisCommand(args);
             return { content: [{ type: 'text' as const, text: result }] };
         });

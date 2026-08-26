@@ -46,10 +46,19 @@ const stub = {
               }) },
     workspace: { getConfiguration: () => ({ get: (_k, d) => d }), workspaceFolders: [],
                  name: undefined,
+                 getWorkspaceFolder(uri) {
+                     return stub.workspace.workspaceFolders.find((f) => String(uri.fsPath).startsWith(f.uri.fsPath));
+                 },
                  onDidChangeWorkspaceFolders: () => ({ dispose() {} }),
                  openTextDocument: async () => { throw new Error('not stubbed'); } },
     extensions: { getExtension: () => undefined },
-    commands: { executeCommand: async () => undefined, registerCommand: () => ({ dispose() {} }) },
+    // Tests install per-command answers in `commandHandlers`; unknown
+    // commands resolve to undefined, as an absent extension would.
+    commandHandlers: {},
+    commands: {
+        executeCommand: async (command, ...args) => stub.commandHandlers[command]?.(...args),
+        registerCommand: () => ({ dispose() {} }),
+    },
     EventEmitter: class { constructor() { this.event = () => ({ dispose() {} }); } fire() {} },
 };
 

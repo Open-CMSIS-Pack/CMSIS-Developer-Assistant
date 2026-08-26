@@ -328,7 +328,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     handleGetFrameVariables(args: { frameId: number; scope?: 'local' | 'global' | 'all'; variableNames?: string[]; timeoutMs?: number }): Promise<string> {
         return this.forward('handleGetFrameVariables', args);
     }
-    handleCmsisCommand(args: { action: CmsisAction; timeoutMs?: number }): Promise<string> {
+    handleCmsisCommand(args: { action: CmsisAction; target?: string; timeoutMs?: number }): Promise<string> {
         return this.forward('handleCmsisCommand', args);
     }
     handleFlash(args: { cbuildRunFile?: string; timeoutMs?: number }): Promise<string> {

@@ -16,6 +16,9 @@ import { HardwareTimeouts, SERVER_VERSION } from './debuggingExecutor';
 import { logger } from './utils/logger';
 import { serialHandler } from './serialHandler';
 import { SerialOpName } from './core/opTable';
+import type { PackDocsDispatch } from './packDocsDispatch';
+import { registerPackDocsTools } from './packDocsTools';
+import { registerBuildInfoTools } from './buildInfoTools';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { MeasuredMcpServer } from './core/measuredMcpServer';
 import { ToolMetrics, ToolSample, formatBytes } from './core/toolMetrics';
@@ -81,6 +84,12 @@ export type SerialDispatch = (op: SerialOpName, args?: unknown) => Promise<strin
 export interface SessionHandlers {
     debug: IDebuggingHandler;
     serial: SerialDispatch;
+    /**
+     * Documentation / build-artefact dispatch. Absent in the single-window
+     * default (no handlers were built), in which case those tools are not
+     * registered even when their gates are on.
+     */
+    packDocs?: PackDocsDispatch;
 }
 
 /**
@@ -130,6 +139,19 @@ export interface DebugMCPServerOptions {
      * turn carries.
      */
     serialEnabled?: boolean;
+    /**
+     * Register the documentation tools (list_target_docs, search_target_docs,
+     * read_doc_pages, fetch_doc, get_peripheral_docs). Default `false` for
+     * now: five more tools on every turn, and a `pdftotext` on the PATH to
+     * be useful. Fixed per instance like `serialEnabled`.
+     */
+    packDocsEnabled?: boolean;
+    /**
+     * Register the build-artefact tools (list_build_artifacts,
+     * get_memory_usage, lookup_symbol, get_section_layout,
+     * get_build_diagnostics). Default `false` for now; fixed per instance.
+     */
+    buildInfoEnabled?: boolean;
     /** Per-tool call telemetry. */
     telemetry?: {
         /**
@@ -270,10 +292,11 @@ export class DebugMCPServer {
                 'root-cause guidance needed to use these tools effectively instead of guessing or adding ' +
                 'temporary printf/UART logging. Harnesses that do not load skills (GitHub Copilot Chat) ' +
                 'should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call ' +
-                'override of the default, capped at 60 s; set it when you can estimate the work.',
+                'override of the default, capped at 60 s; set it when you can estimate the work.' +
+                this.packDocsInstructions(),
         }, metrics);
         const handlers = this.handlerFactory();
-        this.setupTools(mcpServer, handlers.debug, handlers.serial, metrics);
+        this.setupTools(mcpServer, handlers.debug, handlers.serial, handlers.packDocs, metrics);
         this.setupResources(mcpServer, metrics);
         return mcpServer;
     }
@@ -285,10 +308,29 @@ export class DebugMCPServer {
      * MCP session gets its own — in the multi-window setup that handler
      * carries the session's routing target.
      */
+    /**
+     * The sentence the server instructions gain when a pack-docs gate is on.
+     * Options are fixed per instance, so the text is stable per connection.
+     */
+    private packDocsInstructions(): string {
+        let text = '';
+        if (this.options.packDocsEnabled) {
+            text += ' The documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, ' +
+                'get_peripheral_docs) answer from the manuals the target\'s packs ship or link, page-cited; they ' +
+                'accept timeoutMs up to 600 s because indexing a manual on first use can take minutes.';
+        }
+        if (this.options.buildInfoEnabled) {
+            text += ' The build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, ' +
+                'get_section_layout, get_build_diagnostics) read the ELF, linker map and build log of the current target.';
+        }
+        return text;
+    }
+
     private setupTools(
         mcpServer: McpServer,
         debuggingHandler: IDebuggingHandler,
         serial: SerialDispatch,
+        packDocs: PackDocsDispatch | undefined,
         metrics: ToolMetrics,
     ) {
         // One short line per tool; the rationale lives once in the server instructions.
@@ -852,6 +894,17 @@ export class DebugMCPServer {
                 const result = await serial('handleOpenInUi');
                 return { content: [{ type: 'text' as const, text: result }] };
             });
+        }
+
+        // Documentation and build-artefact tools — gated per server instance
+        // like the serial group, and only when this session has a dispatch
+        // (the extension built the handlers; the bare single-window default
+        // has none).
+        if (packDocs && this.options.packDocsEnabled) {
+            registerPackDocsTools(mcpServer, packDocs);
+        }
+        if (packDocs && this.options.buildInfoEnabled) {
+            registerBuildInfoTools(mcpServer, packDocs);
         }
 
         // CMSIS Solution flash / debug control tool — wraps the CMSIS panel buttons.

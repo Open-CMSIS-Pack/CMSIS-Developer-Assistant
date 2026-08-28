@@ -76,6 +76,8 @@ Each request creates a new `StreamableHTTPServerTransport` instance in stateless
 | `diagnose_fault` | One-call triage: fault registers, stacked exception frame via EXC_RETURN, top frames, address resolved against the SVD / system map, ranked hypotheses (`src/core/faultTriage.ts`) |
 | `lookup_peripheral` / `lookup_register` | SVD queries with no target access and no session required: peripheral list, register map, address → peripheral/register, bit fields (`src/core/svdLookup.ts`) |
 | `get_device_info` | Summarize active session — device, probe, processor, GDB server |
+| `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` | Documentation tools, registered only when `packDocsEnabled` (see [packDocs.md](packDocs.md)) |
+| `list_build_artifacts`, `get_memory_usage`, `lookup_symbol`, `get_section_layout`, `get_build_diagnostics` | Build-artefact tools, registered only when `buildInfoEnabled` |
 
 ## Exposed Resources
 
@@ -101,13 +103,15 @@ The options are fixed for the lifetime of a server instance and are read when ea
 | Field | Consumed by |
 |-------|-------------|
 | `serialEnabled` | Registration of the `serial_*` tools (`cmsis-developer-assistant.serial.enabled`); off leaves them out of the tool list for the whole instance |
+| `packDocsEnabled` | Registration of the five documentation tools (`cmsis-developer-assistant.packDocs.enabled`, default off) — needs a session with a pack-docs dispatch, which the extension's handler factory supplies |
+| `buildInfoEnabled` | Registration of the five build-artefact tools (`cmsis-developer-assistant.buildInfo.enabled`, default off) |
 | `telemetry.jsonlPath` | The tool-call telemetry file sink (see below) |
 
 `getOptions()` returns the object read-only, for tests and for later consumers.
 
 ## Tool list budget
 
-The tool list is sent to every MCP client at `initialize` and sits in the model's context on every turn, so its size is a per-turn cost. Descriptions carry the trigger and the one caveat an agent needs at call time; the reasoning behind them lives in the `cmsis-debug-live` skill and the `get_debug_instructions` topics. The shared `timeoutMs` note is one short line per tool, with the rationale once in the server instructions. `test/transport/session-lifecycle.js` asserts the serialized single-window `tools/list` stays under a byte budget and that no single description exceeds 700 characters, so a regression is attributable to one tool.
+The tool list is sent to every MCP client at `initialize` and sits in the model's context on every turn, so its size is a per-turn cost. Descriptions carry the trigger and the one caveat an agent needs at call time; the reasoning behind them lives in the `cmsis-debug-live` skill and the `get_debug_instructions` topics. The shared `timeoutMs` note is one short line per tool, with the rationale once in the server instructions. `test/transport/session-lifecycle.js` asserts the serialized single-window `tools/list` stays under a byte budget (30 000 bytes for the default 45 tools) and that no single description exceeds 700 characters, so a regression is attributable to one tool. The documentation and build-artefact groups are off by default and measured separately: with both on (55 tools) the list is ~41 kB against a 42 000-byte budget.
 
 ## Tool call telemetry
 

@@ -17,7 +17,8 @@ npm run compile && npm run lint && npm test && npm run test:transport
 node test/transport/packaged-vsix.js cmsis-developer-assistant-darwin-arm64-<version>.vsix
 ```
 
-Expect: 284 passing; transport prints `tools/list stays under the 30000 byte budget — ~29.4 kB`,
+Expect: 397 passing; transport prints `tools/list stays under the 30000 byte budget — ~29.4 kB`,
+`tools/list with every group on stays under the 42000 byte budget — ~41.2 kB` (55 tools),
 `serialEnabled:false leaves the serial tools out — 35 tools`, `lookup_peripheral without an SVD
 explains what it tried`, `get_debug_instructions serves the breakpoints topic`; both harnesses
 `ALL CHECKS PASSED`.
@@ -26,7 +27,7 @@ explains what it tried`, `get_debug_instructions serves the breakpoints topic`; 
 
 | # | Do | Expect |
 |---|----|--------|
-| 1.1 | List tools | 45 tools (35 with `cmsis-developer-assistant.serial.enabled: false` + reload); no description longer than ~4 lines |
+| 1.1 | List tools | 45 tools (35 with `cmsis-developer-assistant.serial.enabled: false` + reload; 55 with `packDocs.enabled` and `buildInfo.enabled` on); no description longer than ~4 lines |
 | 1.2 | `get_debug_instructions` (no args) | ~3 KB: the numbered steps, `## 🐞 DEBUGGER FIRST`, then `## Topics` with six entries |
 | 1.3 | `get_debug_instructions { topic: "faults" }` | The fault section only (EXC_RETURN, the flag table); footer names the other topics |
 | 1.4 | `get_debug_instructions { topic: "nonsense" }` | `Unknown topic 'nonsense'. Showing the overview.` — no error |
@@ -53,6 +54,20 @@ explains what it tried`, `get_debug_instructions serves the breakpoints topic`; 
 | 2.7 | `get_variables_values` (no names) at a frame with >40 locals if you have one, else skip | `… N more, truncated — narrow with variableNames`; with `variableNames` the same variables come uncapped |
 | 2.8 | `continue_execution` into a free-running loop with no breakpoint | Times out with `⚠️ '…' did not complete …` and a `🩹 Recovery` section showing `PC = … LR = …` — two registers, not 23 |
 | 2.9 | `get_session_status` | `stopped`, and the trailer's `largest:` names the tools that returned the most bytes |
+
+## 2b. Documentation and build artefacts (10 min) — `packDocs.enabled` + `buildInfo.enabled` on, window reloaded, poppler installed
+
+| # | Do | Expect |
+|---|----|--------|
+| 2b.1 | List tools | 55 tools; the `initialize` instructions gain the documentation and build-artefact sentences |
+| 2b.2 | `list_target_docs {}` on the built project | The DFP/BSP `<book>` documents with ids and state, the Arm documents for the core (`arm/…`), `workspace/…` for a PDF dropped into `docs/` |
+| 2b.3 | `search_target_docs { query: "<a register name from lookup_register>" }` | Ranked pages with `<doc id> <edition> p.<n> §section` and a snippet; first call on a document takes seconds (extraction), the second is instant |
+| 2b.4 | `get_peripheral_docs { peripheral: "<USART1 / UART0 / …>" }` | Registers from the SVD, chapters with page ranges, per-register pages, clock/reset bits, IRQs — all cited; ≤ `maxChars` |
+| 2b.5 | `read_doc_pages { doc: "<id>", pages: "<n>" }` | The page text with the `— title [edition] p.n —` separator |
+| 2b.6 | `list_build_artifacts {}`, `get_memory_usage {}`, `lookup_symbol { name: "main" }`, `get_build_diagnostics {}` | ELF/map/log of the built context; Flash/RAM per region; `main` with address/size/section; the errors/warnings of the newest log or "no log" with the `cbuild … --log` hint |
+| 2b.7 | Two windows, pin the non-router one with `select_debug_window`, call `list_target_docs` | The router's output channel logs `Routing handleListTargetDocs → pid=<worker>`; the worker's channel shows the `[list_target_docs #1] →` trace |
+| 2b.8 | **Import Document for Current Target** with any PDF, then `search_target_docs` for a word in it | The wizard attributes it (pack / device / board / core), indexes it, and the hit cites `user/<slug>` |
+| 2b.9 | **Open Pack Docs Panel** | Target tab lists the same documents; the Tools tab runs `search_target_docs` in place |
 
 ## 3. Faults (15 min) — FVP fixture overlays, or a planted fault on your board
 
@@ -98,7 +113,7 @@ the report says `infra_error`, not a failed agent.
 
 | Metric | Where | Result |
 |--------|-------|--------|
-| `tools/list` bytes (44/45 tools) | §0 transport output | |
+| `tools/list` bytes (45 tools default / 55 all on) | §0 transport output | |
 | `get_debug_instructions` default bytes | §1.2 (`resultBytes` in stats) | |
 | `step_over` reply bytes, compact | §2.3 stats `perTool.step_over.bytesOut / calls` | |
 | HardFault triage: calls to root cause | §3, count tool calls until the answer | |

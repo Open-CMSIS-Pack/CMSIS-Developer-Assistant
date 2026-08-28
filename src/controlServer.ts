@@ -4,7 +4,8 @@
 import * as http from 'http';
 import { IDebuggingHandler } from './debuggingHandler';
 import { serialHandler } from './serialHandler';
-import { isKnownOp, isSerialOp } from './core/opTable';
+import { isKnownOp, isPackDocsDocOp, isPackDocsOp, isSerialOp } from './core/opTable';
+import type { PackDocsHandlers } from './packDocsDispatch';
 import { logger } from './utils/logger';
 
 /**
@@ -28,6 +29,8 @@ export class ControlServer {
     constructor(
         private readonly handler: IDebuggingHandler,
         private readonly token: string,
+        /** The documentation / build-artefact handlers of this window, when the extension built them. */
+        private readonly packDocs?: PackDocsHandlers,
     ) {}
 
     /** The ephemeral loopback port chosen by the OS, or 0 before start(). */
@@ -105,9 +108,18 @@ export class ControlServer {
             return Promise.reject(new Error(`Unknown control op: ${op}`));
         }
 
-        const target: Record<string, unknown> = isSerialOp(op)
-            ? (serialHandler as unknown as Record<string, unknown>)
-            : (this.handler as unknown as Record<string, unknown>);
+        let target: Record<string, unknown>;
+        if (isSerialOp(op)) {
+            target = serialHandler as unknown as Record<string, unknown>;
+        } else if (isPackDocsOp(op)) {
+            if (!this.packDocs) {
+                return Promise.reject(new Error(
+                    `Control op ${op}: the documentation and build-artefact handlers are not available in this window`));
+            }
+            target = (isPackDocsDocOp(op) ? this.packDocs.docs : this.packDocs.build) as unknown as Record<string, unknown>;
+        } else {
+            target = this.handler as unknown as Record<string, unknown>;
+        }
 
         const method = target[op];
         if (typeof method !== 'function') {

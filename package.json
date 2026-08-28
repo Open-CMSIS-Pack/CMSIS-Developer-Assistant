@@ -78,6 +78,31 @@
         "command": "cmsis-developer-assistant.resetPopupState",
         "title": "Reset Popup State",
         "category": "CMSIS Developer Assistant"
+      },
+      {
+        "command": "cmsis-developer-assistant.listTargetDocs",
+        "title": "List Target Documentation",
+        "category": "CMSIS Developer Assistant"
+      },
+      {
+        "command": "cmsis-developer-assistant.indexTargetDocs",
+        "title": "Index Target Documentation",
+        "category": "CMSIS Developer Assistant"
+      },
+      {
+        "command": "cmsis-developer-assistant.importUserDoc",
+        "title": "Import Document for Current Target",
+        "category": "CMSIS Developer Assistant"
+      },
+      {
+        "command": "cmsis-developer-assistant.openUserDocsFolder",
+        "title": "Open User Documents Folder",
+        "category": "CMSIS Developer Assistant"
+      },
+      {
+        "command": "cmsis-developer-assistant.openPackDocsPanel",
+        "title": "Open Pack Docs Panel",
+        "category": "CMSIS Developer Assistant"
       }
     ],
     "menus": {
@@ -149,6 +174,61 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Offer the `serial_*` tools (UART ports and the Serial Monitor) to AI agents. Off removes the ten serial tools from the MCP tool list, which every agent turn carries — worth it when your workflow never reads a UART. Read once at activation: changing it needs a window reload, and it applies to the next agent connection."
+        },
+        "cmsis-developer-assistant.packDocs.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Offer the documentation tools to AI agents: `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` — page-cited search over the reference manuals, datasheets, errata and board manuals the current csolution target's DFP/BSP ship or link, plus Arm documents, your own imported manuals and the workspace `docs/` folder. Adds five tools to the MCP tool list every agent turn carries; needs `pdftotext` (poppler) on the PATH to index PDFs. Read once at activation: changing it needs a window reload."
+        },
+        "cmsis-developer-assistant.packDocs.extractor": {
+          "type": "string",
+          "enum": ["auto", "pdftotext"],
+          "default": "auto",
+          "description": "PDF text extractor. pdftotext (poppler) must be on the PATH or named by packDocs.pdftotextPath."
+        },
+        "cmsis-developer-assistant.packDocs.pdftotextPath": {
+          "type": "string",
+          "default": "pdftotext",
+          "description": "Executable name or path of pdftotext, used to extract PDF text for indexing."
+        },
+        "cmsis-developer-assistant.packDocs.maxPdfMb": {
+          "type": "number",
+          "default": 150,
+          "description": "PDFs larger than this (in MB) are listed but not indexed."
+        },
+        "cmsis-developer-assistant.packDocs.includeUnlisted": {
+          "type": "boolean",
+          "default": true,
+          "description": "Also list PDFs found inside the device/board pack that no <book> element references."
+        },
+        "cmsis-developer-assistant.packDocs.workspaceDocDirs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [".agent-artifacts/docs", "docs"],
+          "markdownDescription": "Folders (relative to each workspace folder) whose PDFs are listed and searched together with the target's pack documents — the drop folder for a datasheet or manual the packs do not ship."
+        },
+        "cmsis-developer-assistant.packDocs.userDocsDir": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Folder for documents the packs do not ship (NDA manuals, portal downloads), outside any workspace and shared by every project; sub-folders attribute them to packs (`<Vendor>/<Pack>`), devices (`devices/<glob>`), boards (`boards/<name>`) or cores (`cores/<core>`). Empty: `~/.cmsis-pack-docs/user`. Fill it with **Import Document for Current Target**."
+        },
+        "cmsis-developer-assistant.buildInfo.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Offer the build-artefact tools to AI agents: `list_build_artifacts`, `get_memory_usage`, `lookup_symbol`, `get_section_layout`, `get_build_diagnostics` — the ELF, linker map and build log of the current csolution target, read deterministically. Adds five tools to the MCP tool list every agent turn carries. Read once at activation: changing it needs a window reload."
+        },
+        "cmsis-developer-assistant.buildInfo.maxSymbols": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20,
+          "description": "Symbols and objects listed by get_memory_usage and get_section_layout (the tool's top argument overrides it)."
+        },
+        "cmsis-developer-assistant.buildInfo.logGlobs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["**/out/**/*.log", "**/build*.log"],
+          "markdownDescription": "Workspace globs searched for build logs by `get_build_diagnostics` (newest first). Capture one with `cbuild … --log out/build.log`."
         }
       }
     }

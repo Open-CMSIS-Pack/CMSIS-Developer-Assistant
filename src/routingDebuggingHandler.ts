@@ -340,4 +340,11 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     serialOp(op: string, args: unknown = {}): Promise<string> {
         return this.forward(op, args);
     }
+
+    // Documentation and build-artefact tools too: the worker's control server
+    // picks the pack-docs handler by op name, so the lookup runs in the window
+    // that owns the workspace and its cbuild-run files.
+    packDocsOp(op: string, args: unknown = {}): Promise<string> {
+        return this.forward(op, args);
+    }
 }

@@ -105,6 +105,11 @@ All paths are relative to the extension root (`DebugMCP/`).
 - `cmsis_action(action, target?, timeoutMs?)` — `build` / `load` / `erase` / `load_and_run` / `load_and_debug` / `attach` / `detach` / `stop_run`; `target` (`type` or `type@set`) switches and verifies the active target first, results name the target they ran on. ⭐ Preferred entry point for embedded.
 - `flash(cbuildRunFile?, timeoutMs?)` — `pyocd load --cbuild-run` as a synchronous operation: bytes programmed + structured flash error; refuses under an active session.
 
+**Documentation and build artefacts (off by default, `packDocs.enabled` / `buildInfo.enabled`):**
+
+- `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` — page-cited search over the PDFs the target's DFP/BSP ship or link, Arm documents, imported and workspace PDFs, shipped Cortex-M core SVDs (`src/core/packDocs`, merged from the experimental CMSIS Pack Docs extension).
+- `list_build_artifacts`, `get_memory_usage`, `lookup_symbol`, `get_section_layout`, `get_build_diagnostics` — ELF, linker map and build log of the current target (`src/core/buildInfo`).
+
 **Session lifecycle & state:**
 
 - `pause_execution(timeoutMs?)` — DAP pause, state-aware

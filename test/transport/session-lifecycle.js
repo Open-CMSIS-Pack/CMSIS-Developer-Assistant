@@ -313,6 +313,83 @@ async function main() {
     await request(cport, 'DELETE', { 'mcp-session-id': csid });
     await configured.stop();
 
+    // 9. The documentation / build-artefact tools are off by default (the
+    //    list measured above) and on per instance through two gates. Real
+    //    handlers on a temp-dir host — the cores need no vscode — so the
+    //    enabled list is measured against its own budget and the tools answer
+    //    a workspace with no build with guidance rather than an error.
+    const { PackDocsHandler } = require(path.join(OUT, 'packDocsHandler.js'));
+    const { BuildInfoHandler } = require(path.join(OUT, 'buildInfoHandler.js'));
+    const { localPackDocsDispatch } = require(path.join(OUT, 'packDocsDispatch.js'));
+    const { defaultSettings, silentLog } = require(path.join(OUT, 'core', 'packDocs', 'host.js'));
+    const { defaultBuildInfoSettings } = require(path.join(OUT, 'core', 'buildInfo', 'host.js'));
+    const { DebuggingExecutor, ConfigurationManager, DebuggingHandler } = require(path.join(OUT, 'index.js'));
+    const { localSerialDispatch } = require(path.join(OUT, 'debugMCPServer.js'));
+    const docsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmsis-packdocs-'));
+    const docsHost = {
+        packRoot: path.join(docsDir, 'packs'), storageDir: path.join(docsDir, 'store'),
+        settings: () => defaultSettings, log: silentLog, userAgent: 'transport-check',
+        workspaceFolders: () => [docsDir], findCbuildRunFiles: async () => [],
+    };
+    const buildHost = { workspaceFolders: () => [docsDir], findFiles: async () => [], settings: () => defaultBuildInfoSettings, log: silentLog };
+    const packDocs = localPackDocsDispatch({
+        docs: new PackDocsHandler(docsHost, { timeoutMs: 30_000 }),
+        build: new BuildInfoHandler(buildHost, { timeoutMs: 30_000 }),
+    });
+    const debug = new DebuggingHandler(new DebuggingExecutor(), new ConfigurationManager(), 30);
+    const full = new DebugMCPServer(0, 30, undefined, () => ({ debug, serial: localSerialDispatch, packDocs }),
+        { packDocsEnabled: true, buildInfoEnabled: true });
+    await full.initialize();
+    await full.start();
+    const fport = full.getActualPort();
+    const finit = await request(fport, 'POST', {}, {
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'transport-check', version: '1.0.0' } },
+    });
+    const fsid = finit.headers['mcp-session-id'];
+    const finstructions = parseSse(finit.body)?.result?.instructions ?? '';
+    check('the server instructions mention the documentation and build-artefact tools when they are on',
+        /documentation tools/.test(finstructions) && /build-artefact tools/.test(finstructions));
+    await request(fport, 'POST', { 'mcp-session-id': fsid }, { jsonrpc: '2.0', method: 'notifications/initialized' });
+    const flist = await request(fport, 'POST', { 'mcp-session-id': fsid }, {
+        jsonrpc: '2.0', id: 2, method: 'tools/list', params: {},
+    });
+    const ftools = parseSse(flist.body)?.result?.tools ?? [];
+    const fnames = new Set(ftools.map((t) => t.name));
+    const PACKDOCS_TOOLS = ['list_target_docs', 'search_target_docs', 'read_doc_pages', 'fetch_doc', 'get_peripheral_docs',
+        'list_build_artifacts', 'get_memory_usage', 'lookup_symbol', 'get_section_layout', 'get_build_diagnostics'];
+    check('packDocs/buildInfo enabled adds exactly the ten documentation and build-artefact tools',
+        PACKDOCS_TOOLS.every((n) => fnames.has(n)) && ftools.length === tools.length + PACKDOCS_TOOLS.length,
+        `${ftools.length} tools`);
+    check('the default list carries none of them', PACKDOCS_TOOLS.every((n) => !names.includes(n)));
+    // Budget for the everything-on list; the default list keeps its own above.
+    // 55 tools, measured 41 204 bytes when the pack-docs tools landed: the ten
+    // tools cost ~11.8 kB, most of it the per-tool target/pack/device/board
+    // arguments. A regression must be attributable to one tool, hence the cap.
+    const TOOLS_LIST_ALL_BUDGET_BYTES = 42_000;
+    const ftoolsBytes = Buffer.byteLength(JSON.stringify(ftools));
+    check(`tools/list with every group on stays under the ${TOOLS_LIST_ALL_BUDGET_BYTES} byte budget`,
+        ftoolsBytes <= TOOLS_LIST_ALL_BUDGET_BYTES, `${ftoolsBytes} bytes`);
+    const flongest = ftools.map((t) => ({ name: t.name, len: (t.description ?? '').length })).sort((a, b) => b.len - a.len)[0];
+    check(`no documentation or build-artefact description exceeds ${DESCRIPTION_CAP_CHARS} chars`,
+        flongest.len <= DESCRIPTION_CAP_CHARS, `${flongest.name} ${flongest.len}`);
+    const fcall = async (name, args, id) => {
+        const r = await request(fport, 'POST', { 'mcp-session-id': fsid }, {
+            jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args },
+        });
+        const parsed = parseSse(r.body);
+        return { error: !!parsed?.error || parsed?.result?.isError === true, text: parsed?.result?.content?.[0]?.text ?? '' };
+    };
+    const ldocs = await fcall('list_target_docs', {}, 3);
+    check('list_target_docs on a workspace without a build explains what to do instead of failing',
+        !ldocs.error && /cbuild-run|pack/i.test(ldocs.text), ldocs.text.split('\n')[0]);
+    const lbuild = await fcall('list_build_artifacts', {}, 4);
+    check('list_build_artifacts on a workspace without a build explains what to do instead of failing',
+        !lbuild.error && /cbuild-run|build/i.test(lbuild.text), lbuild.text.split('\n')[0]);
+    await request(fport, 'DELETE', { 'mcp-session-id': fsid });
+    await full.stop();
+    fs.rmSync(docsDir, { recursive: true, force: true });
+
     console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);
     process.exit(failures === 0 ? 0 : 1);
 }

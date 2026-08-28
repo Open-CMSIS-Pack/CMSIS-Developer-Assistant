@@ -157,6 +157,15 @@
       ]
     },
     {
+      "name": "cmsis-pack-docs",
+      "description": "Look things up in the documentation of the current CMSIS csolution target through the CMSIS Developer Assistant documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) — the reference manual, datasheet, errata and board manual the packs ship or link, the Arm documents for the device's core (architecture reference manual, ADIv5/ADIv6, CoreSight and ETM specifications, core TRM), and PDFs the user dropped into the workspace docs folders. Use before assuming what a peripheral register or bit does, when the SVD gives a bit position but not its meaning, when a peripheral does not behave as expected (check the errata), when a debug/trace bring-up skill needs a vendor or Arm document, or when the user asks where something is documented. Cites document id, edition and page. The tools are off by default: the setting `cmsis-developer-assistant.packDocs.enabled` turns them on (window reload).",
+      "category": "bring-up",
+      "kind": "skill",
+      "source": "bundled",
+      "path": "skills/cmsis-pack-docs",
+      "dependsOn": []
+    },
+    {
       "name": "debug-access-knowledge",
       "description": "Build a documentation-led, verifiable record of an existing SoC's reusable CMSIS debug access topology: processor association, debug port and access-port path, protocol, and dormant-state decision. Use before work that needs those access facts, including debug-definition, debug-behavior, or CoreSight trace knowledge; no active target connection is required.",
       "category": "bring-up",
@@ -356,7 +365,7 @@
     },
     {
       "name": "cmsis-help",
-      "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live, add-board-layer) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
+      "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live, cmsis-pack-docs, add-board-layer) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
       "category": "help",
       "kind": "skill",
       "source": "bundled",

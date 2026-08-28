@@ -57,7 +57,7 @@ If an agent has the server registered but none of the CMSIS AI Skills has been s
 3. Ask the agent to debug, for example: _"Load and debug the application, then stop at `main`."_ The agent calls `cmsis_action` with `load_and_debug`, which builds if required, programs the device, and attaches the debugger in one step.
 4. Continue in natural language: _"Why do we end up in the HardFault handler?"_, _"Show the GPIOA registers"_, _"Read 64 bytes at the stack pointer"_. The agent uses the inspection tools described below and reports what it found.
 
-The extension also installs three agent skills into your personal skills directories: `cmsis-debug-live`, which teaches the agent a systematic workflow for firmware debugging on hardware, from target-state checks to HardFault root-cause analysis; `add-board-layer`, which authors a board layer for a new csolution target by interviewing you for the few decisions the packs and the pack documentation cannot answer; and `cmsis-help`, which answers "what can I ask the CMSIS Developer Assistant for?" — the slash commands, VS Code commands, tools and settings. Agents that support the [agent skills](https://agentskills.io/) format pick them up automatically. More skills are available on request — see [Agent skills](#agent-skills).
+The extension also installs four agent skills into your personal skills directories: `cmsis-debug-live`, which teaches the agent a systematic workflow for firmware debugging on hardware, from target-state checks to HardFault root-cause analysis; `add-board-layer`, which authors a board layer for a new csolution target by interviewing you for the few decisions the packs and the pack documentation cannot answer; `cmsis-pack-docs`, which teaches page-cited lookups in the target's pack documentation (once the documentation tools are enabled); and `cmsis-help`, which answers "what can I ask the CMSIS Developer Assistant for?" — the slash commands, VS Code commands, tools and settings. Agents that support the [agent skills](https://agentskills.io/) format pick them up automatically. More skills are available on request — see [Agent skills](#agent-skills).
 
 > &#128221; **Note:**
 >
@@ -126,6 +126,32 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 | `serial_open_monitor` | Opens the Serial Monitor panel for the user. |
 | `serial_subscribe_monitor`, `serial_unsubscribe_monitor` | Reads data through an open Serial Monitor session once the Serial Monitor extension exposes a data event in its API (see [Known Limitations](#known-limitations-and-workarounds)). |
 
+### Documentation (off by default — `cmsis-developer-assistant.packDocs.enabled`)
+
+Page-cited answers from the documentation of the current csolution target: the reference manuals, datasheets, errata and board manuals its DFP/BSP ship or link, the Arm documents for the device's core (architecture reference manual, ADIv5/ADIv6, CoreSight and core TRMs), the shipped Cortex-M core-peripheral SVDs, and your own PDFs. PDFs are extracted with `pdftotext` (poppler — `brew install poppler`, `apt install poppler-utils`) and indexed on first use; the text stays in the extension's global storage. The `cmsis-pack-docs` skill teaches the workflow.
+
+| Tool | Description |
+|------|-------------|
+| `list_target_docs` | Lists the target's documents with ids and their state (indexed, not yet, web link, missing). Resolves the target from `*.cbuild-run.yml`; `pack` + `device` when there is no build. |
+| `search_target_docs` | Searches the documents page by page for register names, bit names, addresses or quoted phrases; returns ranked pages with section and snippet. |
+| `read_doc_pages` | Reads pages of a document by id (`"519"`, `"519-521"`); cite as `<id> <edition> p.<n>`. |
+| `fetch_doc` | Downloads a web-linked document (an arm.com book or Arm document id such as `ddi0553`, or a direct PDF URL) into the cache and indexes it — the only call that downloads. |
+| `get_peripheral_docs` | A dossier for one peripheral instance (`USART1`, `TIM2`): registers from the SVD, the manual chapters and per-register pages, the RCC clock-enable/reset bits, interrupt vectors, errata mentions — all page-cited. |
+
+Documents the packs do not ship take two routes: the **user documents folder** (`packDocs.userDocsDir`, default `~/.cmsis-pack-docs/user`, outside any workspace and shared by every project; sub-folders such as `Keil/STM32U5xx_DFP/`, `devices/STM32U5*/`, `boards/<name>/`, `cores/Cortex-M33/` say which targets see a file — the command **Import Document for Current Target** does the attribution, title, category and indexing for you) and the workspace folders `.agent-artifacts/docs/` and `docs/` (`packDocs.workspaceDocDirs`) for project-specific documents. **Open Pack Docs Panel** shows the resolved target, its documents and index state, the SVD peripherals and the page store, and runs the tools in place.
+
+### Build artefacts (off by default — `cmsis-developer-assistant.buildInfo.enabled`)
+
+Deterministic reads of the current target's build output — no debug session needed.
+
+| Tool | Description |
+|------|-------------|
+| `list_build_artifacts` | Compiler, ELF/AXF, map, hex, newest build log, sizes and times, and the device memory regions from `*.cbuild-run.yml`. |
+| `get_memory_usage` | Flash/RAM usage per region from the ELF and linker map, the largest symbols and the heaviest objects and libraries. |
+| `lookup_symbol` | A symbol by name — address, size, section, defining object — or the symbol, section and region that contain an address (a fault PC or LR). |
+| `get_section_layout` | LOAD segments and allocated sections with address, size, region and the largest contributing objects. |
+| `get_build_diagnostics` | Errors and warnings of the newest build log (GCC/Clang/armclang/armlink/CMake/ninja/cbuild) with `file:line` and the final status. |
+
 ### Session health
 
 | Tool | Description |
@@ -164,20 +190,21 @@ Skills are `SKILL.md` workflows in the [Agent Skills](https://agentskills.io/) f
 The catalog contains:
 
 - **`cmsis-debug-live`** (always installed) — the live Cortex-M debugging workflow for the tools of this extension.
-- **`add-board-layer`** (always installed) — add a board layer to an existing csolution: read the packs and the csolution first, ask only the open decisions (layer strategy, probe, STDIO transport, memory), then reuse the BSP layer, integrate the DFP's configuration generator, or write a minimal bare-metal layer, and build to green. Hardware facts come from the pack documentation (the CMSIS Pack Docs MCP when installed) with page cites.
+- **`add-board-layer`** (always installed) — add a board layer to an existing csolution: read the packs and the csolution first, ask only the open decisions (layer strategy, probe, STDIO transport, memory), then reuse the BSP layer, integrate the DFP's configuration generator, or write a minimal bare-metal layer, and build to green. Hardware facts come from the pack documentation (the documentation tools, when `cmsis-developer-assistant.packDocs.enabled` is on) with page cites.
+- **`cmsis-pack-docs`** (always installed) — look things up in the target's documentation through the documentation tools: `list_target_docs` → `search_target_docs` → `read_doc_pages`, `fetch_doc` for web-linked and Arm documents, `get_peripheral_docs` for one peripheral; the citation convention, and the protocol the bring-up skills follow before asking the user to download a document. Useful once `cmsis-developer-assistant.packDocs.enabled` is on.
 - **`cmsis-help`** (always installed) — the list of CMSIS slash commands, the member skills behind each, the VS Code commands, the MCP tool groups and the settings; generated from the catalog and `package.json` so it cannot go stale. Ask the agent `/cmsis-help`.
 - **The [Open-CMSIS-Pack/cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills) skills**, vendored at a pinned commit (`skills/cmsis-skills.lock.json`): project setup (`add-cmsis-target`, `identify-cmsis-board-support`, `start-zephyr-project`, …), device debug and trace knowledge (`debug-access-knowledge`, `debug-knowledge`, `trace-knowledge`, …), and CMSIS-Pack debug authoring (`generate-debug-sequences`, `generate-trace-sequences`, `manage-pdsc-debugvars`, …).
 - **One entry point per category** — `cmsis-project`, `cmsis-bring-up`, `cmsis-pack`. Selecting an entry point gives the agent a single slash command for the whole category: the member skills are installed with `user-invocable: false`, so agents that honour that flag (Claude Code, VS Code, Copilot CLI) keep them out of the `/` menu while the model can still invoke them by description. Selecting an individual skill makes it visible; skills it depends on (the `$name` references in its text) are installed hidden.
 
-The cmsis-skills skills and their entry points form the **AI Skills Pack**. Choose from it with **CMSIS Developer Assistant: Select Agent Skills** (also step 2 of **Configure Agents and Skills**) or edit the `cmsis-developer-assistant.installedSkills` setting; the extension's own `cmsis-debug-live`, `add-board-layer` and `cmsis-help` are always installed and are not part of the selection. The selection is applied on every activation and whenever the setting changes, including through Settings Sync. Every directory the extension writes carries a `.cmsis-developer-assistant.json` marker; deselected skills with that marker are removed, and a skill you installed yourself is never overwritten or removed, even if it shares a name.
+The cmsis-skills skills and their entry points form the **AI Skills Pack**. Choose from it with **CMSIS Developer Assistant: Select Agent Skills** (also step 2 of **Configure Agents and Skills**) or edit the `cmsis-developer-assistant.installedSkills` setting; the extension's own `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed and are not part of the selection. The selection is applied on every activation and whenever the setting changes, including through Settings Sync. Every directory the extension writes carries a `.cmsis-developer-assistant.json` marker; deselected skills with that marker are removed, and a skill you installed yourself is never overwritten or removed, even if it shares a name.
 
-Turning `cmsis-developer-assistant.aiSkills.enabled` off switches the pack off: the pack skills this extension installed are removed (marker-guarded, your own skills are untouched), the skills step of the setup and the install prompt are skipped, and the two bundled skills stay. Your selection is kept, so turning it back on restores exactly what you had.
+Turning `cmsis-developer-assistant.aiSkills.enabled` off switches the pack off: the pack skills this extension installed are removed (marker-guarded, your own skills are untouched), the skills step of the setup and the install prompt are skipped, and the bundled skills stay. Your selection is kept, so turning it back on restores exactly what you had.
 
 ## Configuration
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `cmsis-developer-assistant.installedSkills` | `[]` | The AI Skills Pack skills (entry points or individual skills) to install into your personal skills directories; `cmsis-debug-live` and `cmsis-help` are always installed. See [Agent Skills](#agent-skills). |
+| `cmsis-developer-assistant.installedSkills` | `[]` | The AI Skills Pack skills (entry points or individual skills) to install into your personal skills directories; the bundled `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed. See [Agent Skills](#agent-skills). |
 | `cmsis-developer-assistant.aiSkills.enabled` | `true` | Enable the AI Skills Pack for selected agents. Off: pack skills this extension installed are removed, the skills setup step and the install prompt are skipped, the selection is kept. |
 | `cmsis-developer-assistant.aiSkills.promptOnDetect` | `true` | Prompt to install the CMSIS AI Skills for selected agents — monthly, until a pack skill is added. |
 | `cmsis-developer-assistant.serverPort` | `3001` | Port of the MCP server. One window binds it and routes to the others. Changing the port requires a window reload; the extension offers to reload. |
@@ -186,6 +213,8 @@ Turning `cmsis-developer-assistant.aiSkills.enabled` off switches the pack off: 
 | `cmsis-developer-assistant.memoryReadTimeoutMs` | `30000` | Overall timeout for a single `read_memory` or `read_core_registers` call. |
 | `cmsis-developer-assistant.redactSecrets` | `true` | Withholds variable and expression values that look like credentials. |
 | `cmsis-developer-assistant.serial.enabled` | `true` | Offer the `serial_*` tools to agents. Off drops the ten serial tools from the tool list every agent turn carries; needs a window reload. |
+| `cmsis-developer-assistant.packDocs.enabled` | `false` | Offer the five documentation tools to agents (needs `pdftotext`); window reload. `packDocs.extractor`, `packDocs.pdftotextPath`, `packDocs.maxPdfMb` (150), `packDocs.includeUnlisted` (true), `packDocs.workspaceDocDirs` (`.agent-artifacts/docs`, `docs`) and `packDocs.userDocsDir` (empty → `~/.cmsis-pack-docs/user`) tune them and apply live. |
+| `cmsis-developer-assistant.buildInfo.enabled` | `false` | Offer the five build-artefact tools to agents; window reload. `buildInfo.maxSymbols` (20) and `buildInfo.logGlobs` (`**/out/**/*.log`, `**/build*.log`) tune them. |
 | `cmsis-developer-assistant.telemetry.jsonlPath` | `""` | Append one JSON line per MCP tool call — name, bytes in/out, duration, outcome; never arguments or results — to this file for offline analysis. Off when empty; `get_session_status` and the `cmsis-developer-assistant://stats` resource always show the in-memory statistics. |
 
 ### Networking and multiple windows

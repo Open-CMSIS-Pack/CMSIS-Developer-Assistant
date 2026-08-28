@@ -9,6 +9,8 @@ the top-level README.
 | Path | What | Maintained how |
 |------|------|----------------|
 | `cmsis-debug-live/` | The extension's own live Cortex-M debugging workflow. Always installed. | Authored here. |
+| `add-board-layer/` | Add a board layer to an existing csolution by interview. Always installed. | Authored here. |
+| `cmsis-pack-docs/` | Page-cited lookups in the target's pack documentation through the documentation tools. Always installed. | Authored here (moved from the experimental CMSIS Pack Docs extension). |
 | `cmsis-help/` | The extension's own "what can I ask for?" skill: slash commands, member skills per category, VS Code commands, MCP tool groups, settings. Always installed. | **Generated** from `catalog.json`, `package.json` and the `help` block of `scripts/skills.config.json` (`src/utils/skillHelp.ts`); the test re-renders it. |
 | `cmsis-skills/<name>/` | The [Open-CMSIS-Pack/cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills) skills, verbatim, flattened by name. `LICENSE` is upstream's Apache-2.0. | **Generated** — never edit; re-sync. |
 | `cmsis-project/`, `cmsis-bring-up/`, `cmsis-pack/` | One router skill per upstream category: a dispatch table to the member skills plus a typical workflow. Gives agents one slash command per category. | **Generated** from `scripts/skills.config.json`. |

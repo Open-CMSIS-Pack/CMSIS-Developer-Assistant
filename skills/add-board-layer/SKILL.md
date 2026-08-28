@@ -18,7 +18,8 @@ documentation, or the csolution.
 
 ## Hardware facts: ask the documentation, not memory
 
-When the **CMSIS Pack Docs MCP** (`cmsis-pack-docs`: `list_target_docs`,
+When the Assistant's **documentation tools** are on (setting
+`cmsis-developer-assistant.packDocs.enabled`; `list_target_docs`,
 `search_target_docs`, `read_doc_pages`) is available, every hardware question
 in this skill goes through it — register offsets and bit meanings, the reset
 clock tree, UART/VCP instance and pin muxing, memory map, boot pins, errata.
@@ -64,7 +65,7 @@ The decisions worth asking (drop the ones already answered):
 | **Compiler** | AC6 · GCC · Clang | usually the solution's `compiler:` — infer, don't ask |
 | **Debugger / probe** | `ST-Link@pyOCD` · `CMSIS-DAP@pyOCD` · `J-Link Server` · other | the probe the user named; `etc/debug-adapters.yml` for valid names |
 | **STDIO transport** | UART VCP · Semihosting · ITM/none | UART when the board has a VCP; semihosting when it has none |
-| **UART + pins** (if UART) | the board's debug VCP instance/pins | board manual via `cmsis-pack-docs` (search `VCP`, `ST-LINK UART`), else BSP `MX_Device.h`/`.ioc` |
+| **UART + pins** (if UART) | the board's debug VCP instance/pins | board manual via `search_target_docs` (search `VCP`, `ST-LINK UART`), else BSP `MX_Device.h`/`.ioc` |
 | **Memory regions** | BSP `regions_*.h` · DFP `<memory>` · custom sizes | reuse the BSP's generated `regions_*.h` when present |
 
 Only genuine forks belong in `AskUserQuestion`. Board name, register offsets,
@@ -164,7 +165,7 @@ Mirror an existing minimal layer in the repo. A complete layer is:
   pin AF, BRR from the **reset** clock tree (staying on the reset oscillator
   avoids the PWR/PLL/flash-latency dance and is plenty for a validation port),
   CR enable. Take the reset clock frequency, the AF number and the register
-  sequence from the reference manual via `cmsis-pack-docs`, with page cites.
+  sequence from the reference manual via `search_target_docs` / `read_doc_pages`, with page cites.
 - **`regions_<board>.h`** — copy the BSP's generated one
   (`Layers/*/RTE/Device/<dev>/regions_*.h`) or write from the DFP `<memory>`
   entries; add `__STACK_SIZE`/`__HEAP_SIZE`. The toolbox generates the linker

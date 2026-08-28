@@ -1,6 +1,6 @@
 ---
 name: cmsis-help
-description: "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live, add-board-layer) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work."
+description: "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live, cmsis-pack-docs, add-board-layer) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work."
 ---
 
 # CMSIS Developer Assistant — what you can ask for
@@ -20,6 +20,7 @@ editing the `cmsis-developer-assistant.installedSkills` setting.
 | `/cmsis-bring-up` | Establish verifiable device debug and trace facts from documentation — one command for the whole category; its 7 member skills are listed below |
 | `/cmsis-pack` | Author, validate and apply PDSC debug and trace sequences and debugvars — one command for the whole category; its 7 member skills are listed below |
 | `/add-board-layer` | Add a board layer to an existing CMSIS csolution by interviewing the user for the few facts that cannot be read from the repo — board/device, layer strategy, debugger, STDIO transport, memory — then generating Board.clayer.yml and its startup / retarget-stdio / regions / device-header files (reusing the BSP layer when it fits, running the DFP's configuration generator when startup only comes from it, or a minimal bare-metal layer otherwise) and wiring the target-type into the solution. |
+| `/cmsis-pack-docs` | Look things up in the documentation of the current CMSIS csolution target through the CMSIS Developer Assistant documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) — the reference manual, datasheet, errata and board manual the packs ship or link, the Arm documents for the device's core (architecture reference manual, ADIv5/ADIv6, CoreSight and ETM specifications, core TRM), and PDFs the user dropped into the workspace docs folders. |
 | `/cmsis-debug-live` | Drive a live Arm Cortex-M debug session through the CMSIS Debugger to investigate firmware runtime bugs — HardFaults and other faults, crashes, hangs, failing tests, peripherals that do not respond, wrong/null values that are right in simulation but wrong on hardware, unexpected output, code that never reaches the line you expect, timing that does not close. |
 | `/cmsis-help` | This list. |
 
@@ -65,6 +66,11 @@ Open the command palette (Ctrl/Cmd+Shift+P) and type the title.
 
 - **CMSIS Developer Assistant: Configure Agents and Skills** (`cmsis-developer-assistant.configure`) — The first-run setup, on demand: register the MCP server with the agents you pick, then choose the AI Skills Pack skills to install.
 - **CMSIS Developer Assistant: Select Agent Skills** (`cmsis-developer-assistant.selectSkills`) — Pick the AI Skills Pack skills (category entry points or individual skills) to copy into your personal skills directories.
+- **CMSIS Developer Assistant: List Target Documentation** (`cmsis-developer-assistant.listTargetDocs`) — Write the current csolution target's documentation list (pack manuals, Arm documents, imported and workspace PDFs) to the output channel.
+- **CMSIS Developer Assistant: Index Target Documentation** (`cmsis-developer-assistant.indexTargetDocs`) — Extract and index every PDF of the current target now, with progress, so the first search is instant.
+- **CMSIS Developer Assistant: Import Document for Current Target** (`cmsis-developer-assistant.importUserDoc`) — Copy PDFs the packs do not ship (NDA manuals, portal downloads) into the user documents folder, attributed to the current pack, device, board or core, and index them.
+- **CMSIS Developer Assistant: Open User Documents Folder** (`cmsis-developer-assistant.openUserDocsFolder`) — Reveal the user documents folder in the file manager.
+- **CMSIS Developer Assistant: Open Pack Docs Panel** (`cmsis-developer-assistant.openPackDocsPanel`) — Open the Pack Docs panel: the resolved target, its documents and their index state, the SVD peripherals, the page store, and a runner for the documentation tools.
 
 ## MCP tools
 
@@ -78,6 +84,8 @@ the agents the user selected in the setup) exposes these tool groups:
 - **Cortex-M** — `read_memory`, `read_core_registers`, `read_peripheral_register` (SVD), `lookup_peripheral` / `lookup_register` (SVD map and bit fields, no session needed), `get_fault_info` (CFSR/HFSR decode), `diagnose_fault` (one-call triage: frame, stack, address, hypotheses), `read_cycle_counter`, `get_device_info`.
 - **Serial ports** — `serial_list_ports`, `serial_open`, `serial_read`, `serial_write`, `serial_close`, `serial_status`, `serial_clear_buffer`, and the Serial Monitor bridge `serial_subscribe_monitor` / `serial_unsubscribe_monitor` / `serial_open_monitor`.
 - **Session health and windows** — `get_session_status`, `check_target_connection`, `get_debug_instructions`; with several VS Code windows `list_debug_windows` and `select_debug_window`.
+- **Documentation (off by default — cmsis-developer-assistant.packDocs.enabled)** — `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` — page-cited answers from the reference manuals, datasheets, errata and board manuals the target's packs ship or link, Arm documents, imported and workspace PDFs.
+- **Build artefacts (off by default — cmsis-developer-assistant.buildInfo.enabled)** — `list_build_artifacts`, `get_memory_usage`, `lookup_symbol`, `get_section_layout`, `get_build_diagnostics` — the ELF, linker map and build log of the current target, read deterministically.
 
 For the debugging workflow call `get_debug_instructions` (or read the
 `cmsis-developer-assistant://docs/debug_instructions` resource); for a live target investigation
@@ -93,6 +101,8 @@ VS Code settings under `cmsis-developer-assistant.*` (Settings → Extensions �
 | `cmsis-developer-assistant.installedSkills` | `[]` | The AI Skills Pack skills (entry points or individual skills) to copy into your personal skills directories; `cmsis-debug-live`, `add-board-layer` and `cmsis-help` are always installed. |
 | `cmsis-developer-assistant.aiSkills.enabled` | `true` | Install the AI Skills Pack at all. Off: pack skills this extension installed are removed, the skills setup step and the install prompt are skipped; the selection is kept. |
 | `cmsis-developer-assistant.aiSkills.promptOnDetect` | `true` | Offer to install the pack — at most once a month — when an agent has the MCP server registered but no pack skill is selected. |
+| `cmsis-developer-assistant.packDocs.enabled` | `false` | Offer the documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) to agents. Off by default; needs pdftotext (poppler); window reload. |
+| `cmsis-developer-assistant.buildInfo.enabled` | `false` | Offer the build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, get_build_diagnostics) to agents. Off by default; window reload. |
 
 _Generated by `npm run skills:sync` from skills/catalog.json, package.json and
 scripts/skills.config.json; edit those, not this file._

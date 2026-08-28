@@ -113,14 +113,15 @@ suite('Agent skill catalog', () => {
         }
     });
 
-    test('the bundled entries are the board-layer skill, the debugging skill and the help skill, nothing else', () => {
+    test('the bundled entries are the board-layer, pack-docs, debugging and help skills, nothing else', () => {
         const bundled = catalog().skills.filter(entry => entry.source === 'bundled');
         assert.deepStrictEqual(bundled.map(entry => [entry.name, entry.category, entry.path]), [
             ['add-board-layer', 'project', 'skills/add-board-layer'],
+            ['cmsis-pack-docs', 'bring-up', 'skills/cmsis-pack-docs'],
             ['cmsis-debug-live', 'debug', 'skills/cmsis-debug-live'],
             [HELP_SKILL_NAME, 'help', `skills/${HELP_SKILL_NAME}`],
         ]);
-        assert.deepStrictEqual(bundledSkillNames(catalog()), ['add-board-layer', 'cmsis-debug-live', HELP_SKILL_NAME]);
+        assert.deepStrictEqual(bundledSkillNames(catalog()), ['add-board-layer', 'cmsis-pack-docs', 'cmsis-debug-live', HELP_SKILL_NAME]);
     });
 
     test('every dependency resolves to a catalog skill and nothing depends on itself', () => {

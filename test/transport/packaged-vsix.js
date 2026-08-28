@@ -112,6 +112,9 @@ check('the bundle keeps serialport external',
 //    picker, the upstream lock, and every SKILL.md the catalog points at.
 check('the agent skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-debug-live', 'SKILL.md')));
 check('the help skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-help', 'SKILL.md')));
+check('the pack-docs skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-pack-docs', 'SKILL.md')));
+check('the core-peripheral SVDs ship', fs.existsSync(path.join(root, 'assets', 'svd', 'core', 'index.json'))
+    && fs.existsSync(path.join(root, 'assets', 'svd', 'core', 'Cortex_M33.svd')));
 check('the skill catalog ships', fs.existsSync(path.join(root, 'skills', 'catalog.json')));
 check('the upstream skill lock ships', fs.existsSync(path.join(root, 'skills', 'cmsis-skills.lock.json')));
 let catalogOk = false;

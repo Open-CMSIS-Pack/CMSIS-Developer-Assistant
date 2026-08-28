@@ -9,6 +9,16 @@ allowed-tools:
   - get_device_info
   - cmsis_action
   - flash
+  - list_target_docs
+  - search_target_docs
+  - read_doc_pages
+  - fetch_doc
+  - get_peripheral_docs
+  - list_build_artifacts
+  - get_memory_usage
+  - lookup_symbol
+  - get_section_layout
+  - get_build_diagnostics
   - start_debugging
   - stop_debugging
   - restart_debugging
@@ -201,6 +211,11 @@ This is the characteristic embedded bug, and the reason the memory tools exist.
   the clock enable before you read anything; `lookup_peripheral` with an
   `address` turns a BFAR into a peripheral and register. Neither needs a
   session or touches the target.
+- **Then the manual.** When the SVD gives a bit position but not its meaning,
+  `search_target_docs` (register or bit name) and `get_peripheral_docs` answer
+  from the reference manual with page cites, and `lookup_symbol` turns a fault
+  PC into a function — when `cmsis-developer-assistant.packDocs.enabled` /
+  `buildInfo.enabled` are on (off by default; see `$cmsis-pack-docs`).
 - **Read the address directly.** `read_memory` on the register address tells you
   what the bus sees. A mismatch against the C variable means the write never
   landed — wrong alias, missing `volatile`, or a peripheral clock that is off.

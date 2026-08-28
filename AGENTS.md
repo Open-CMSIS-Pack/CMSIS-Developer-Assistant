@@ -91,7 +91,7 @@ Include in each source file:
 |---------|---------|-------------|
 | `cmsis-developer-assistant.serverPort` | 3001 | MCP server port |
 | `cmsis-developer-assistant.timeoutInSeconds` | 180 | Operation timeout |
-| `cmsis-developer-assistant.installedSkills` | `[]` | AI Skills Pack skills from `skills/catalog.json` to copy into the user's skills directories; the bundled `cmsis-debug-live` and `cmsis-help` are always installed (application scope) |
+| `cmsis-developer-assistant.installedSkills` | `[]` | AI Skills Pack skills from `skills/catalog.json` to copy into the user's skills directories; the bundled `cmsis-debug-live`, `add-board-layer` and `cmsis-help` are always installed (application scope) |
 | `cmsis-developer-assistant.aiSkills.enabled` | `true` | Install the AI Skills Pack at all; off removes the pack skills this extension installed and skips the skills setup step and the prompt (application scope) |
 | `cmsis-developer-assistant.aiSkills.promptOnDetect` | `true` | Monthly prompt to install the pack when an agent has the server registered but no pack skill is selected (application scope) |
 

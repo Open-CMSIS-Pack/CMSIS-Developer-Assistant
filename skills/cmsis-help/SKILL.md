@@ -1,6 +1,6 @@
 ---
 name: cmsis-help
-description: "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work."
+description: "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live, add-board-layer) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work."
 ---
 
 # CMSIS Developer Assistant — what you can ask for
@@ -19,6 +19,7 @@ editing the `cmsis-developer-assistant.installedSkills` setting.
 | `/cmsis-project` | Create, extend or retarget CMSIS csolution and Zephyr projects — one command for the whole category; its 7 member skills are listed below |
 | `/cmsis-bring-up` | Establish verifiable device debug and trace facts from documentation — one command for the whole category; its 7 member skills are listed below |
 | `/cmsis-pack` | Author, validate and apply PDSC debug and trace sequences and debugvars — one command for the whole category; its 7 member skills are listed below |
+| `/add-board-layer` | Add a board layer to an existing CMSIS csolution by interviewing the user for the few facts that cannot be read from the repo — board/device, layer strategy, debugger, STDIO transport, memory — then generating Board.clayer.yml and its startup / retarget-stdio / regions / device-header files (reusing the BSP layer when it fits, running the DFP's configuration generator when startup only comes from it, or a minimal bare-metal layer otherwise) and wiring the target-type into the solution. |
 | `/cmsis-debug-live` | Drive a live Arm Cortex-M debug session through the CMSIS Debugger to investigate firmware runtime bugs — HardFaults and other faults, crashes, hangs, failing tests, peripherals that do not respond, wrong/null values that are right in simulation but wrong on hardware, unexpected output, code that never reaches the line you expect, timing that does not close. |
 | `/cmsis-help` | This list. |
 
@@ -89,7 +90,7 @@ VS Code settings under `cmsis-developer-assistant.*` (Settings → Extensions �
 
 | Setting | Default | What it does |
 |---|---|---|
-| `cmsis-developer-assistant.installedSkills` | `[]` | The AI Skills Pack skills (entry points or individual skills) to copy into your personal skills directories; `cmsis-debug-live` and `cmsis-help` are always installed. |
+| `cmsis-developer-assistant.installedSkills` | `[]` | The AI Skills Pack skills (entry points or individual skills) to copy into your personal skills directories; `cmsis-debug-live`, `add-board-layer` and `cmsis-help` are always installed. |
 | `cmsis-developer-assistant.aiSkills.enabled` | `true` | Install the AI Skills Pack at all. Off: pack skills this extension installed are removed, the skills setup step and the install prompt are skipped; the selection is kept. |
 | `cmsis-developer-assistant.aiSkills.promptOnDetect` | `true` | Offer to install the pack — at most once a month — when an agent has the MCP server registered but no pack skill is selected. |
 

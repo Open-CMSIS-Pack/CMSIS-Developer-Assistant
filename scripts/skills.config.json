@@ -6,6 +6,10 @@
       "category": "debug"
     },
     {
+      "name": "add-board-layer",
+      "category": "project"
+    },
+    {
       "name": "cmsis-help",
       "category": "help",
       "generated": true
@@ -14,7 +18,7 @@
   "help": {
     "displayName": "CMSIS: Help",
     "shortDescription": "List the CMSIS slash commands, VS Code commands, MCP tools and settings",
-    "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
+    "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live, add-board-layer) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
     "commands": {
       "cmsis-developer-assistant.configure": "The first-run setup, on demand: register the MCP server with the agents you pick, then choose the AI Skills Pack skills to install.",
       "cmsis-developer-assistant.selectSkills": "Pick the AI Skills Pack skills (category entry points or individual skills) to copy into your personal skills directories."
@@ -50,7 +54,7 @@
       }
     ],
     "settings": {
-      "installedSkills": "The AI Skills Pack skills (entry points or individual skills) to copy into your personal skills directories; `cmsis-debug-live` and `cmsis-help` are always installed.",
+      "installedSkills": "The AI Skills Pack skills (entry points or individual skills) to copy into your personal skills directories; `cmsis-debug-live`, `add-board-layer` and `cmsis-help` are always installed.",
       "aiSkills.enabled": "Install the AI Skills Pack at all. Off: pack skills this extension installed are removed, the skills setup step and the install prompt are skipped; the selection is kept.",
       "aiSkills.promptOnDetect": "Offer to install the pack — at most once a month — when an agent has the MCP server registered but no pack skill is selected."
     }
@@ -66,7 +70,8 @@
       "workflow": [
         "`$check-cmsis-environment` (or `$check-zephyr-environment`) to confirm the toolchain before anything is created or built.",
         "`$identify-cmsis-board-support` (or `$identify-zephyr-board`) to resolve the hardware to exactly one verified identity and its BSP/DFP.",
-        "`$add-cmsis-target` to extend the solution, then `$identify-cmsis-board-layer` for a packaged board layer — or `$start-zephyr-project` for a new west-integrated solution."
+        "`$add-cmsis-target` to extend the solution, then `$identify-cmsis-board-layer` for a packaged board layer — or `$start-zephyr-project` for a new west-integrated solution.",
+        "`$add-board-layer` when no packaged layer fits: interview for the few open decisions, then author Board.clayer.yml with its startup, stdio and memory files — or integrate the DFP's configuration generator — and build to green."
       ]
     },
     {

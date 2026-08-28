@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.3.8] - 2026-08-28
+
+### Added
+- **`add-board-layer` skill** — a third extension-authored skill, always installed like `cmsis-debug-live` and `cmsis-help`: add a board layer to an existing csolution by interview. It reads the csolution, the DFP/BSP pdsc and an existing layer first and asks only the decisions they cannot settle (scope, layer strategy, probe, STDIO transport, memory), then reuses the BSP layer, integrates the DFP's configuration generator when the pack ships no `Device:Startup` and startup exists only as generator output (STM32CubeMX, MCUXpresso Config Tools, Infineon Device Configurator, Microchip MCC — the agent selects the generator components, runs the first cbuild pass and tells the user to run the generator, which it cannot do for them), or writes a minimal bare-metal layer (CMSIS C startup, `retarget_stdio.c` on the reset clock, `regions_<board>.h`, minimal device header), wires the target-type into the csolution and builds to green, then hands over to `csolution-retarget` for the hardware bring-up. Hardware facts — register offsets and bit meanings, the reset clock tree, VCP instance and pins, errata — come from the pack documentation through the CMSIS Pack Docs MCP (`list_target_docs`, `search_target_docs`, `read_doc_pages`) when it is installed, cited by document and page and cross-checked against the SVD; without it the skill says what is unverified. The `cmsis-project` router's workflow points at it and `cmsis-help` lists it.
+
 ## [2.3.7] - 2026-08-25
 
 ### AI Efficiency Optimizations

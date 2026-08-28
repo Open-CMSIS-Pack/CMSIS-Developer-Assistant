@@ -1,0 +1,178 @@
+Archive member included to satisfy reference by file (symbol)
+
+libutil.a(crc.o)              main.o (compute_crc)
+
+Discarded input sections
+
+ .text          0x00000000        0x0 main.o
+ .data          0x00000000        0x0 main.o
+ .bss           0x00000000        0x0 main.o
+ .text          0x00000000        0x0 startup.o
+ .data          0x00000000        0x0 startup.o
+ .bss           0x00000000        0x0 startup.o
+ .text          0x00000000        0x0 libutil.a(crc.o)
+ .data          0x00000000        0x0 libutil.a(crc.o)
+ .bss           0x00000000        0x0 libutil.a(crc.o)
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+FLASH            0x08000000         0x00100000         xr
+RAM              0x20000000         0x00050000         xrw
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+LOAD main.o
+LOAD startup.o
+LOAD libutil.a
+
+.isr_vector     0x08000000       0x40
+ *(.vectors)
+ .vectors       0x08000000       0x40 startup.o
+                0x08000000                vector_table
+
+.text           0x08000040      0x16c
+ *(.text*)
+ .text.SysTick_Handler
+                0x08000040       0x10 main.o
+                0x08000040                SysTick_Handler
+ .text.startup.main
+                0x08000050       0x24 main.o
+                0x08000050                main
+ .text.Default_Handler
+                0x08000074        0x2 startup.o
+                0x08000074                Default_Handler
+ .text.Reset_Handler
+                0x08000076        0x8 startup.o
+                0x08000076                Reset_Handler
+ *fill*         0x0800007e        0x2 
+ .text.compute_crc
+                0x08000080       0x2c libutil.a(crc.o)
+                0x08000080                compute_crc
+ *(.rodata*)
+ .rodata.crc_table
+                0x080000ac      0x100 libutil.a(crc.o)
+                0x080000ac                crc_table
+                0x080001ac                        . = ALIGN (0x4)
+                0x080001ac                        __etext = .
+
+.glue_7         0x080001ac        0x0
+ .glue_7        0x080001ac        0x0 linker stubs
+
+.glue_7t        0x080001ac        0x0
+ .glue_7t       0x080001ac        0x0 linker stubs
+
+.vfp11_veneer   0x080001ac        0x0
+ .vfp11_veneer  0x080001ac        0x0 linker stubs
+
+.v4_bx          0x080001ac        0x0
+ .v4_bx         0x080001ac        0x0 linker stubs
+
+.iplt           0x080001ac        0x0
+ .iplt          0x080001ac        0x0 main.o
+
+.rel.dyn        0x080001ac        0x0
+ .rel.iplt      0x080001ac        0x0 main.o
+
+.data           0x20000000       0x40 load address 0x080001ac
+                0x20000000                        __data_start__ = .
+ *(.data*)
+ .data.config_table
+                0x20000000       0x40 main.o
+                0x20000000                config_table
+                0x20000040                        . = ALIGN (0x4)
+                0x20000040                        __data_end__ = .
+
+.igot.plt       0x20000040        0x0 load address 0x080001ec
+ .igot.plt      0x20000040        0x0 main.o
+
+.bss            0x20000040      0x104 load address 0x080001ec
+                0x20000040                        __bss_start__ = .
+ *(.bss*)
+ .bss.rx_buffer
+                0x20000040      0x100 main.o
+ .bss.tick_count
+                0x20000140        0x4 main.o
+                0x20000140                tick_count
+ *(COMMON)
+                0x20000144                        . = ALIGN (0x4)
+                0x20000144                        __bss_end__ = .
+
+.heap           0x20000144      0x404 load address 0x080001ec
+                0x20000148                        . = ALIGN (0x8)
+ *fill*         0x20000144        0x4 
+                0x20000148                        __end__ = .
+                0x20000548                        . = (. + 0x400)
+ *fill*         0x20000148      0x400 
+                0x20050000                        __stack_top = (ORIGIN (RAM) + LENGTH (RAM))
+
+/DISCARD/
+ *(.ARM.exidx*)
+OUTPUT(blink-gcc.elf elf32-littlearm)
+LOAD linker stubs
+
+.debug_info     0x00000000      0x395
+ .debug_info    0x00000000      0x178 main.o
+ .debug_info    0x00000178       0xfc startup.o
+ .debug_info    0x00000274      0x121 libutil.a(crc.o)
+
+.debug_abbrev   0x00000000      0x2a1
+ .debug_abbrev  0x00000000      0x10a main.o
+ .debug_abbrev  0x0000010a       0xe2 startup.o
+ .debug_abbrev  0x000001ec       0xb5 libutil.a(crc.o)
+
+.debug_loclists
+                0x00000000       0x96
+ .debug_loclists
+                0x00000000       0x21 main.o
+ .debug_loclists
+                0x00000021       0x75 libutil.a(crc.o)
+
+.debug_aranges  0x00000000       0x70
+ .debug_aranges
+                0x00000000       0x28 main.o
+ .debug_aranges
+                0x00000028       0x28 startup.o
+ .debug_aranges
+                0x00000050       0x20 libutil.a(crc.o)
+
+.debug_rnglists
+                0x00000000       0x51
+ .debug_rnglists
+                0x00000000       0x25 main.o
+ .debug_rnglists
+                0x00000025       0x19 startup.o
+ .debug_rnglists
+                0x0000003e       0x13 libutil.a(crc.o)
+
+.debug_line     0x00000000      0x4af
+ .debug_line    0x00000000      0x1ab main.o
+ .debug_line    0x000001ab      0x170 startup.o
+ .debug_line    0x0000031b      0x194 libutil.a(crc.o)
+
+.debug_str      0x00000000      0x205
+ .debug_str     0x00000000      0x205 main.o
+                                0x1f9 (size before relaxing)
+ .debug_str     0x00000205      0x1f3 startup.o
+ .debug_str     0x00000205      0x1cb libutil.a(crc.o)
+
+.comment        0x00000000       0x45
+ .comment       0x00000000       0x45 main.o
+                                 0x46 (size before relaxing)
+ .comment       0x00000045       0x46 startup.o
+ .comment       0x00000045       0x46 libutil.a(crc.o)
+
+.ARM.attributes
+                0x00000000       0x32
+ .ARM.attributes
+                0x00000000       0x32 main.o
+ .ARM.attributes
+                0x00000032       0x32 startup.o
+ .ARM.attributes
+                0x00000064       0x32 libutil.a(crc.o)
+
+.debug_frame    0x00000000       0x98
+ .debug_frame   0x00000000       0x38 main.o
+ .debug_frame   0x00000038       0x38 startup.o
+ .debug_frame   0x00000070       0x28 libutil.a(crc.o)

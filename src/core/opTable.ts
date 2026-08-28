@@ -34,6 +34,8 @@
 
 import type { IDebuggingHandler } from '../debuggingHandler';
 import type { SerialHandler } from '../serialHandler';
+import type { PackDocsHandler } from '../packDocsHandler';
+import type { BuildInfoHandler } from '../buildInfoHandler';
 
 /** Ops served by the debugging handler. */
 export const DEBUG_OPS = [
@@ -87,31 +89,69 @@ export const SERIAL_OPS = [
     'handleOpenInUi',
 ] as const;
 
+/** Ops served by the documentation handler (`PackDocsHandler`). */
+export const PACKDOCS_DOC_OPS = [
+    'handleListTargetDocs',
+    'handleSearchTargetDocs',
+    'handleReadDocPages',
+    'handleFetchDoc',
+    'handleGetPeripheralDocs',
+] as const;
+
+/** Ops served by the build-artefact handler (`BuildInfoHandler`). */
+export const PACKDOCS_BUILD_OPS = [
+    'handleListBuildArtifacts',
+    'handleGetMemoryUsage',
+    'handleLookupSymbol',
+    'handleGetSectionLayout',
+    'handleGetBuildDiagnostics',
+] as const;
+
+/** Both pack-docs groups: one dispatch, one routing path, two enable gates. */
+export const PACKDOCS_OPS = [...PACKDOCS_DOC_OPS, ...PACKDOCS_BUILD_OPS] as const;
+
 export type DebugOpName = typeof DEBUG_OPS[number];
 export type SerialOpName = typeof SERIAL_OPS[number];
-export type OpName = DebugOpName | SerialOpName;
+export type PackDocsDocOpName = typeof PACKDOCS_DOC_OPS[number];
+export type PackDocsBuildOpName = typeof PACKDOCS_BUILD_OPS[number];
+export type PackDocsOpName = PackDocsDocOpName | PackDocsBuildOpName;
+export type OpName = DebugOpName | SerialOpName | PackDocsOpName;
 
 const DEBUG_OP_SET: ReadonlySet<string> = new Set(DEBUG_OPS);
 const SERIAL_OP_SET: ReadonlySet<string> = new Set(SERIAL_OPS);
+const PACKDOCS_DOC_OP_SET: ReadonlySet<string> = new Set(PACKDOCS_DOC_OPS);
+const PACKDOCS_OP_SET: ReadonlySet<string> = new Set(PACKDOCS_OPS);
 
 /** True when `op` is a name the control server is willing to dispatch. */
 export function isKnownOp(op: string): op is OpName {
-    return DEBUG_OP_SET.has(op) || SERIAL_OP_SET.has(op);
+    return DEBUG_OP_SET.has(op) || SERIAL_OP_SET.has(op) || PACKDOCS_OP_SET.has(op);
 }
 
 export function isSerialOp(op: string): op is SerialOpName {
     return SERIAL_OP_SET.has(op);
 }
 
+export function isPackDocsOp(op: string): op is PackDocsOpName {
+    return PACKDOCS_OP_SET.has(op);
+}
+
+/** True for the documentation half of the pack-docs ops (else build artefacts). */
+export function isPackDocsDocOp(op: string): op is PackDocsDocOpName {
+    return PACKDOCS_DOC_OP_SET.has(op);
+}
+
 /**
  * Ops that legitimately run far longer than a normal tool call, so the
  * router→worker forward must not preempt them. A build can take minutes and
  * flashing a large image is not quick either; cutting those off mid-write is
- * how you get a half-programmed part.
+ * how you get a half-programmed part. Documentation ops extract and index a
+ * manual on first use — a 3 000-page reference manual takes minutes — and
+ * accept timeoutMs up to 600 s, so they get the same floor.
  */
 const SLOW_OPS: ReadonlySet<string> = new Set([
     'handleCmsisCommand',
     'handleFlash',
+    ...PACKDOCS_DOC_OPS,
 ]);
 
 /**
@@ -131,8 +171,9 @@ export function forwardTimeoutMs(op: string, args: unknown, defaultToolMs: numbe
  * The path an op names, if any — the strongest routing signal available.
  *
  * Only the source-oriented ops carry one. Everything else (memory, registers,
- * peripherals, CMSIS actions, flash, serial) has nothing to match on and falls
- * through to the session/active-session rules in the router.
+ * peripherals, CMSIS actions, flash, serial, documentation and build
+ * artefacts) has nothing to match on and falls through to the
+ * session/active-session rules in the router.
  */
 export function pathHintOf(args: unknown): string | undefined {
     const a = args as { fileFullPath?: unknown; workingDirectory?: unknown } | undefined;
@@ -161,7 +202,20 @@ type _ExtraDebugOps = Exclude<DebugOpName, keyof IDebuggingHandler>;
 type _MissingSerialOps = Exclude<keyof SerialHandler, SerialOpName>;
 type _ExtraSerialOps = Exclude<SerialOpName, keyof SerialHandler>;
 
+// The pack-docs handlers also expose non-tool methods for the commands and
+// the panel (refreshSettings, indexTarget, …); only their `handle*` methods
+// are tool ops, so the coverage check is over those.
+type _HandleKeys<T> = Extract<keyof T, `handle${string}`>;
+type _MissingPackDocsDocOps = Exclude<_HandleKeys<PackDocsHandler>, PackDocsDocOpName>;
+type _ExtraPackDocsDocOps = Exclude<PackDocsDocOpName, _HandleKeys<PackDocsHandler>>;
+type _MissingPackDocsBuildOps = Exclude<_HandleKeys<BuildInfoHandler>, PackDocsBuildOpName>;
+type _ExtraPackDocsBuildOps = Exclude<PackDocsBuildOpName, _HandleKeys<BuildInfoHandler>>;
+
 const _debugOpsAreExhaustive: [_MissingDebugOps, _ExtraDebugOps] extends [never, never] ? true : never = true;
 const _serialOpsAreExhaustive: [_MissingSerialOps, _ExtraSerialOps] extends [never, never] ? true : never = true;
+const _packDocsDocOpsAreExhaustive: [_MissingPackDocsDocOps, _ExtraPackDocsDocOps] extends [never, never] ? true : never = true;
+const _packDocsBuildOpsAreExhaustive: [_MissingPackDocsBuildOps, _ExtraPackDocsBuildOps] extends [never, never] ? true : never = true;
 void _debugOpsAreExhaustive;
 void _serialOpsAreExhaustive;
+void _packDocsDocOpsAreExhaustive;
+void _packDocsBuildOpsAreExhaustive;

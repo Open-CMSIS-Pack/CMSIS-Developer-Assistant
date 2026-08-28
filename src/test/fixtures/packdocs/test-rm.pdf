@@ -1,0 +1,43 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Length 362 >>
+stream
+BT /F1 11 Tf 40 780 Td 14 TL (TEST-RM Reference manual) Tj T* (6.3.10 RCC AHB1 peripheral clock enable register \(RCC_AHB1ENR\)) Tj T* (Address offset: 0x30) Tj T* (Reset value: 0x0010 0000) Tj T* (Bit 0 GPIOAEN: IO port A clock enable) Tj T* (0: IO port A clock disabled) Tj T* (1: IO port A clock enabled) Tj T* (Bit 1 GPIOBEN: IO port B clock enable) Tj T* ET
+endstream
+endobj
+3 0 obj
+<< /Length 319 >>
+stream
+BT /F1 11 Tf 40 780 Td 14 TL (TEST-RM Reference manual) Tj T* (6.3.11 RCC AHB2 peripheral clock enable register \(RCC_AHB2ENR\)) Tj T* (Address offset: 0x34) Tj T* (Bit 7 OTGFSEN: USB OTG FS clock enable) Tj T* (Bit 6 RNGEN: Random number generator clock enable) Tj T* (The base address of RCC is 0x4002_3800.) Tj T* ET
+endstream
+endobj
+4 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 2 0 R >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 3 0 R >>
+endobj
+6 0 obj
+<< /Type /Pages /Kids [4 0 R 5 0 R] /Count 2 >>
+endobj
+7 0 obj
+<< /Type /Catalog /Pages 6 0 R >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000079 00000 n 
+0000000492 00000 n 
+0000000862 00000 n 
+0000000988 00000 n 
+0000001114 00000 n 
+0000001177 00000 n 
+trailer
+<< /Size 8 /Root 7 0 R >>
+startxref
+1226
+%%EOF

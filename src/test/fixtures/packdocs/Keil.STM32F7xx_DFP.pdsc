@@ -1,0 +1,970 @@
+<?xml version='1.0' encoding='utf-8'?>
+<package xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" schemaVersion="1.7.36" xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/Open-CMSIS-Pack/Open-CMSIS-Pack-Spec/v1.7.36/schema/PACK.xsd">
+  <vendor>Keil</vendor>
+  <name>STM32F7xx_DFP</name>
+  <description overview="Documents/OVERVIEW.md">STMicroelectronics STM32F7 Series Device Support</description>
+  <url>https://www.keil.com/pack/</url>
+  <repository type="git">https://github.com/Open-CMSIS-Pack/STM32F7xx_DFP.git</repository>
+  <license>LICENSE</license>
+  <releases>
+    <release version="3.0.0" date="2024-10-11" tag="v3.0.0">
+      Updated for new CMSIS-Toolbox CubeMX integration
+      Removed CMSIS Drivers
+      Removed STM32CubeMX_FW_F7
+      Removed board drivers (ADC, Audio, Buttons, GLCD, Joystick, LED, Touch...)
+      Removed all examples
+      Updated SVD files
+      Removed previous generator (gpdsc)
+      Added new global generator
+      Package Description (pdsc):
+      - Removed Device:Startup component
+      - Removed Device:STM32Cube HAL components
+      - Removed Device:STM32Cube LL components
+      - Removed Board descriptions
+      - Removed BSP components
+      - Removed compile device header from device description
+      - Removed unused conditions
+      - Replaced documentation files with permalinks
+      - Reworked memories regions
+    </release>
+    <release version="2.16.0" date="2024-02-02">
+      Package Description (pdsc):
+      - Added LICENSE file.
+      CMSIS-Driver:
+      - Updated VIO driver to API 1.0.0.
+      Board examples:
+      - Updated to CMSIS 6.
+      - Updated to MDK-Middleware v7.17.0.
+    </release>
+    <release version="2.15.2" date="2023-07-04">
+      CMSIS:
+      - Updated SVD files to latest available versions from STMicroelectronics.
+      CMSIS-Driver:
+      - USART: Corrected UART5 RTS/CTS pins definitions
+      - VIO for STM32F746G-Discovery board: Corrected variables initialization to avoid compiler warnings.
+    </release>
+    <release version="2.15.1" date="2022-10-19">
+      CMSIS-Driver:
+      - SPI: Corrected functionality when using DMA mode.
+      - USART: Corrected Control function for set default transmit value (cache handling).
+      Board Examples:
+      - Updated MPU configuration.
+      - Updated linker script files (LTO).
+    </release>
+    <release version="2.15.0" date="2022-08-25">
+      Updated Pack to STM32Cube_FW_F7 Firmware Package version V1.17.0:
+      - Updated HAL to version V1.3.0: General updates to fix known defects and enhancements implementation.
+      - Updated CMSIS_Device.
+      Package Description (pdsc):
+      - Updated device list:
+      -- Removed STM32F733ZEKx device.
+      -- Added support for:
+         STM32F723VETx, STM32F723VCTx, STM32F723VCYx, 
+         STM32F733ZEIx, 
+         STM32F765VGHx, STM32F765VIHx, 
+         STM32F767VGHx, STM32F767VIHx, 
+         STM32F777VIHx.
+      CMSIS:
+      - Updated SVD files and documentation.
+      CMSIS-Driver:
+      - CAN: Updated function GetTxFrameTime.
+      - EMAC:
+      -- Corrected Send/ReadFrame functions to use memory barriers to ensure correct order of 
+         DMA descriptor update and data coherency before DMA operation is started.
+      -- Renamed define for Data Cache maintenance.
+      -- Updated functions GetRxFrameTime and GetTxFrameTime.
+      -- Corrected type casting.
+      - I2C:
+      -- Made variables status and cnt volatile.
+      -- Updated Data Cache maintenance.
+      - MCI:
+      -- Made variable status volatile.
+      -- Renamed define for Data Cache maintenance.
+      - SAI:
+      -- Made variables status, cnt and num volatile.
+      -- Updated Data Cache maintenance.
+      - SPI:
+      -- Made variables status, num, rx_cnt and tx_cnt volatile.
+      -- Updated Data Cache maintenance.
+      -- Corrected Transfer function in Interrupt mode (Added missing RXNEIE bit).
+      - USART:
+      -- Corrected capabilities with CTS change event not supported.
+      -- Corrected Data Cache maintenance operations in 9-bit mode.
+      -- Corrected Initialize function to reset send_active status.
+      -- Corrected Uninitialize function to power off the peripheral if it is powered.
+      -- Corrected PowerControl function to return error if Initialize was not called 
+         and clear transfer information when powered off.
+      -- Corrected Send function to not start reception in Synchronous Master mode 
+         and clear Transmission Complete status before starting Tx transfer (in DMA mode).
+      -- Corrected GetTxCount to return 0 if send was not activated (in DMA mode).
+      -- Corrected GetRxCount to return 0 if receive was not activated (in DMA mode).
+      -- Corrected Control function to for abort Send/Transfer wait for already loaded frame to be sent, 
+         abort also Transmit if Receive in Synchronous Master mode is active, 
+         enable Tx (implicitly) if Rx is enabled for Synchronous Master mode, 
+         use pull-up on Rx pin, use pull-up on RTS/CTS pins, corrected Tx pin configuration in 
+         single-wire mode.
+      -- Corrected GetStatus to return all inactive status bits if USART is not powered.
+      -- Corrected Interrupt routine handling of Rx overflow and Tx Complete signaling.
+      -- Corrected Tx DMA Handler Send complete signaling.
+      -- Made variables status, rx_num tx_num, rx_cnt and tx_cnt volatile.
+      -- Updated Data Cache maintenance.
+      - USBD: Made variables usbd_state and num_transferred_total volatile.
+      - VIO for STM32F746G-Discovery board:
+      -- Corrected green LED (LD1) mapped to vioLED0 (was vioLED1).
+      -- Corrected vioBUTTON0 active state (was active low).
+      -- Removed LCD support.
+      Board Examples:
+      - CubeMX:
+      -- Migrated CubeMX projects to V6.6.1.
+      -- Platform:
+      --- Changed ARDUINO_IO_D9 pin (from PI0 to PA8).
+      --- Corrected ARDUINO_IO_D10 mode (External interrupt Mode).
+      --- Enabled generate MX_SPI2_Init function call.
+      - STM32F769I_Discovery, STM32F769I_EVAL, STM32756G_EVAL:
+      -- Added linker scripts in all examples.
+      -- Added command-line option for placement of unassigned sections (--any_placement=first_fit).
+      - STM32F746G-Discovery:
+      -- Changed MPU configuration according to example requirements.
+      -- Changed to use linker script for proper memory positioning.
+      -- Changed EMAC buffer and DMA descriptors location to non-cacheable SRAM2.
+      -- Changed MCI cache location to non-cacheable SRAM2.
+      -- Changed board name in network examples to stm32f746g-dk (from stm32f746g-disc).
+      -- Changed ST-Link debugger configuration to use under Reset option for Debug - Connect and Reset Options.
+      - STM32756G_EVAL:
+      -- Updated emWin GUIDemo example (increase RAM assigned to emWin).
+      Templates:
+      - Overwritten default HAL_InitTick function.
+      - Updated stm32f7xx_hal_conf.h file.
+    </release>
+    <release version="2.14.1" date="2021-10-27">
+      Updated Pack to STM32Cube_FW_F7 Firmware Package version V1.16.1:
+      - Updated HAL to version V1.2.9.
+      STM32CubeMX integration: Synchronized versions of generated component ::Device:STM32Cube Framework:STM32CubeMX (in gpdsc) and its bootstrap (in pdsc).
+      Package Description (pdsc): Changed schemaVersion (1.7.2).
+      CMSIS-Driver:
+      - CAN: Added support for devices containing only CAN1 controller.
+      - I2C: Corrected pins configuration.
+      - MCI: Updated SetupTransfer() (Data Cache handling).
+      - SPI:
+      -- Corrected IRQ Handler function to handle TXEIE/RXNEIE flags.
+      -- Corrected Control function to:
+      --- Abort DMA transfer.
+      --- Reconfigure NSS pin.
+      --- Flush loaded data register if abort was requested in DMA mode.
+      --- Activate internal pull-up/down on SCK pin according to clock/frame format setting.
+      - USB: Updated documentation.
+      - USB HS Device:
+      -- Reduced duration of PowerControl when Power full is activated.
+      -- Corrected USBD_PowerControl function to properly reset the OTG HS module.
+      -- Fixed port resume occasionally getting stuck in resume signaling.
+      -- Added compile time configuration for reducing Bulk IN NAK rate.
+      - VIO: Corrected vioInit() (moved LEDs pins initialization).
+      Board Examples:
+      - Updated boards documentation.
+      - Changed Assembler option to armclang(Auto Select).
+      - Updated config files to CMSIS 5.8.0.
+      - Overrode default HAL_InitTick function.
+      - CubeMX: Migrated CubeMX projects to V6.3.0.
+      - STM32F746G-Discovery/CubeMX:
+      -- Removed DebugConfig folder.
+      -- Default RTX Configuration (RTX_Config.h).
+      -- Platform:
+      --- Updated App layer description.
+      --- Changed Compiler optimization -O1.
+      --- Assigned ETH and MMC (STM32Cube HAL) components to Board layer.
+      --- Updated blocking stdin_getchar in stdio retarget.
+    </release>
+    <release version="2.14.0" date="2020-12-18">
+      STM32CubeMX integration:
+      - Added support for USB PHY configuration (MX_Device_h.ftl and FrameworkCubeMX_gpdsc.ftl).
+      - Added debugProbe board description.
+      Description file (pdsc):
+      - Added global define USE_HAL_DRIVER to the component ::Device:STM32Cube HAL:Common.
+      - Added global define USE_FULL_LL_DRIVER to the component ::Device:STM32Cube LL:Common.
+      CMSIS-Driver:
+      - EMAC/I2C/MCI/SAI/SPI/USART: Corrected Data Cache handling.
+      - MCI: Replaced empty delay loops with _NOP().
+      - USART: Corrected baud rate configuration.
+      - USBD_HS/USBH_HS: OTG_HS ULPI clock disabled in low power if internal PHY is used
+        to enable proper operation of OTG_HS port in FS mode during CPU sleep.
+      - VIO: LCD support can be disabled with VIO_LCD_DISABLE define.
+      Board Examples:
+      - Updated CubeMX examples:
+      -- Migrated CubeMX projects to V6.0.1.
+      - Updated Platform example:
+      -- Reduced Idle and Timer thread stack size.
+      -- Reworked README.md format.
+    </release>
+    <release version="2.13.0" date="2020-08-04">
+      Updated Pack to STM32Cube_FW_F7 Firmware Package version V1.16.0:
+      - Updated HAL to version V1.2.8.
+      - Added MultiMediaCard (MMC) HAL component.
+      - Added support for Timebase Source TIMx.
+      - Updated STM32F7xx flash programming algorithms.
+      - Updated SVD files.
+      CMSIS-Driver:
+      - Added VIO module for board STM32F746G_Discovery
+      - CAN/EMAC/USBD/USBH:
+      -- Removed macro definitions already provided by cmsis_compiler.h.
+      - SAI/SPI/USART:
+      -- Corrected DMA MemDataAlignment configuration.
+      - SPI:
+      -- Added DCache Handling
+      -- Corrected PowerControl function (to return error if Initialize was
+         not called, to abort active transfer if power off was requested)
+      -- Updated GetDataCount function to give accurate count in DMA mode
+      -- Corrected Uninitialize function (to power off the peripheral if it is powered)
+      - MCI: Added handling for separate SD and MMC HAL layers
+      Updated examples:
+      - All:
+      -- configured MDK projects to use Arm Compiler 6.
+      -- updated config and template based files to MDK-Middleware 7.12.0 and CMSIS 5.7.0.
+      -- terminating app_main thread with osThreadExit() to avoid endless loop.
+      - USB Host/Device: user templates from MDK-Middleware v7.11.1.
+      - USB Device: MS Windows drivers updated.
+      - STM32F746G-Discovery:
+      -- emWin VNC Server with STM32CubeMX: changed GUIThread priority from osPriorityIdle to osPriorityNormal.
+      -- Added Platform example
+      -- Updated Blinky to use VIO component.
+      - emWin GUIDemo Examples:
+      -- configured SystemCoreClock to 200MHz because of use of ext. SDRAM.
+    </release>
+    <release version="2.12.0" date="2019-07-17">
+      Updated Pack to include subset of STM32Cube_FW_F7 Firmware Package version V1.15.0 using HAL Drivers V1.2.7
+      - Added support for Low Level (LL) drivers.
+      - Corrected RTE_Device.h file (I2C3_SDA)
+      - Corrected condition for selecting HAL RCC
+      - MX_Device_h.ftl:
+      -- Updated parsing of USART virtual mode
+      -- Updated generation of macros: Added handling for '(' and ')' symbols
+      Corrected launching STM32CubeMX via "play" button for existing projects overwrites with a new STM32CubeMX project file instead of loading existing.
+      Updated Board Examples:
+      - graphics examples use Segger emWin version 5.50.0.
+      - examples enable Event Recorder in debug targets
+      - Updated LCDConf.c (ready for GUI_USE_ARGD = 1)
+     CMSIS-Driver:
+      - CAN:
+      -- Corrected SetBitrate function to leave Silent and Loopback mode as they were.
+      -- Corrected SetMode function to clear Silent and Loopback mode when NORMAL mode is activated.
+      -- Corrected MessageSend function to only access required data for sending.
+      - EMAC:
+      -- Corrected __MEMORY_AT(x) define to be compliant with Arm Compiler 6.
+      -- Corrected: ETH DMA initialization moved to enable of MAC transmitter or receiver solving netInitialize/netUnnitialize/netInitialize sequence.
+      - I2C:
+      -- Corrected transfers for data sizes greater than 255 (Complete Reload handling).
+      -- Corrected I2C_SlaveReceive functionality.
+      -- Corrected code alignment.
+      - MCI: Added data cache handling.
+      - USART:
+      -- Added check for valid pointer to USART_PIN prior to use.
+      -- Corrected POWER_OFF sequence. DMA is DeInitialized after it is aborted.
+      - USB Device:
+      -- Updated USBD_EndpointConfigure function to check that maximum packet size requested fits into configured FIFO (compile time configured).
+      -- I/O output speed is configurable
+      - SPI:
+      -- Updated SPI_TRANSFER_INFO structure - tx_buf type changed from uint8_t * to const uint8_t *.
+      -- Added check for valid pointer to SPI_PIN prior to use.
+    </release>
+    <release version="2.11.0" date="2018-09-05">
+      Added device support for subfamily STM32F730 and STM32F750.
+      Updated Pack to STM32Cube_FW_F7 Firmware Package version V1.12.0.
+      - Updated HAL to version V1.2.6.
+      Updated version of debug configuration files to reflect incompatible change in previous release.
+      Updated CMSIS-Driver:
+      - Corrected compilation warnings if GNU extensions is enabled in C/C++ settings for ARM Compiler 5.
+      - I2C:
+      -- Corrected bus timing setting.
+      -- Corrected ARM_I2C_EVENT_TRANSFER_INCOMPLETE signaling on NACK in master mode.
+      - MCI: Function Control_SDMMC_Clock not used with STM32CubeMX Framework.
+    </release>
+    <release version="2.10.0" date="2018-05-16">
+      Updated Pack to STM32Cube_FW_F7 Firmware Package version V1.11.0.
+      - Reduced overall pack size by extracting only 'Drivers', 'Documentation' and 'Fonts' from Firmware Library pack.
+      - Updated HAL to version V1.2.5.
+      Tested using ARM:CMSIS-Driver:2.2.0 and ARM:CMSIS:5.3.0.
+      Package Description:
+      - Device names:
+      -- Updated STM32F723ZEKx to STM32F723ZEIx.
+      -- Updated STM32F723ZCKx to STM32F723ZCIx.
+      - Corrected RAM settings for STM32F73x/2x devices.
+      - Added device specific OTP and OPT templates.
+      - Reworked DebugDescription.
+      - Added DBGMCU INI files.
+      - Added DBGCNF files.
+      - Reworked Flash Algorithms:
+      -- New:       STM32F7x2TCM_512.FLM, STM32F7xTCM_1024.FLM, STM32F7xTCM_1024dual.FLM STM32F7x2_OTP.FLM STM32F72x_73x_OPT.FLM, STM32F74x_75x_OPT.FLM, STM32F76x_77x_OPT.FLM
+      -- Updated:   STM32F7x_1024.FLM, STM32F7x_1024dual.FLM, STM32F7x_2048.FLM, STM32F7x_2048dual.FLM, STM32F7xTCM_2048.FLM, STM32F7xTCM_2048dual.FLM, STM32F7xx_OTP.FLM
+      -- Obsoleted: STM32F7x_512.FLM, STM32F7x_TCM.FLM, STM32F7x_512_TCM.FLM, STM32F7xx_OPT.FLM
+      Updated documentation.
+      CMSIS-Driver:
+      - Added Arm Compiler 6 support.
+      - CAN:
+      -- Corrected abort message send functionality.
+      -- Corrected SetBitrate function.
+      -- Corrected code and comment for CubeMX CAN interrupts settings (should be disabled).
+      -- Corrected filter setting for adding/removing maskable Standard ID.
+      - ETH/EMAC:
+      -- Corrected data cache problem.
+      -- Corrected transmit checksum offload for IPv4 fragmented packets.
+      - I2C:
+      -- Corrected ARM_I2C_EVENT_BUS_CLEAR event signaling.
+      -- Replaced dead loop waiting with waiting with timeout.
+      - USART:
+      -- Corrected ARM_USART_SET_IRDA_PULSE control.
+      - USB Device:
+      -- Corrected USB Device high-speed driver: USBD_PowerControl function not to enable ULPI clock if external/internal HS PHY is not enabled.
+      -- Corrected high-bandwidth isochronous endpoint functionality.
+      -- Removed CMSIS-RTOS dependency.
+      -- Added support for internal High-Speed PHY.
+      -- Corrected USB Device high-speed driver: peripheral initialization procedure and adding osDelay to clock enable sequence.
+      - USB Host:
+      -- Removed CMSIS-RTOS dependency.
+      -- Added support for internal High-Speed PHY.
+      Board Examples:
+      - Updated all examples:
+      -- Placing Event Recorder into non-initialized memory area.
+      -- Updated for Arm Compiler 6 support.
+      - Added Network SNMP_Agent examples.
+      - Added USB Device WinUSB_Echo examples.
+      - Updated emWin examples to emWin V5.46e.
+      - Updated USB Host examples thread stack settings.
+      - Updated LCDConf.c for ST boards
+      - Updated Board Support LED_*.c files.
+    </release>
+    <release version="2.9.0" date="2017-02-07">
+      Added device support for subfamilies STM32F7x2, STM32F7x3
+      Added Flash Programming Algorithms for:
+      - 1M dual Flash
+      - NOR Flash for board STM32756G-EVAL.
+      Added Flash Programming Algorithms for Flash 1M dual
+      Updated Pack to STM32Cube_FW_F7 Firmware Package version V1.6.0
+      - added a patch for STM32Cube_FW_F7 to allow compiling with ARM Compiler 6.
+      Updated HAL to version V1.2.0
+      Updated documentation
+      Updated examples
+      Updated SVD files
+      Added emWin drivers and examples for STM32F769I-Eval and STM32F769I-Discovery
+      Updated CMSIS drivers:
+      - SPI: corrected DMA transfer.
+      - USB Host/Device: HS driver: On-chip PHY powered down if external ULPI PHY is used
+    </release>
+    <release version="2.8.0" date="2016-11-18">
+      Updated to STM32Cube_FW_F7 Firmware Package version V1.5.1
+      Updated RTE_Device config file:
+      - Added "Not Used" support for SPI MOSI/MISO pins and USART TX/RX pins.
+      - Added SDMMC2 and CAN pin configurations
+      Updated CMSIS drivers:
+      - CAN:
+      -- Added CAN3
+      -- Corrected clearing of overrun flag in interrupt routine
+      - MCI: Added SDMMC2
+      - SPI:
+      -- Added "Not Used" support for MISO and MOSI pins
+      -- Corrected transfer problem, when DMA is used
+      - USART:
+      -- Changed USART_ISR_LBD (legacy define) to USART_ISR_LBDF
+      -- Added "Not Used" support for TX and RX pins
+      - USB Device: Corrected resume event signaling
+      Added board support for STM32F769I-Discovery and STM32F769I-EVAL boards
+      - Middleware example projects
+      - Board support drivers
+      Updated examples:
+      - Updated emWin examples to emWin V5.36f
+      - Updated USB Device CDC ACM VirtualCOM examples (corrected initial UART receive size)
+    </release>
+    <release version="2.7.0" date="2016-06-17">
+      Added device support and documentation for subfamily STM32F765.
+      Added flash programming algorithm for QuadSPI Flash memory available on STM32 EVAL boards for STM32F77x and STM32F76x subfamilies.
+      Corrected FPU capabilities in device description of some devices which support double precision FPU.
+      Updated CMSIS drivers:
+      - USB Host: Corrected over-current pin configuration
+      - USB Device: VBUS detection is selected automatically based on VBUS sensing pin setting (in RTE_Device.h or by STM32CubeMX)
+    </release>
+    <release version="2.6.0" date="2016-05-25">
+      Added device support for subfamilies STM32F777, STM32F778, STM32F779, STM32F767, STM32F768, and STM32F769
+      Updated Pack to STM32Cube_FW_F7 Firmware Package version V1.4.0
+      Updated HAL to version V1.1.0
+      Updated CMSIS drivers:
+      - I2C: reflect changes from RTE_Device.h (Ver 1.2.2) adding pin configurations
+      - SPI: reflect changes from RTE_Device.h (Ver 1.2.2) adding pin configurations
+      - USART: reflect changes from RTE_Device.h (Ver 1.2.2) adding pin configurations
+      - USB Device:
+      -- Corrected initial resume signaling after USB Bus Reset
+      -- Corrected device status information
+      - CAN:
+      -- Corrected CAN2 initialization was disabling CAN1 filters
+      -- Corrected receive overrun signaling
+    </release>
+    <release version="2.5.0" date="2016-04-14">
+      Updated CMSIS drivers:
+      - EMAC:
+      -- Corrected Ethernet PTP functionality
+      - CAN: Corrected functionality when NULL pointer is provided for one or both signal callbacks in Initialize function call
+      - USB Host high-speed:
+      -- Corrected initialization for full-speed transceiver mode (unexisting OTG_HS_GUSBCFG_PHSEL corrected to OTG_HS_GUSBCFG_PHYSEL)
+      -- Added DMA configuration to RTE_Device.h
+      -- Corrected wrong result of PipeTransferGetResult for In Pipe transfers in DMA mode
+      -- Added check to PipeTransfer function for 4-byte data alignment if DMA is used
+      - USART:
+      -- Corrected Data Bits format configuration
+      -- Corrected CTS handling
+      Updated examples:
+      - Updated emWin examples to emWin V5.32
+      - Updated CAN example
+      - Updated USB Host examples
+      - Updated USB Device CDC ACM VirtualCOM examples
+      Updated documentation.
+      Updated Debug Description (STM32F7xx.dbgconf added).
+    </release>
+    <release version="2.4.0" date="2016-01-27">
+      Updated STM32Cube_FW_F7 Firmware Package:
+      - updated to version V1.3.0
+      - updated HAL to version V1.0.4
+      CMSIS Driver:
+      - USB Device:
+      -- updated Isochronous transfer
+      - USB Host:
+      -- interrupt priority handling removed from driver
+      -- added DMA support to high-speed port driver reducing CPU load (enabled by default)
+      -- renamed externally overridable setting for maximum number of pipes used
+         from USBH_MAX_PIPE_NUM to USBH0_MAX_PIPE_NUM for full-speed driver, and
+         from USBH_MAX_PIPE_NUM to USBH1_MAX_PIPE_NUM for high-speed driver
+      -- corrected speed setting for On-chip Full-speed PHY for high-speed port
+      - CAN: corrected functionality when only one CAN controller is used
+      - SAI: corrected configuration for receive DMA, synchronization and FRC register
+      - I2C:
+      -- MasterReceive function corrected when receiving without restart condition
+      -- corrected ARM_I2C_GetDataCount and ARM_I2C_SignalEvent behavior when stop detected
+      - USART: added the clearing of noise detection flag
+      Board Support STM32F746G-Discovery and STM32F756G-EVAL:
+      - Added Network examples using DualStack (IPv4/IPv6) Middleware (Keil.MDK-Middleware.7.0.0.pack required)
+      - Added Audio Board Interfaces
+      - Added USB Device Audio examples
+    </release>
+    <release version="2.3.0" date="2015-10-23">
+      MDK-ARM configuration via STM32CubeMX:
+      - Updated MX_Device.h generation: pin names characters '/', '-', ' ' converted to '_'
+      Added Flash Programming Algorithm for external Flash on 32F746G-DISCOVERY board
+      Added CMSIS Driver for CAN
+      - Extended RTE_Device.h
+      - Added Examples CAN Data and CAN RTR for STMicroelectronics STM32756G-EVAL Board
+      Updated CMSIS drivers:
+      - all: Corrected PowerControl function for Unconditional Power Off
+      - EMAC: Corrected return value of the ReadFrame function
+      - I2C: Corrected setting of own address
+      - MCI: Removed clock power save bit handling from ARM_MCI_BUS_SPEED control
+      - USB Device:  Updated procedure for IN Endpoint FIFO flush
+      - USB Host: Corrected multiple packet sending and PING functionality
+      - SPI: Corrected 8bit/16bit Data register access, regarding the Data frame size
+      - SPI: Corrected pin configuration (for RTE_SPI2_NSS_PIN and MX_SPI3_MOSI_Pin) in SPI_STM32F7xx.h
+      Updated emWin GUIDemo examples (added MPU configuration)
+    </release>
+    <release version="2.2.0" date="2015-09-04">
+      Introducing project creation with MDK and STM32Cube (STM32Cube HAL and STM32CubeMX):
+      - Added STM32CubeMxLauncher (uVision launcher for STM32CubeMX configuration utility)
+      - Added documentation for creating projects with MDK and STM32Cube
+      - Added project examples created with MDK and STM32Cube:
+      -- Blinky for ST Microelectronics STM32F746G-Discovery
+      -- emWin GUI_VNC for ST Microelectronics STM32F746G-Discovery
+      - Enhanced CMSIS drivers compatibility with STM32CubeMX
+      Updated CMSIS drivers:
+      - EMAC: Corrected lockup after long runtime
+    </release>
+    <release version="2.1.0" date="2015-07-31">
+      Added CMSIS-Driver for I2C and SAI
+      Updated RTE_Device.h (Ver 1.1.0) adding the SAI driver configurations for SAI1 and SAI2
+      Extended File_Demo example (NOR flash drive F0 enabled)
+      Extended template file "main.c" with provisions for using CMSIS-RTOS RTX
+      Corrected CMSIS Driver USART: The driver incorrectly stopped receiving data when calling the USART_Receive function while the receiver is busy
+    </release>
+    <release version="2.0.0" date="2015-07-16">
+      This PACK requires Keil.MDK-Middleware.6.5.0.pack to be the latest version installed
+      Integrates STMicroelectronics STM32CubeF7 Firmware Package V1.1.0
+      Added CMSIS-Driver for Ethernet MAC, MCI, SPI, USART, USB Device and USB Host
+      Added Board support and MDK-Middleware Examples for ST Microelectronics STM32F746G-Discovery
+      - FileSystem, Network, USB Device/Host and emWin
+      Added Board support and MDK-Middleware Examples for ST Microelectronics STM32756G-EVAL
+      - FileSystem, Network, USB Device/Host and emWin
+      Added OTP, OPT Flash Algorithms and templates
+      Updated Flash Algorithm
+    </release>
+    <release version="1.2.0" date="2015-06-26">
+      Increased timeout for Sector Erase in Flash Algorithms.
+      RAMsize for Flash Algorithm corrected
+      Replicated Flash Algorithms for project backward compatibility
+    </release>
+    <release version="1.1.0" date="2015-06-22">
+      Added Flash Algorithm for external flash memory to be used with the STM32756G-EVAL Board
+    </release>
+    <release version="1.0.0" date="2015-06-12">
+      Initial version of STM32F7 Device Family Pack.
+      STM32F756, STM32F745, STM32F746 sub families
+      - Device description and Startup component
+      - Flash Programming Algorithms for Flash and ITCM
+      - System View Description file
+      - Documentation
+    </release>
+  </releases>
+
+  <keywords>                                                                  
+    <keyword>ST</keyword>
+    <keyword>Device Support</keyword>
+    <keyword>Device Family Package STMicroelectronics</keyword>
+    <keyword>STM32F7</keyword>
+    <keyword>STM32F7xx</keyword>
+  </keywords>
+
+  <devices>
+    <family Dfamily="STM32F7 Series" Dvendor="STMicroelectronics:13">
+      <processor Dcore="Cortex-M7" DcoreVersion="r0p1" Dclock="216000000" Dmpu="MPU" Dendian="Little-endian" />
+
+      <book name="https://www.st.com/resource/en/user_manual/um1905-description-of-stm32f7-hal-and-lowlayer-drivers-stmicroelectronics.pdf" title="STM32F7xx HAL Drivers" />
+      <book name="https://developer.arm.com/documentation/dui0646/latest" title="Cortex-M7 Generic User Guide" />
+
+      <description>
+The STM32F7 family incorporates high-speed embedded memories and an extensive range of enhanced I/Os and peripherals connected to two APB buses, three AHB buses and a 32-bit multi-AHB bus matrix.
+
+  - 64-Kbyte of CCM (core coupled memory) data RAM
+  - LCD parallel interface, 8080/6800 modes
+  - Timer with quadrature (incremental) encoder input
+  - 5 V-tolerant I/Os
+  - Parallel camera interface
+  - True random number generator
+  - RTC: subsecond accuracy, hardware calendar
+  - 96-bit unique ID
+      </description>
+
+      <algorithm name="CMSIS/Flash/STM32F7xx_QSPI_Disco.FLM" start="0x90000000" size="0x01000000" RAMstart="0x20010000" RAMsize="0x1000" default="0" />
+      <algorithm name="CMSIS/Flash/STM32F7xx_QSPI_Micron.flm" start="0x90000000" size="0x04000000" RAMstart="0x20010000" RAMsize="0x1000" default="0" />
+      <algorithm name="CMSIS/Flash/STM32F77x_QSPI_Micron.FLM" start="0x90000000" size="0x04000000" RAMstart="0x20010000" RAMsize="0x1000" default="0" />
+      <algorithm name="CMSIS/Flash/STM32F7xx_NOR_Micron.FLM" start="0x60000000" size="0x01000000" RAMstart="0x20010000" RAMsize="0x2000" default="0" />
+      <algorithm name="CMSIS/Flash/STM32F769I_QSPI_Macronix.FLM" start="0x90000000" size="0x04000000" RAMstart="0x20010000" RAMsize="0x1000" default="0" />
+      <algorithm name="CMSIS/Flash/STM32F723E_QSPI_Macronix.FLM" start="0x90000000" size="0x04000000" RAMstart="0x20010000" RAMsize="0x1000" default="0" />
+
+      <sequences>
+        
+        <sequence name="DebugDeviceUnlock">
+          <block>
+            Sequence("CheckID");
+          </block>
+        </sequence>
+
+        <sequence name="DebugCoreStart">
+          <block>
+            // Replication of Standard Functionality
+            Write32(0xE000EDF0, 0xA05F0001);                                        // Enable Core Debug via DHCSR
+
+            // Device Specific Debug Setup
+            Write32(0xE0042004, DbgMCU_CR);                                         // DBGMCU_CR: Configure MCU Debug
+            Write32(0xE0042008, DbgMCU_APB1_Fz);                                    // DBGMCU_APB1_FZ: Configure APB1 Peripheral Freeze Behavior
+            Write32(0xE004200C, DbgMCU_APB2_Fz);                                    // DBGMCU_APB1_FZ: Configure APB2 Peripheral Freeze Behavior
+          </block>
+        </sequence>
+
+        
+        <sequence name="TraceStart">
+          <block>
+            __var traceSWO    = (__traceout &amp; 0x1) != 0;                        // SWO (asynchronous) Trace Selected?
+            __var traceTPIU   = (__traceout &amp; 0x2) != 0;                        // TPIU (synchronous) Trace Selected?
+          </block>
+
+          <control if="traceSWO">
+            <block>
+              Sequence("EnableTraceSWO");                                           // Call SWO Trace Setup
+            </block>
+          </control>
+
+          <control if="traceTPIU">
+            <block>
+              Sequence("EnableTraceTPIU");                                          // Call TPIU Trace Setup
+            </block>
+          </control>
+        </sequence>
+
+        <sequence name="TraceStop">
+          <block>
+            // Nothing required for SWO Trace
+            __var traceSWO    = (__traceout &amp; 0x1) != 0;                        // SWO enabled?
+            __var traceTPIU   = (__traceout &amp; 0x2) != 0;                        // Synchronous trace port enabled?
+          </block>
+
+          <control if="traceSWO">
+            <block>
+              Sequence("DisableTraceSWO");
+            </block>
+          </control>
+
+          <control if="traceTPIU">
+            <block>
+              Sequence("DisableTraceTPIU");
+            </block>
+          </control>
+        </sequence>
+
+        
+        <sequence name="CheckID">
+          <block>
+            __var pidr1 = 0;
+            __var pidr2 = 0;
+            __var jep106id = 0;
+            __var ROMTableBase = 0;
+
+            __ap = 0;      // AHB-AP
+
+            ROMTableBase = ReadAP(0xF8) &amp; ~0x3;
+
+            pidr1 = Read32(ROMTableBase + 0x0FE4);
+            pidr2 = Read32(ROMTableBase + 0x0FE8);
+            jep106id = ((pidr2 &amp; 0x7) &lt;&lt; 4 ) | ((pidr1 &gt;&gt; 4) &amp; 0xF);
+          </block>
+
+          <control if="jep106id != 0x20">
+            <block>
+              Query(0, "Not a genuine ST Device! Abort connection", 1);
+              Message(2, "Not a genuine ST Device! Abort connection.");
+            </block>
+          </control>
+        </sequence>
+
+        <sequence name="EnableTraceSWO">
+          <block>
+            __var dbgmcu_val       = 0;                                                   // DBGMCU_CR Value
+            __var dbgmcu_trace_val = 0;                                                   // DBGMCU_CR Value
+
+            dbgmcu_val        = Read32(0xE0042004) &amp; (~0xE0);                         // Read DBGMCU_CR and clear trace setup
+            dbgmcu_trace_val  = (1 &lt;&lt; 5);                                           // Trace I/O Enable + Trace Mode Asynchronous
+
+            Sequence("ConfigureTraceSWOPin");
+          </block>
+
+          <block info="configure Trace I/O Enable + Trace Mode Asynchronous">
+            Write32(0xE0042004, dbgmcu_val | dbgmcu_trace_val);                           // Write DBGMCU_CR: Trace Settings
+          </block>
+        </sequence>
+
+        <sequence name="DisableTraceSWO">
+          <block>
+            __var dbgmcu_val       = 0;                                                   // DBGMCU_CR Value
+          </block>
+
+          <block info="unconfigure Trace I/O Enable + Trace Mode Asynchronous">
+            dbgmcu_val = Read32(0xE0042004) &amp; (~0xE0);                                // Read DBGMCU_CR and clear trace setup
+            Write32(0xE0042004, dbgmcu_val);                                              // Write DBGMCU_CR: Trace Settings
+          </block>
+        </sequence>
+
+        <sequence name="EnableTraceTPIU">
+          <block>
+            __var width            = (__traceout &amp; 0x003F0000) &gt;&gt; 16;
+            __var dbgmcu_val       = 0;                                                   // DBGMCU_CR Value
+            __var dbgmcu_trace_val = 0;                                                   // DBGMCU_CR Value
+
+            dbgmcu_val        = Read32(0xE0042004) &amp; (~0xE0);                         // Read DBGMCU_CR and clear trace setup
+
+            Sequence("ConfigureTraceTPIUPins");
+          </block>
+
+          <control if="width &gt;= 1" info="TPIU port width 1">
+            <block info="configure Trace I/O Enable + Trace Mode Synchronous 1 bit">
+              dbgmcu_trace_val  = (3 &lt;&lt; 5);
+            </block>
+          </control>
+
+          <control if="width &gt;= 2" info="TPIU port width 2">
+            <block info="configure Trace I/O Enable + Trace Mode Synchronous 2 bit">
+              dbgmcu_trace_val  = (5 &lt;&lt; 5);
+            </block>
+          </control>
+
+          <control if="width &gt;= 4" info="TPIU port width 4">
+            <block info="configure Trace I/O Enable + Trace Mode Synchronous 4 bit">
+              dbgmcu_trace_val  = (7 &lt;&lt; 5);
+            </block>
+          </control>
+
+          <block info="configure Trace I/O Enable + Trace Mode Asynchronous">
+            Write32(0xE0042004, dbgmcu_val | dbgmcu_trace_val);                           // Write DBGMCU_CR: Trace Settings
+          </block>
+        </sequence>
+
+        <sequence name="DisableTraceTPIU">
+          <block>
+            __var dbgmcu_val       = 0;                                                   // DBGMCU_CR Value
+          </block>
+
+          <block info="unconfigure Trace I/O Enable + Trace Mode Synchronous">
+            dbgmcu_val = Read32(0xE0042004) &amp; (~0xE0);                                // Read DBGMCU_CR and clear trace setup
+            Write32(0xE0042004, dbgmcu_val);                                              // Write DBGMCU_CR: Trace Settings
+          </block>
+        </sequence>
+
+        <sequence name="ConfigureTraceSWOPin">
+          <block>
+            __var pin     = 0;
+            __var port    = 0;
+            __var portAdr = 0;
+            __var pos     = 0;
+
+            __var SWO_Pin = 0x00010003;          // PB3
+          </block>
+
+            
+            <block info="configure SWO">
+              pin     =               ((SWO_Pin            ) &amp; 0x0000FFFF);
+              port    =               ((SWO_Pin &gt;&gt; 16) &amp; 0x0000FFFF);
+              portAdr = 0x40020000 + (((SWO_Pin &gt;&gt; 16) &amp; 0x0000FFFF) * 0x400);
+
+              pos = pin * 2;
+              Write32(0x40023830,     ((Read32(0x40023830    )                         ) | (1 &lt;&lt; port)) );  // RCC_AHB1ENR:   IO port clock enable
+              Write32(portAdr + 0x00, ((Read32(portAdr + 0x00) &amp; ~( 3 &lt;&lt; pos)) | (2 &lt;&lt; pos )) );  // GPIOx_MODER:   Set Mode (Alternate Function)
+              Write32(portAdr + 0x08, ((Read32(portAdr + 0x08)                         ) | (3 &lt;&lt; pos )) );  // GPIOx_OSPEEDR: Set Speed (Very High Speed)
+              Write32(portAdr + 0x0C, ((Read32(portAdr + 0x0C) &amp; ~( 3 &lt;&lt; pos))                    ) );  // GPIOx_PUPDR:   Set I/O to no pull-up/pull-down
+            </block>
+            <control if="pin &lt;  8">
+              <block>
+              pos = ((pin    ) &amp; 7) * 4;
+              Write32(portAdr + 0x20, ((Read32(portAdr + 0x20) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRL:    Alternate Function to AF0
+              </block>
+            </control>
+            <control if="pin &gt;= 8">
+              <block>
+              pos = ((pin - 8) &amp; 7) * 4;
+              Write32(portAdr + 0x24, ((Read32(portAdr + 0x24) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRH:    Alternate Function to AF0
+              </block>
+            </control>
+        </sequence>
+
+        <sequence name="ConfigureTraceTPIUPins">
+          <block>
+            __var pin     = 8;
+            __var port    = 0;
+            __var portAdr = 0;
+            __var pos     = 0;
+
+            __var width   = (__traceout &amp; 0x003F0000) &gt;&gt; 16;
+          </block>
+
+            
+            <block info="configure TRACECLK">
+              pin     =                (TraceClk_Pin            ) &amp; 0x0000FFFF;
+              port    =                (TraceClk_Pin &gt;&gt; 16) &amp; 0x0000FFFF;
+              portAdr = 0x40020000 + (((TraceClk_Pin &gt;&gt; 16) &amp; 0x0000FFFF) * 0x400);
+
+              pos = pin * 2;
+              Write32(0x40023830,     ((Read32(0x40023830    )                         ) | (1 &lt;&lt; port)) );  // RCC_AHB1ENR:   IO port clock enable
+              Write32(portAdr + 0x00, ((Read32(portAdr + 0x00) &amp; ~( 3 &lt;&lt; pos)) | (2 &lt;&lt; pos )) );  // GPIOx_MODER:   Set Mode (Alternate Function)
+              Write32(portAdr + 0x08, ((Read32(portAdr + 0x08)                         ) | (3 &lt;&lt; pos )) );  // GPIOx_OSPEEDR: Set Speed (Very High Speed)
+              Write32(portAdr + 0x0C, ((Read32(portAdr + 0x0C) &amp; ~( 3 &lt;&lt; pos))                    ) );  // GPIOx_PUPDR:   Set I/O to no pull-up/pull-down
+            </block>
+            <control if="pin &lt;  8">
+              <block>
+              pos = ((pin    ) &amp; 7) * 4;
+              Write32(portAdr + 0x20, ((Read32(portAdr + 0x20) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRL:    Alternate Function to AF0
+              </block>
+            </control>
+            <control if="pin &gt;= 8">
+              <block>
+              pos = ((pin - 8) &amp; 7) * 4;
+              Write32(portAdr + 0x24, ((Read32(portAdr + 0x24) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRH:    Alternate Function to AF0
+              </block>
+            </control>
+
+          <control if="width &gt;= 1" info="TPIU port width 1">
+            
+            <block info="configure TRACED0">
+              pin     =                (TraceD0_Pin            ) &amp; 0x0000FFFF;
+              port    =                (TraceD0_Pin &gt;&gt; 16) &amp; 0x0000FFFF;
+              portAdr = 0x40020000 + (((TraceD0_Pin &gt;&gt; 16) &amp; 0x0000FFFF) * 0x400);
+
+              pos = pin * 2;
+              Write32(0x40023830,     ((Read32(0x40023830    )                         ) | (1 &lt;&lt; port)) );  // RCC_AHB1ENR:   IO port clock enable
+              Write32(portAdr + 0x00, ((Read32(portAdr + 0x00) &amp; ~( 3 &lt;&lt; pos)) | (2 &lt;&lt; pos )) );  // GPIOx_MODER:   Set Mode (Alternate Function)
+              Write32(portAdr + 0x08, ((Read32(portAdr + 0x08)                         ) | (3 &lt;&lt; pos )) );  // GPIOx_OSPEEDR: Set Speed (Very High Speed)
+              Write32(portAdr + 0x0C, ((Read32(portAdr + 0x0C) &amp; ~( 3 &lt;&lt; pos))                    ) );  // GPIOx_PUPDR:   Set I/O to no pull-up/pull-down
+            </block>
+            <control if="pin &lt;  8">
+              <block>
+              pos = ((pin    ) &amp; 7) * 4;
+              Write32(portAdr + 0x20, ((Read32(portAdr + 0x20) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRL:    Alternate Function to AF0
+              </block>
+            </control>
+            <control if="pin &gt;= 8">
+              <block>
+              pos = ((pin - 8) &amp; 7) * 4;
+              Write32(portAdr + 0x24, ((Read32(portAdr + 0x24) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRH:    Alternate Function to AF0
+              </block>
+            </control>
+          </control>
+
+          <control if="width &gt;= 2" info="TPIU port width 2">
+            
+            <block info="configure TRACED1">
+              pin     =                (TraceD1_Pin            ) &amp; 0x0000FFFF;
+              port    =                (TraceD1_Pin &gt;&gt; 16) &amp; 0x0000FFFF;
+              portAdr = 0x40020000 + (((TraceD1_Pin &gt;&gt; 16) &amp; 0x0000FFFF) * 0x400);
+
+              pos = pin * 2;
+              Write32(0x40023830,     ((Read32(0x40023830    )                         ) | (1 &lt;&lt; port)) );  // RCC_AHB1ENR:   IO port clock enable
+              Write32(portAdr + 0x00, ((Read32(portAdr + 0x00) &amp; ~( 3 &lt;&lt; pos)) | (2 &lt;&lt; pos )) );  // GPIOx_MODER:   Set Mode (Alternate Function)
+              Write32(portAdr + 0x08, ((Read32(portAdr + 0x08)                         ) | (3 &lt;&lt; pos )) );  // GPIOx_OSPEEDR: Set Speed (Very High Speed)
+              Write32(portAdr + 0x0C, ((Read32(portAdr + 0x0C) &amp; ~( 3 &lt;&lt; pos))                    ) );  // GPIOx_PUPDR:   Set I/O to no pull-up/pull-down
+            </block>
+            <control if="pin &lt;  8">
+              <block>
+              pos = ((pin    ) &amp; 7) * 4;
+              Write32(portAdr + 0x20, ((Read32(portAdr + 0x20) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRL:    Alternate Function to AF0
+              </block>
+            </control>
+            <control if="pin &gt;= 8">
+              <block>
+              pos = ((pin - 8) &amp; 7) * 4;
+              Write32(portAdr + 0x24, ((Read32(portAdr + 0x24) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRH:    Alternate Function to AF0
+              </block>
+            </control>
+          </control>
+
+          <control if="width &gt;= 4" info="TPIU port width 4">
+            
+            <block info="configure TRACED2">
+              pin     =                (TraceD2_Pin            ) &amp; 0x0000FFFF;
+              port    =                (TraceD2_Pin &gt;&gt; 16) &amp; 0x0000FFFF;
+              portAdr = 0x40020000 + (((TraceD2_Pin &gt;&gt; 16) &amp; 0x0000FFFF) * 0x400);
+
+              pos = pin * 2;
+              Write32(0x40023830,     ((Read32(0x40023830    )                         ) | (1 &lt;&lt; port)) );  // RCC_AHB1ENR:   IO port clock enable
+              Write32(portAdr + 0x00, ((Read32(portAdr + 0x00) &amp; ~( 3 &lt;&lt; pos)) | (2 &lt;&lt; pos )) );  // GPIOx_MODER:   Set Mode (Alternate Function)
+              Write32(portAdr + 0x08, ((Read32(portAdr + 0x08)                         ) | (3 &lt;&lt; pos )) );  // GPIOx_OSPEEDR: Set Speed (Very High Speed)
+              Write32(portAdr + 0x0C, ((Read32(portAdr + 0x0C) &amp; ~( 3 &lt;&lt; pos))                    ) );  // GPIOx_PUPDR:   Set I/O to no pull-up/pull-down
+            </block>
+            <control if="pin &lt;  8">
+              <block>
+              pos = ((pin    ) &amp; 7) * 4;
+              Write32(portAdr + 0x20, ((Read32(portAdr + 0x20) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRL:    Alternate Function to AF0
+              </block>
+            </control>
+            <control if="pin &gt;= 8">
+              <block>
+              pos = ((pin - 8) &amp; 7) * 4;
+              Write32(portAdr + 0x24, ((Read32(portAdr + 0x24) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRH:    Alternate Function to AF0
+              </block>
+            </control>
+
+            
+            <block info="configure TRACED3">
+              pin     =                (TraceD3_Pin            ) &amp; 0x0000FFFF;
+              port    =                (TraceD3_Pin &gt;&gt; 16) &amp; 0x0000FFFF;
+              portAdr = 0x40020000 + (((TraceD3_Pin &gt;&gt; 16) &amp; 0x0000FFFF) * 0x400);
+
+              pos = pin * 2;
+              Write32(0x40023830,     ((Read32(0x40023830    )                         ) | (1 &lt;&lt; port)) );  // RCC_AHB1ENR:   IO port clock enable
+              Write32(portAdr + 0x00, ((Read32(portAdr + 0x00) &amp; ~( 3 &lt;&lt; pos)) | (2 &lt;&lt; pos )) );  // GPIOx_MODER:   Set Mode (Alternate Function)
+              Write32(portAdr + 0x08, ((Read32(portAdr + 0x08)                         ) | (3 &lt;&lt; pos )) );  // GPIOx_OSPEEDR: Set Speed (Very High Speed)
+              Write32(portAdr + 0x0C, ((Read32(portAdr + 0x0C) &amp; ~( 3 &lt;&lt; pos))                    ) );  // GPIOx_PUPDR:   Set I/O to no pull-up/pull-down
+            </block>
+            <control if="pin &lt;  8">
+              <block>
+              pos = ((pin    ) &amp; 7) * 4;
+              Write32(portAdr + 0x20, ((Read32(portAdr + 0x20) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRL:    Alternate Function to AF0
+              </block>
+            </control>
+            <control if="pin &gt;= 8">
+              <block>
+              pos = ((pin - 8) &amp; 7) * 4;
+              Write32(portAdr + 0x24, ((Read32(portAdr + 0x24) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRH:    Alternate Function to AF0
+              </block>
+            </control>
+          </control>
+        </sequence>
+      </sequences>
+
+      <feature type="Timer" n="2" m="32" />
+      <feature type="WDT" n="2" />
+      <feature type="RTC" n="32768" />
+      <feature type="I2S" n="2" />
+      <feature type="Temp" n="-40" m="85" />
+      <feature type="Temp" n="-40" m="105" />
+
+      
+      <subFamily DsubFamily="STM32F756">
+        <processor Dfpu="SP_FPU" />
+        <debug svd="CMSIS/SVD/STM32F756.svd" />
+        <compile define="STM32F756xx" />
+
+        <debugvars configfile="CMSIS/Debug/STM32F74x_75x.dbgconf" version="2.0.0">
+          __var DbgMCU_CR      = 0x00000007;   // DBGMCU_CR: DBG_SLEEP, DBG_STOP, DBG_STANDBY
+          __var DbgMCU_APB1_Fz = 0x00000000;   // DGBMCU_APB1_FZ: All Peripherals Operate as in Normal Mode
+          __var DbgMCU_APB2_Fz = 0x00000000;   // DGBMCU_APB2_FZ: All Peripherals Operate as in Normal Mode
+          __var TraceClk_Pin   = 0x00040002;   // PE2
+          __var TraceD0_Pin    = 0x00040003;   // PE3
+          __var TraceD1_Pin    = 0x00040004;   // PE4
+          __var TraceD2_Pin    = 0x00040005;   // PE5
+          __var TraceD3_Pin    = 0x00040006;   // PE6
+        </debugvars>
+
+        <memory name="DTCM" access="rwx" start="0x20000000" size="0x00010000" default="0" />
+        <memory name="SRAM1" access="rwx" start="0x20010000" size="0x0003C000" default="1" />
+        <memory name="SRAM2" access="rwx" start="0x2004C000" size="0x00004000" default="1" />
+        <memory name="BKP_SRAM" access="rwx" start="0x40024000" size="0x00001000" default="0" />
+        <memory name="ITCM" access="rwx" start="0x00000000" size="0x00004000" default="0" />
+        <algorithm name="CMSIS/Flash/STM32F74x_75x_OPT.FLM" start="0x1FFF0000" size="0x00000008" default="0" />
+        <algorithm name="CMSIS/Flash/STM32F7xx_OTP.FLM" start="0x1FF0F000" size="0x00000410" default="0" />
+
+        <book name="https://www.st.com/resource/en/reference_manual/rm0385-stm32f75xxx-and-stm32f74xxx-advanced-armbased-32bit-mcus-stmicroelectronics.pdf" title="STM32F74xx/5xx Reference Manual" />
+        <book name="https://www.st.com/resource/en/datasheet/stm32f756bg.pdf" title="STM32F756 Data Sheet" />
+
+        
+        <device Dname="STM32F756ZG">
+          <memory name="Flash" access="rx" start="0x08000000" size="0x00100000" default="1" startup="1" />
+          <memory name="ITCM_Flash" access="rx" start="0x00200000" size="0x00100000" default="0" startup="0" />
+          <algorithm name="CMSIS/Flash/STM32F7x_1024.FLM" start="0x08000000" size="0x00100000" default="1" />
+          <algorithm name="CMSIS/Flash/STM32F7xTCM_1024.FLM" start="0x00200000" size="0x00100000" default="1" />
+
+          <variant Dvariant="STM32F756ZGYx"> <feature type="CSP" n="143" /> </variant>
+          <variant Dvariant="STM32F756ZGTx"> <feature type="QFP" n="144" /> </variant>
+        </device>
+        
+        <device Dname="STM32F756VG">
+          <memory name="Flash" access="rx" start="0x08000000" size="0x00100000" default="1" startup="1" />
+          <memory name="ITCM_Flash" access="rx" start="0x00200000" size="0x00100000" default="0" startup="0" />
+          <algorithm name="CMSIS/Flash/STM32F7x_1024.FLM" start="0x08000000" size="0x00100000" default="1" />
+          <algorithm name="CMSIS/Flash/STM32F7xTCM_1024.FLM" start="0x00200000" size="0x00100000" default="1" />
+
+          <variant Dvariant="STM32F756VGHx"> <feature type="BGA" n="100" /> </variant>
+          <variant Dvariant="STM32F756VGTx"> <feature type="QFP" n="100" /> </variant>
+        </device>
+        
+        <device Dname="STM32F756IG">
+          <memory name="Flash" access="rx" start="0x08000000" size="0x00100000" default="1" startup="1" />
+          <memory name="ITCM_Flash" access="rx" start="0x00200000" size="0x00100000" default="0" startup="0" />
+          <algorithm name="CMSIS/Flash/STM32F7x_1024.FLM" start="0x08000000" size="0x00100000" default="1" />
+          <algorithm name="CMSIS/Flash/STM32F7xTCM_1024.FLM" start="0x00200000" size="0x00100000" default="1" />
+
+          <variant Dvariant="STM32F756IGKx"> <feature type="BGA" n="176" /> </variant>
+          <variant Dvariant="STM32F756IGTx"> <feature type="QFP" n="176" /> </variant>
+        </device>
+        
+        <device Dname="STM32F756BG">
+          <memory name="Flash" access="rx" start="0x08000000" size="0x00100000" default="1" startup="1" />
+          <memory name="ITCM_Flash" access="rx" start="0x00200000" size="0x00100000" default="0" startup="0" />
+          <algorithm name="CMSIS/Flash/STM32F7x_1024.FLM" start="0x08000000" size="0x00100000" default="1" />
+          <algorithm name="CMSIS/Flash/STM32F7xTCM_1024.FLM" start="0x00200000" size="0x00100000" default="1" />
+
+          <variant Dvariant="STM32F756BGTx"> <feature type="QFP" n="208" /> </variant>
+        </device>
+        
+        <device Dname="STM32F756NG">
+          <memory name="Flash" access="rx" start="0x08000000" size="0x00100000" default="1" startup="1" />
+          <memory name="ITCM_Flash" access="rx" start="0x00200000" size="0x00100000" default="0" startup="0" />
+          <algorithm name="CMSIS/Flash/STM32F7x_1024.FLM" start="0x08000000" size="0x00100000" default="1" />
+          <algorithm name="CMSIS/Flash/STM32F7xTCM_1024.FLM" start="0x00200000" size="0x00100000" default="1" />
+
+          <variant Dvariant="STM32F756NGHx"> <feature type="BGA" n="216" /> </variant>
+        </device>
+      </subFamily>
+
+      
+      </family>
+
+  </devices>
+
+  </package>

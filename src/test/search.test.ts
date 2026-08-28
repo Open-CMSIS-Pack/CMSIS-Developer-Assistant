@@ -1,0 +1,123 @@
+/**
+ * Copyright 2026 Arm Limited
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import * as assert from 'assert';
+import { buildIndex, scorePages } from '../core/packDocs/bm25Index';
+import { detectHeading } from '../core/packDocs/headings';
+import { DocRef } from '../core/packDocs/pdscBooks';
+import { LoadedDoc, PageRecord } from '../core/packDocs/pageStore';
+import { isTocLike, makeSnippet, matchRegex, searchLoaded } from '../core/packDocs/search';
+import { parsePageRange, renderPages, renderSearch } from '../core/packDocs/render';
+
+function doc(id: string, category?: 'manual' | 'overview'): DocRef {
+    return { id, title: id, category, scope: 'device', pack: 'V::P@1.0.0', packId: { vendor: 'V', name: 'P', version: '1.0.0' }, source: 'pack', path: `/x/${id}.pdf`, cached: true, indexed: true };
+}
+
+function loaded(ref: DocRef, texts: string[]): LoadedDoc {
+    const pages: PageRecord[] = texts.map((text, i) => ({ p: i + 1, heading: detectHeading(text), text }));
+    ref.pages = pages.length;
+    return {
+        doc: ref,
+        meta: { version: 1, docId: ref.id, file: ref.path!, size: 1, mtimeMs: 1, sha256: '', pageCount: pages.length, extractor: 'test', extractMs: 0, createdAt: '' },
+        index: buildIndex(ref.id, texts),
+        pages: () => pages,
+    };
+}
+
+const RM_PAGES = [
+    'RM-TEST Contents\n6.3.10 RCC AHB1 peripheral clock enable register (RCC_AHB1ENR) . . . . . . . 2\n6.3.11 RCC AHB2 peripheral clock enable register (RCC_AHB2ENR) . . . . . . . 3\n8.4.1 GPIO port mode register (GPIOx_MODER) . . . . . . . . 4\nGPIOAEN . . . . . . . . . . . 2\nGPIOBEN . . . . . . . . . . . 2\n',
+    'RM-TEST Reset and clock control\n1 Introduction\nThe RCC manages the clocks of the device. Many peripherals are clocked from AHB1 and APB1.',
+    'RM-TEST Reset and clock control\n6.3.10 RCC AHB1 peripheral clock enable register (RCC_AHB1ENR)\nAddress offset: 0x30\nReset value: 0x0010 0000\nBit 0 GPIOAEN: IO port A clock enable\n0: IO port A clock disabled\n1: IO port A clock enabled\nBit 1 GPIOBEN: IO port B clock enable',
+    'RM-TEST Reset and clock control\n6.3.11 RCC AHB2 peripheral clock enable register (RCC_AHB2ENR)\nAddress offset: 0x34\nBit 7 OTGFSEN: USB OTG FS clock enable\nThe base address of RCC is 0x4002_3800.',
+    'RM-TEST General-purpose I/Os (GPIO)\n8.4.1 GPIO port mode register (GPIOx_MODER)\nBits 2y:2y+1 MODER[1:0]: Port x configuration bits\nBefore using a port, enable its clock: GPIOAEN in RCC_AHB1ENR.',
+    ...Array.from({ length: 30 }, (_, i) => `RM-TEST Filler chapter\n9.${i + 1} Some other peripheral ${i}\nNothing about clocks here, only timers and DMA streams number ${i}.`),
+];
+
+suite('bm25 + search', () => {
+    test('scorePages ranks the page that mentions all terms first', () => {
+        const ix = buildIndex('rm', RM_PAGES);
+        const hits = scorePages([ix], ['gpioaen', 'rcc_ahb1enr'], { limit: 5 });
+        // Pages 1 (contents), 3 and 5 carry both terms and get the all-terms boost; BM25's
+        // length normalisation orders them, the heading boost and TOC penalty in searchLoaded settle it.
+        assert.deepStrictEqual(hits.slice(0, 3).map(h => h.page).sort(), [1, 3, 5]);
+        assert.deepStrictEqual(hits[0].matched.sort(), ['gpioaen', 'rcc_ahb1enr']);
+        assert.ok(hits.slice(3).every(h => h.matched.length === 1), 'single-term pages rank below');
+        const rm = loaded(doc('p/rm', 'manual'), RM_PAGES);
+        assert.strictEqual(searchLoaded([rm], 'GPIOAEN RCC_AHB1ENR', 3).hits[0].page, 3, 'heading boost puts the register page first');
+    });
+
+    test('hex addresses are found however they are spelled', () => {
+        const ix = buildIndex('rm', RM_PAGES);
+        assert.strictEqual(scorePages([ix], ['0x40023800'], { limit: 1 })[0].page, 4);
+        assert.strictEqual(scorePages([ix], ['40023800'], { limit: 1 })[0].page, 4);
+    });
+
+    test('searchLoaded boosts headings and phrases, marks snippets, and spans documents', () => {
+        const rm = loaded(doc('p/rm', 'manual'), RM_PAGES);
+        const ds = loaded(doc('p/ds'), ['DS-TEST Datasheet\nElectrical characteristics: GPIOAEN is not mentioned here but IO port A is.', 'DS-TEST Pinout\nPA0 PA1 PA2 IO port A pins']);
+        const out = searchLoaded([rm, ds], 'GPIOA clock enable "IO port A clock"', 5);
+        assert.ok(out.hits.length >= 2);
+        assert.strictEqual(out.hits[0].doc.id, 'p/rm');
+        assert.strictEqual(out.hits[0].page, 3);
+        assert.match(out.hits[0].heading, /^6\.3\.10 RCC AHB1/);
+        assert.match(out.hits[0].snippet, /«IO port A clock»/);
+        assert.match(out.hits[0].snippet, /«enable»/);
+        assert.deepStrictEqual(out.phrases, ['io port a clock']);
+        const text = renderSearch('GPIOA clock enable', out.hits, { resolution: 'Target: test', indexedNow: [], skipped: [], searched: [rm.doc, ds.doc], web: [], ms: out.ms });
+        assert.match(text, /#1 p\/rm p\.3 §6\.3\.10 RCC AHB1/);
+        assert.match(text, /Next: read_doc_pages \{ doc: 'p\/rm', pages: '3' \}/);
+        assert.match(text, /Searched 2 documents \(37 pages\)/);
+    });
+
+    test('a query with no hits says so and suggests the manual spelling', () => {
+        const rm = loaded(doc('p/rm', 'manual'), RM_PAGES);
+        const out = searchLoaded([rm], 'quantum flux capacitor', 5);
+        assert.strictEqual(out.hits.length, 0);
+        const text = renderSearch('quantum flux capacitor', out.hits, { resolution: 'Target: test', indexedNow: [], skipped: [], searched: [rm.doc], web: [], ms: out.ms });
+        assert.match(text, /No page contains the query terms/);
+    });
+
+    test('contents and index pages are demoted below the pages they point at', () => {
+        assert.strictEqual(isTocLike(RM_PAGES[0]), true);
+        assert.strictEqual(isTocLike(RM_PAGES[2]), false);
+        const rm = loaded(doc('p/rm', 'manual'), RM_PAGES);
+        const out = searchLoaded([rm], 'GPIOAEN', 5);
+        assert.notStrictEqual(out.hits[0].page, 1, 'not the contents page listing GPIOAEN');
+        const toc = out.hits.find(h => h.page === 1);
+        assert.ok(toc && toc.score < out.hits[0].score / 2, 'contents page scored below half of the best hit');
+    });
+
+    test('makeSnippet centres on the densest cluster and collapses whitespace', () => {
+        const text = 'a'.repeat(1000) + '\n\n   RCC_AHB1ENR    GPIOAEN   clock   enable ' + 'b'.repeat(1000);
+        const s = makeSnippet(text, matchRegex(['GPIOAEN', 'clock'], []), 120);
+        assert.ok(s.startsWith('…') && s.endsWith('…'));
+        assert.match(s, /«GPIOAEN» «clock»/);
+        assert.ok(s.length <= 140);
+    });
+
+    test('parsePageRange and renderPages respect the budget', () => {
+        assert.deepStrictEqual(parsePageRange('519', 600), { pages: [519] });
+        assert.deepStrictEqual(parsePageRange('519-521, 523', 600), { pages: [519, 520, 521, 523] });
+        assert.deepStrictEqual(parsePageRange('599-605', 600), { pages: [599, 600] });
+        assert.match((parsePageRange('700', 600) as { error: string }).error, /beyond the last page \(600\)/);
+        assert.match((parsePageRange('x', 600) as { error: string }).error, /not a page number/);
+        const rm = loaded(doc('p/rm', 'manual'), RM_PAGES);
+        const text = renderPages(rm.doc, rm.pages().slice(2, 4), 120);
+        assert.match(text, /^— p\/rm p\.3 §6\.3\.10 RCC AHB1 peripheral clock enable register \(RCC_AHB1ENR\) \(of 35\) —/);
+        assert.match(text, /more chars\)/);
+        assert.match(text, /p\.4 .* omitted: maxChars reached/);
+    });
+});

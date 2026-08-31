@@ -21,6 +21,7 @@ The Arm® CMSIS Developer Assistant extension connects AI coding agents to the d
 - Works with GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, Codex, Roo Code, Antigravity, and any other MCP-compatible assistant.
 - Runs entirely on the local machine: the MCP server binds to `localhost` only, needs no credentials, and sends nothing to an external service.
 - Also debugs applications in other languages (Python, JavaScript/TypeScript, Java, C#, C/C++, Go, Rust, PHP, Ruby) through the respective VS Code debug extensions.
+- Seven palette commands (**CMSIS Developer Assistant: …**) cover the human side: registering agents and choosing skills, and — with the experimental documentation system — listing, indexing and importing the target's documentation and opening the Pack Docs panel. See [Commands](#commands).
 
 
 For Arm Cortex-M targets, use it together with these extensions (all included in the [Arm Keil® Studio pack](https://marketplace.visualstudio.com/items?itemName=Arm.keil-studio-pack)):
@@ -62,6 +63,22 @@ The extension also installs four agent skills into your personal skills director
 > &#128221; **Note:**
 >
 > `cmsis_action` is the preferred way to start a Cortex-M debug session. The generic `start_debugging` tool launches a named `launch.json` configuration without the Flash download step and is meant for other languages.
+
+## Commands
+
+Everything the agent does goes through the MCP tools below; the commands are for you. Open the [command palette](https://code.visualstudio.com/docs/getstarted/userinterface#_command-palette) and type **CMSIS Developer Assistant** to find them.
+
+| Command | What it does |
+|---------|--------------|
+| **Configure Agents and Skills** | The first-run setup, on demand: pick the AI agents to register the MCP server with (their configuration files are written for you), then pick the AI Skills Pack skills to install. Run it again after installing a new agent. |
+| **Select Agent Skills** | Just the skills step: choose category entry points (`cmsis-project`, `cmsis-bring-up`, `cmsis-pack`) or individual skills from the [AI Skills Pack](#agent-skills); the four bundled skills are always installed. |
+| **List Target Documentation** | Writes the current csolution target's document list — pack manuals and datasheets, Arm documents for the core, your imported and workspace PDFs, each with its index state — to the *CMSIS Developer Assistant* output channel. The same list the agent gets from `list_target_docs`. |
+| **Index Target Documentation** | Extracts and indexes every PDF of the current target now, with a progress notification, so the agent's first search is instant instead of paying for extraction. |
+| **Import Document for Current Target** | Adds PDFs the packs do not ship — a sensor or ADC datasheet, an NDA reference manual — to the user documents folder: pick the files, attribute them to the current pack, device family, board, core or all targets, give a title, category and edition, and they are indexed at once. |
+| **Open User Documents Folder** | Reveals that folder (`packDocs.userDocsDir`, default `~/.cmsis-pack-docs/user`) in the file manager, for dropping documents in by hand or editing `docs.json`. |
+| **Open Pack Docs Panel** | A panel showing the resolved target and its documents with their index state, the SVD peripherals with register bit fields, the page store, and a runner that executes the documentation tools in place — for checking what the agent will see. |
+
+The five documentation commands work whether or not the documentation tools are enabled for agents (`cmsis-developer-assistant.packDocs.enabled`); they need a built csolution in the workspace to resolve the target, or fall back to asking you which pack and device to attribute a document to.
 
 ## Agent Tools
 

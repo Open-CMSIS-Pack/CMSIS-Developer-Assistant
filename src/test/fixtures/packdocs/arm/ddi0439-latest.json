@@ -1,0 +1,85 @@
+{
+ "document": "ddi0439",
+ "isConfidential": false,
+ "version": "be",
+ "versionLabel": "r0p0 Errata 01",
+ "language": "en",
+ "languageLabel": "English",
+ "title": "Cortex-M4 Technical Reference Manual - ARM DDI 0439B Errata 01",
+ "keywords": [],
+ "products": [],
+ "topic": {
+  "label": "Cortex-M4 Technical Reference Manual - ARM DDI 0439B Errata 01",
+  "content": "PGh0bWw+PGJvZHk+dGl0bGUgcGFnZTwvYm9keT48L2h0bWw+",
+  "slug": "",
+  "topics": [],
+  "anchors": [],
+  "_links": {
+   "self-relative": [
+    {
+     "href": "/documentation/ddi0439/be?lang=en&rev=b.e"
+    }
+   ],
+   "self": [
+    {
+     "href": "https://documentation-service.arm.com/documentation/ddi0439/be?lang=en&rev=b.e"
+    }
+   ]
+  }
+ },
+ "metadata": {
+  "created": "2025-07-24T10:54:06.985+0000",
+  "updated": "2025-07-24T10:54:06.985+0000",
+  "published": "2020-07-06T12:28:53.000+0000",
+  "productQuality": "REL",
+  "contentType": "Technical Reference Manual",
+  "audience": [
+   "SoC Designers",
+   "Silicon Specialists",
+   "Hardware Engineers"
+  ],
+  "confidentiality": "Non-Confidential",
+  "author": "Arm",
+  "contentDescription": "This Errata document gives corrections and additions to the Cortex-M4 Technical Reference Manual (ARM DDI 0439B).",
+  "contentFormat": "PDFOnly",
+  "topics": [
+   "AArch64"
+  ],
+  "categories": [
+   "Embedded and Microcontrollers"
+  ],
+  "productType": "CPU Architectures",
+  "categoryClassifications": []
+ },
+ "revision": "b.e",
+ "_links": {
+  "versions": [
+   {
+    "href": "https://documentation-service.arm.com/documentation/ddi0439/versions"
+   }
+  ],
+  "revisions": [
+   {
+    "href": "https://documentation-service.arm.com/documentation/ddi0439/revisions"
+   }
+  ],
+  "self": [
+   {
+    "href": "https://documentation-service.arm.com/documentation/ddi0439/be?lang=en&rev=b.e"
+   }
+  ],
+  "self-relative": [
+   {
+    "href": "/documentation/ddi0439/be?lang=en&rev=b.e"
+   }
+  ],
+  "resources": [
+   {
+    "href": "https://documentation-service.arm.com/static/688210cfda264e793aeebf52?token=",
+    "name": "DDI0439B_ERRATA_01.pdf",
+    "extension": "pdf",
+    "contentType": "application/pdf"
+   }
+  ]
+ }
+}

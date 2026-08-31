@@ -1,0 +1,201 @@
+{
+ "document": "ddi0000",
+ "isConfidential": false,
+ "version": "f",
+ "versionLabel": "r1p2",
+ "language": "en",
+ "languageLabel": "English",
+ "title": "Example HTML-only Document",
+ "keywords": [],
+ "products": [],
+ "topic": {
+  "label": "Example HTML-only Document",
+  "content": "PGh0bWw+PGJvZHk+dGl0bGUgcGFnZTwvYm9keT48L2h0bWw+",
+  "slug": "",
+  "topics": [
+   {
+    "label": "preface",
+    "slug": "preface",
+    "_links": {
+     "self-relative": [
+      {
+       "href": "/documentation/ddi0000/f/preface?lang=en&rev=f"
+      }
+     ],
+     "self": [
+      {
+       "href": "https://documentation-service.arm.com/documentation/ddi0000/f/preface?lang=en&rev=f"
+      }
+     ]
+    },
+    "anchors": [],
+    "topics": [
+     {
+      "label": "About this book",
+      "slug": "preface/about-this-book",
+      "_links": {
+       "self-relative": [
+        {
+         "href": "/documentation/ddi0000/f/preface/about-this-book?lang=en&rev=f"
+        }
+       ],
+       "self": [
+        {
+         "href": "https://documentation-service.arm.com/documentation/ddi0000/f/preface/about-this-book?lang=en&rev=f"
+        }
+       ]
+      },
+      "anchors": [],
+      "topics": []
+     },
+     {
+      "label": "Feedback",
+      "slug": "preface/feedback",
+      "_links": {
+       "self-relative": [
+        {
+         "href": "/documentation/ddi0000/f/preface/feedback?lang=en&rev=f"
+        }
+       ],
+       "self": [
+        {
+         "href": "https://documentation-service.arm.com/documentation/ddi0000/f/preface/feedback?lang=en&rev=f"
+        }
+       ]
+      },
+      "anchors": [],
+      "topics": []
+     }
+    ]
+   },
+   {
+    "label": "Introduction",
+    "slug": "introduction",
+    "_links": {
+     "self-relative": [
+      {
+       "href": "/documentation/ddi0000/f/introduction?lang=en&rev=f"
+      }
+     ],
+     "self": [
+      {
+       "href": "https://documentation-service.arm.com/documentation/ddi0000/f/introduction?lang=en&rev=f"
+      }
+     ]
+    },
+    "anchors": [],
+    "topics": [
+     {
+      "label": "About the Cortex-M7 processor",
+      "slug": "introduction/about-the-cortex-m7-processor",
+      "_links": {
+       "self-relative": [
+        {
+         "href": "/documentation/ddi0000/f/introduction/about-the-cortex-m7-processor?lang=en&rev=f"
+        }
+       ],
+       "self": [
+        {
+         "href": "https://documentation-service.arm.com/documentation/ddi0000/f/introduction/about-the-cortex-m7-processor?lang=en&rev=f"
+        }
+       ]
+      },
+      "anchors": [],
+      "topics": []
+     },
+     {
+      "label": "Component blocks",
+      "slug": "introduction/component-blocks",
+      "_links": {
+       "self-relative": [
+        {
+         "href": "/documentation/ddi0000/f/introduction/component-blocks?lang=en&rev=f"
+        }
+       ],
+       "self": [
+        {
+         "href": "https://documentation-service.arm.com/documentation/ddi0000/f/introduction/component-blocks?lang=en&rev=f"
+        }
+       ]
+      },
+      "anchors": [],
+      "topics": []
+     }
+    ]
+   }
+  ],
+  "anchors": [],
+  "_links": {
+   "self-relative": [
+    {
+     "href": "/documentation/ddi0000/f?lang=en&rev=f"
+    }
+   ],
+   "self": [
+    {
+     "href": "https://documentation-service.arm.com/documentation/ddi0000/f?lang=en&rev=f"
+    }
+   ]
+  }
+ },
+ "metadata": {
+  "created": "2020-04-10T12:59:48.718+0000",
+  "updated": "2025-01-08T18:18:51.889+0000",
+  "published": "2018-12-11T14:20:17.000+0000",
+  "productQuality": "REL",
+  "contentType": "Technical Reference Manual",
+  "audience": [
+   "SoC Designers",
+   "Silicon Specialists",
+   "Hardware Engineers"
+  ],
+  "confidentiality": "Non-Confidential",
+  "author": "Arm",
+  "contentDescription": "This book is the Technical Reference Manual (TRM) for the Cortex-M7 processor.",
+  "contentFormat": "HTMLPDF",
+  "topics": [],
+  "categories": [
+   "Processor products",
+   "Embedded and Microcontrollers"
+  ]
+ },
+ "revision": "f",
+ "_links": {
+  "versions": [
+   {
+    "href": "https://documentation-service.arm.com/documentation/ddi0000/versions"
+   }
+  ],
+  "revisions": [
+   {
+    "href": "https://documentation-service.arm.com/documentation/ddi0000/revisions"
+   }
+  ],
+  "self": [
+   {
+    "href": "https://documentation-service.arm.com/documentation/ddi0000/f?lang=en&rev=f"
+   }
+  ],
+  "self-relative": [
+   {
+    "href": "/documentation/ddi0000/f?lang=en&rev=f"
+   }
+  ],
+  "resources": [
+   {
+    "href": "https://documentation-service.arm.com/static/5e906dc68259fe2368e2abb3?token=",
+    "name": "actlr_bit_assignments.svg",
+    "extension": "svg",
+    "contentDisposition": "inline",
+    "contentType": "image/svg+xml"
+   },
+   {
+    "href": "https://documentation-service.arm.com/static/5e906dc68259fe2368e2abb4?token=",
+    "name": "itatbctr2_bit_assignments.svg",
+    "extension": "svg",
+    "contentDisposition": "inline",
+    "contentType": "image/svg+xml"
+   }
+  ]
+ }
+}

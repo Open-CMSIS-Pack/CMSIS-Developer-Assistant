@@ -21,7 +21,7 @@ import {
     loadSkillCatalog,
     resolveDesiredSkills,
 } from './skillCatalog';
-import { SkillInstaller, SkillSyncReport, getSkillInstallRoots, summarizeSkillSync } from './skillInstaller';
+import { SkillInstallRoots, SkillInstaller, SkillSyncReport, getProjectSkillInstallRoots, getSkillInstallRoots, summarizeSkillSync } from './skillInstaller';
 import { SKILLS_PROMPT_SHOWN_KEY, SKILL_PROMPT_BUTTONS, decideSkillPrompt, skillPromptMessage } from './skillPrompt';
 
 export interface BaseAgentInfo {
@@ -171,6 +171,16 @@ export function agentConfigHasServer(agent: AgentInfo, content: string): boolean
 /** Longest `detail` line the skill picker shows per entry. */
 const PICKER_DETAIL_LENGTH = 140;
 
+/**
+ * Where a skill selection lives and, with it, where its skills go: the
+ * user's settings → the personal skills directories, for every workspace;
+ * a workspace folder's settings → that project's own `.agents/skills`
+ * (and `.claude/skills`). The two are independent selections.
+ */
+type SkillScope =
+    | { kind: 'user' }
+    | { kind: 'folder'; folder: vscode.WorkspaceFolder };
+
 export class AgentConfigurationManager {
     private context: vscode.ExtensionContext;
     // Versioned so the first-run setup re-appears once when it gains a step
@@ -189,7 +199,7 @@ export class AgentConfigurationManager {
         this.timeoutInSeconds = timeoutInSeconds;
         this.serverPort = serverPort;
         const version = (context.extension?.packageJSON as { version?: string } | undefined)?.version ?? 'unknown';
-        this.skillInstaller = new SkillInstaller(context.extensionPath, version, getSkillInstallRoots());
+        this.skillInstaller = new SkillInstaller(context.extensionPath, version);
     }
 
     /**
@@ -745,17 +755,73 @@ export class AgentConfigurationManager {
         return this.catalog;
     }
 
-    private getConfiguredSkills(): string[] {
-        const configured = this.getSettings().get<string[]>(INSTALLED_SKILLS_SETTING, [...DEFAULT_INSTALLED_SKILLS]);
-        return Array.isArray(configured) ? configured.filter((name): name is string => typeof name === 'string') : [];
+    /** The workspace folders a project selection can apply to — those on disk. */
+    private getProjectFolders(): vscode.WorkspaceFolder[] {
+        return (vscode.workspace.workspaceFolders ?? []).filter(folder => folder.uri.scheme === 'file');
     }
 
     /**
-     * Bring the personal skills directories in line with the
-     * `installedSkills` setting: install the picks (visible) and their
-     * dependency closure (hidden from the slash menu), remove what this
-     * extension installed earlier and is no longer wanted. Best-effort — a
-     * failure is logged, never thrown.
+     * The picks stored for one scope, or `undefined` when the scope has no
+     * value of its own. The user scope defaults to the empty selection (the
+     * bundled skills are installed regardless); a folder without a value is
+     * a project that has not opted in — its directories are swept, never
+     * created. In a multi-root workspace the `.code-workspace` value counts
+     * for every folder that does not override it.
+     */
+    private getConfiguredSkills(scope: SkillScope): string[] | undefined {
+        const inspected = scope.kind === 'user'
+            ? this.getSettings().inspect<string[]>(INSTALLED_SKILLS_SETTING)
+            : vscode.workspace.getConfiguration('cmsis-developer-assistant', scope.folder.uri).inspect<string[]>(INSTALLED_SKILLS_SETTING);
+        const value = scope.kind === 'user'
+            ? inspected?.globalValue ?? [...DEFAULT_INSTALLED_SKILLS]
+            : inspected?.workspaceFolderValue ?? inspected?.workspaceValue;
+        if (value === undefined) {
+            return undefined;
+        }
+        return Array.isArray(value) ? value.filter((name): name is string => typeof name === 'string') : [];
+    }
+
+    /** The picks of every scope together — for "is a pack skill selected anywhere?". */
+    private getAllConfiguredSkills(): string[] {
+        const all = new Set(this.getConfiguredSkills({ kind: 'user' }) ?? []);
+        for (const folder of this.getProjectFolders()) {
+            for (const name of this.getConfiguredSkills({ kind: 'folder', folder }) ?? []) {
+                all.add(name);
+            }
+        }
+        return [...all];
+    }
+
+    private async updateConfiguredSkills(scope: SkillScope, explicit: string[]): Promise<void> {
+        if (scope.kind === 'user') {
+            await this.getSettings().update(INSTALLED_SKILLS_SETTING, explicit, vscode.ConfigurationTarget.Global);
+            return;
+        }
+        // A single-folder workspace has no folder settings of its own: its
+        // `.vscode/settings.json` *is* the workspace settings file.
+        const target = vscode.workspace.workspaceFile !== undefined
+            ? vscode.ConfigurationTarget.WorkspaceFolder
+            : vscode.ConfigurationTarget.Workspace;
+        await vscode.workspace.getConfiguration('cmsis-developer-assistant', scope.folder.uri)
+            .update(INSTALLED_SKILLS_SETTING, explicit, target);
+    }
+
+    private rootsFor(scope: SkillScope): SkillInstallRoots {
+        return scope.kind === 'user' ? getSkillInstallRoots() : getProjectSkillInstallRoots(scope.folder.uri.fsPath);
+    }
+
+    private describeScope(scope: SkillScope): string {
+        return scope.kind === 'user' ? 'this user' : `the "${scope.folder.name}" workspace folder`;
+    }
+
+    /**
+     * Bring the skills directories in line with the `installedSkills`
+     * setting, scope by scope: the personal directories from the user
+     * value, each workspace folder's project directories from its own
+     * value. Install the picks (visible) and their dependency closure
+     * (hidden from the slash menu), remove what this extension installed
+     * earlier and is no longer wanted. Best-effort — a failure is logged,
+     * never thrown. The report covers every scope.
      */
     public syncSkills(reason: string): Promise<SkillSyncReport | null> {
         const run = async (): Promise<SkillSyncReport | null> => {
@@ -764,27 +830,99 @@ export class AgentConfigurationManager {
                 return null;
             }
             const packEnabled = this.isSkillsPackEnabled();
-            const desired = resolveDesiredSkills(catalog, this.getConfiguredSkills(), { packEnabled });
-            if (desired.unknown.length > 0) {
-                logger.warn(`Ignoring unknown skills in the ${INSTALLED_SKILLS_SETTING} setting: ${desired.unknown.join(', ')}`);
+            const total: SkillSyncReport = { installed: [], removed: [], skippedForeign: [], failed: [] };
+            const scopes: SkillScope[] = [
+                { kind: 'user' },
+                ...this.getProjectFolders().map((folder): SkillScope => ({ kind: 'folder', folder })),
+            ];
+            for (const scope of scopes) {
+                const report = await this.syncScope(scope, catalog, packEnabled, reason);
+                total.installed.push(...report.installed);
+                total.removed.push(...report.removed);
+                total.skippedForeign.push(...report.skippedForeign);
+                total.failed.push(...report.failed);
             }
-            if (desired.suppressed.length > 0) {
-                logger.info(`AI Skills Pack disabled (${AI_SKILLS_ENABLED_SETTING}); not installing the selected [${desired.suppressed.join(', ')}]`);
-            }
-            const report = await this.skillInstaller.sync(catalog, desired.explicit, desired.implied);
-            logger.info(`Agent skills synced (${reason}, pack ${packEnabled ? 'enabled' : 'disabled'}): ${summarizeSkillSync(report)}; ` +
-                `visible [${desired.explicit.join(', ')}], hidden [${desired.implied.join(', ')}]`);
-            for (const failure of report.failed) {
-                logger.warn(`Skill ${failure.name ?? '(root)'} at ${failure.root}: ${failure.error}`);
-            }
-            for (const foreign of report.skippedForeign) {
-                logger.warn(`Skill ${foreign.name} at ${foreign.root} was not installed by this extension; left untouched`);
-            }
-            return report;
+            return total;
         };
         const next = this.skillSyncChain.then(run, run);
         this.skillSyncChain = next.catch(() => undefined);
         return next;
+    }
+
+    private async syncScope(scope: SkillScope, catalog: SkillCatalog, packEnabled: boolean, reason: string): Promise<SkillSyncReport> {
+        const configured = this.getConfiguredSkills(scope);
+        const where = this.describeScope(scope);
+        // A project carries the pack skills it picked and nothing else: the
+        // extension's own skills are in the personal directories already.
+        const desired = resolveDesiredSkills(catalog, configured ?? [], { packEnabled, includeBundled: scope.kind === 'user' });
+        if (desired.unknown.length > 0) {
+            logger.warn(`Ignoring unknown skills in the ${INSTALLED_SKILLS_SETTING} setting of ${where}: ${desired.unknown.join(', ')}`);
+        }
+        if (desired.suppressed.length > 0) {
+            logger.info(`AI Skills Pack disabled (${AI_SKILLS_ENABLED_SETTING}); not installing the selected [${desired.suppressed.join(', ')}] for ${where}`);
+        }
+        const report = await this.skillInstaller.sync(this.rootsFor(scope), catalog, desired.explicit, desired.implied);
+        if (configured === undefined && report.removed.length === 0 && report.failed.length === 0) {
+            return report; // a project without a selection, and nothing of ours in it: nothing to say
+        }
+        logger.info(`Agent skills synced for ${where} (${reason}, pack ${packEnabled ? 'enabled' : 'disabled'}): ${summarizeSkillSync(report)}; ` +
+            `visible [${desired.explicit.join(', ')}], hidden [${desired.implied.join(', ')}]`);
+        for (const failure of report.failed) {
+            logger.warn(`Skill ${failure.name ?? '(root)'} at ${failure.root}: ${failure.error}`);
+        }
+        for (const foreign of report.skippedForeign) {
+            logger.warn(`Skill ${foreign.name} at ${foreign.root} was not installed by this extension; left untouched`);
+        }
+        return report;
+    }
+
+    /**
+     * Where the picks go — asked only when a workspace folder is open on
+     * disk, otherwise the user scope is the only one. One item for the user
+     * and one per folder, each saying what it currently selects.
+     */
+    private async pickSkillScope(catalog: SkillCatalog): Promise<SkillScope | undefined> {
+        const folders = this.getProjectFolders();
+        if (folders.length === 0) {
+            return { kind: 'user' };
+        }
+        const selected = (scope: SkillScope): string => {
+            const configured = this.getConfiguredSkills(scope);
+            if (configured === undefined) {
+                return 'no selection yet';
+            }
+            const picks = resolveDesiredSkills(catalog, configured, { includeBundled: false }).explicit.length;
+            return picks === 1 ? '1 pack skill selected' : `${picks} pack skills selected`;
+        };
+        // The workspace comes first and is the default: every skill in the
+        // personal directories is offered to the agent in every project, and
+        // its description costs context there whether the project is CMSIS
+        // or not. Installed into the project, it is loaded only where it
+        // applies.
+        type ScopeItem = vscode.QuickPickItem & { scope: SkillScope };
+        const items: ScopeItem[] = [
+            ...folders.map((folder): ScopeItem => ({
+                label: folders.length > 1 ? `$(root-folder) This workspace only — ${folder.name}` : '$(root-folder) This workspace only',
+                description: getProjectSkillInstallRoots(folder.uri.fsPath).install
+                    .map(root => `${folder.name}/${path.relative(folder.uri.fsPath, root).split(path.sep).join('/')}`)
+                    .join(', '),
+                detail: 'Recommended: the agent loads them only in this project, so other projects\' context stays lean — ' +
+                    selected({ kind: 'folder', folder }),
+                scope: { kind: 'folder', folder },
+            })),
+            {
+                label: '$(account) This user',
+                description: getSkillInstallRoots().install.map(shortenHome).join(', '),
+                detail: `Every workspace on this machine — every agent session carries them — ${selected({ kind: 'user' })}`,
+                scope: { kind: 'user' },
+            },
+        ];
+        const choice = await vscode.window.showQuickPick(items, {
+            title: 'CMSIS Developer Assistant Setup (2/2) - Where to Install Agent Skills',
+            placeHolder: 'Install the AI Skills Pack skills into this workspace only (default) or for this user, in every workspace',
+            ignoreFocusOut: true,
+        });
+        return choice?.scope;
     }
 
     /**
@@ -792,7 +930,9 @@ export class AgentConfigurationManager {
      * category's router skill first — picking the router gives the agent one
      * slash command for the whole category and installs the members hidden.
      * The bundled skills are always installed and are not offered as choices.
-     * Resolves with `true` when the user accepted.
+     * Asks first where the picks go — this user or a workspace folder — and
+     * reads and writes that scope's own selection. Resolves with `true`
+     * when the user accepted.
      */
     public async showSkillSelectionDialog(): Promise<boolean> {
         const catalog = this.getCatalog();
@@ -812,9 +952,14 @@ export class AgentConfigurationManager {
             await this.getSettings().update(AI_SKILLS_ENABLED_SETTING, true, vscode.ConfigurationTarget.Global);
         }
 
+        const scope = await this.pickSkillScope(catalog);
+        if (!scope) {
+            return false;
+        }
+
         type SkillItem = vscode.QuickPickItem & { entry?: SkillCatalogEntry };
         const byName = new Map(catalog.skills.map(entry => [entry.name, entry]));
-        const current = new Set(resolveDesiredSkills(catalog, this.getConfiguredSkills()).explicit);
+        const current = new Set(resolveDesiredSkills(catalog, this.getConfiguredSkills(scope) ?? [], { includeBundled: false }).explicit);
         const items: SkillItem[] = [];
 
         for (const [category, entries] of groupByCategory(catalog)) {
@@ -843,9 +988,12 @@ export class AgentConfigurationManager {
 
         return new Promise<boolean>(resolve => {
             const quickPick = vscode.window.createQuickPick<SkillItem>();
-            quickPick.title = 'CMSIS Developer Assistant Setup (2/2) - Choose Agent Skills to Install';
-            quickPick.placeholder = 'Select the AI Skills Pack skills to install into your personal skills directories ' +
-                `(always installed: ${bundledSkillNames(catalog).join(', ')}; Esc keeps the current selection)`;
+            quickPick.title = `CMSIS Developer Assistant Setup (2/2) - Choose Agent Skills to Install for ${this.describeScope(scope)}`;
+            quickPick.placeholder = scope.kind === 'user'
+                ? 'Select the AI Skills Pack skills to install into your personal skills directories ' +
+                    `(always installed: ${bundledSkillNames(catalog).join(', ')}; Esc keeps the current selection)`
+                : `Select the AI Skills Pack skills to install into ${scope.folder.name}/.agents/skills ` +
+                    '(the extension\'s own skills stay in your personal directories; Esc keeps the current selection)';
             quickPick.items = items;
             quickPick.selectedItems = items.filter(item => item.picked);
             quickPick.canSelectMany = true;
@@ -863,19 +1011,23 @@ export class AgentConfigurationManager {
                 quickPick.hide();
 
                 try {
-                    await this.getSettings().update(INSTALLED_SKILLS_SETTING, explicit, vscode.ConfigurationTarget.Global);
+                    await this.updateConfiguredSkills(scope, explicit);
                     // The configuration-change listener syncs too; running it
                     // here as well makes the toast below reflect the result.
                     const report = await this.syncSkills('selection');
-                    const desired = resolveDesiredSkills(catalog, explicit);
+                    const desired = resolveDesiredSkills(catalog, explicit, { includeBundled: scope.kind === 'user' });
                     if (report) {
-                        const roots = [...new Set(report.installed.map(record => record.root))];
+                        // The sync covers every scope; the toast is about the one just chosen.
+                        const scopeRoots = new Set(this.rootsFor(scope).install);
+                        const inScope = <T extends { root: string }>(records: T[]): T[] => records.filter(record => scopeRoots.has(record.root));
+                        const roots = [...new Set(inScope(report.installed).map(record => record.root))];
                         const where = roots.length > 0 ? ` into ${roots.map(shortenHome).join(', ')}` : '';
+                        const failed = inScope(report.failed).length;
                         vscode.window.showInformationMessage(
                             `CMSIS Developer Assistant: ${desired.explicit.length} skill(s)` +
                             (desired.implied.length > 0 ? ` (+${desired.implied.length} required, hidden)` : '') +
-                            ` installed${where}; ${report.removed.length} removed.` +
-                            (report.failed.length > 0 ? ` ${report.failed.length} failed — see the output log.` : ''));
+                            ` installed for ${this.describeScope(scope)}${where}; ${inScope(report.removed).length} removed.` +
+                            (failed > 0 ? ` ${failed} failed — see the output log.` : ''));
                     }
                 } catch (error) {
                     logger.error('Error saving the skill selection', error);
@@ -915,7 +1067,7 @@ export class AgentConfigurationManager {
             firstRunPending: !this.context.globalState.get<boolean>(this.POPUP_SHOWN_KEY, false),
             hostManaged: this.isHostManagedEnvironment(),
             agentsWithServer: agentNames,
-            packSkillSelected: hasPackSkillSelected(catalog, this.getConfiguredSkills()),
+            packSkillSelected: hasPackSkillSelected(catalog, this.getAllConfiguredSkills()),
             lastShownAt: this.context.globalState.get<number>(SKILLS_PROMPT_SHOWN_KEY),
             now,
         });

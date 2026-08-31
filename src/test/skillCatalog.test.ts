@@ -318,6 +318,27 @@ suite('Agent skill catalog', () => {
             assert.deepStrictEqual(desired.unknown, ['from-the-future']);
         });
 
+        test('without the bundled skills — a project selection — only the pack picks and their pack dependencies are desired', () => {
+            const desired = resolveDesiredSkills(fake, ['r-pack', 'cmsis-debug-live'], { includeBundled: false });
+            assert.deepStrictEqual(desired.explicit, ['r-pack'], 'a bundled name in the picks is neither installed nor unknown');
+            assert.deepStrictEqual([...desired.implied].sort(), ['docs', 'gen', 'know', 'know2', 'val']);
+            assert.deepStrictEqual(desired.unknown, []);
+
+            assert.deepStrictEqual(resolveDesiredSkills(fake, [], { includeBundled: false }),
+                { explicit: [], implied: [], unknown: [], suppressed: [] }, 'nothing picked, nothing desired: the project is left alone');
+            assert.deepStrictEqual(resolveDesiredSkills(fake, ['r-pack'], { includeBundled: false, packEnabled: false }),
+                { explicit: [], implied: [], unknown: [], suppressed: ['r-pack'] });
+
+            // A pack skill depending on a bundled one: the personal copy serves; the project gets no duplicate.
+            const dependsOnBundled: SkillCatalog = {
+                ...fake,
+                skills: fake.skills.map(entry => entry.name === 'val' ? { ...entry, dependsOn: ['cmsis-debug-live'] } : entry),
+            };
+            assert.deepStrictEqual(resolveDesiredSkills(dependsOnBundled, ['val'], { includeBundled: false }).implied, []);
+            assert.deepStrictEqual(resolveDesiredSkills(dependsOnBundled, ['val']).implied, [],
+                'with the bundled skills in, the dependency is already explicit');
+        });
+
         test('hasPackSkillSelected sees routers and members, not bundled or unknown names', () => {
             assert.strictEqual(hasPackSkillSelected(fake, []), false);
             assert.strictEqual(hasPackSkillSelected(fake, ['cmsis-debug-live', 'from-the-future']), false);

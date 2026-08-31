@@ -3,8 +3,9 @@
 Everything in this directory ships in the VSIX. On activation the extension
 copies the skills the user selected (setting
 `cmsis-developer-assistant.installedSkills`, command **Select Agent Skills**)
-into their personal skills directories — see the *Agent Skills* section of
-the top-level README.
+into their personal skills directories — or, when the selection is a
+workspace setting, into that project's `.agents/skills` — see the *Agent
+Skills* section of the top-level README.
 
 | Path | What | Maintained how |
 |------|------|----------------|

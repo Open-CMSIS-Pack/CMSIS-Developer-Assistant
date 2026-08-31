@@ -92,7 +92,7 @@ Include in each source file:
 |---------|---------|-------------|
 | `cmsis-developer-assistant.serverPort` | 3001 | MCP server port |
 | `cmsis-developer-assistant.timeoutInSeconds` | 180 | Operation timeout |
-| `cmsis-developer-assistant.installedSkills` | `[]` | AI Skills Pack skills from `skills/catalog.json` to copy into the user's skills directories; the bundled `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed (application scope) |
+| `cmsis-developer-assistant.installedSkills` | `[]` | AI Skills Pack skills from `skills/catalog.json` to install. The User value is copied into the user's skills directories, a Workspace / Folder value into that project's `.agents/skills` (pack skills only) — the setting's target is the "this user or this workspace" choice; the bundled `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed personally (resource scope) |
 | `cmsis-developer-assistant.packDocs.enabled` | `false` | Register the five documentation tools (needs `pdftotext`); `packDocs.*` tune extractor, size limit, unlisted PDFs, workspace and user document folders |
 | `cmsis-developer-assistant.buildInfo.enabled` | `false` | Register the five build-artefact tools; `buildInfo.maxSymbols`, `buildInfo.logGlobs` |
 | `cmsis-developer-assistant.aiSkills.enabled` | `true` | Install the AI Skills Pack at all; off removes the pack skills this extension installed and skips the skills setup step and the prompt (application scope) |

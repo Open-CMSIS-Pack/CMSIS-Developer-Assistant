@@ -208,6 +208,17 @@ export async function activate(context: vscode.ExtensionContext) {
         }),
     );
 
+    // A folder added to the workspace may carry its own skill selection in
+    // its settings; sync so its project directories match. A removed folder
+    // is simply no longer synced — its skills belong to that project.
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeWorkspaceFolders(async () => {
+            if (agentConfigManager) {
+                await agentConfigManager.syncSkills('workspace folders changed');
+            }
+        }),
+    );
+
     // Register commands
     registerCommands(context);
 

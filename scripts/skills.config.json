@@ -25,7 +25,7 @@
     "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live, cmsis-pack-docs, add-board-layer) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
     "commands": {
       "cmsis-developer-assistant.configure": "The first-run setup, on demand: register the MCP server with the agents you pick, then choose the AI Skills Pack skills to install.",
-      "cmsis-developer-assistant.selectSkills": "Pick the AI Skills Pack skills (category entry points or individual skills) to copy into your personal skills directories.",
+      "cmsis-developer-assistant.selectSkills": "Pick the AI Skills Pack skills (category entry points or individual skills) to install, and where: the current project's `.agents/skills` (this workspace only — the default, so the skills cost context only where they apply) or your personal skills directories (every workspace).",
       "cmsis-developer-assistant.listTargetDocs": "Write the current csolution target's documentation list (pack manuals, Arm documents, imported and workspace PDFs) to the output channel.",
       "cmsis-developer-assistant.indexTargetDocs": "Extract and index every PDF of the current target now, with progress, so the first search is instant.",
       "cmsis-developer-assistant.importUserDoc": "Copy PDFs the packs do not ship (NDA manuals, portal downloads) into the user documents folder, attributed to the current pack, device, board or core, and index them.",
@@ -71,7 +71,7 @@
       }
     ],
     "settings": {
-      "installedSkills": "The AI Skills Pack skills (entry points or individual skills) to copy into your personal skills directories; `cmsis-debug-live`, `add-board-layer` and `cmsis-help` are always installed.",
+      "installedSkills": "The AI Skills Pack skills (entry points or individual skills) to install. As a User setting they go into your personal skills directories (every workspace), as a Workspace or Folder setting into that project's `.agents/skills` only; `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed personally.",
       "aiSkills.enabled": "Install the AI Skills Pack at all. Off: pack skills this extension installed are removed, the skills setup step and the install prompt are skipped; the selection is kept.",
       "aiSkills.promptOnDetect": "Offer to install the pack — at most once a month — when an agent has the MCP server registered but no pack skill is selected.",
       "packDocs.enabled": "Experimental. Offer the documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) to agents. Off by default; needs pdftotext (poppler); window reload.",

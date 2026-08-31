@@ -73,7 +73,12 @@ export interface SkillCatalog {
 
 export const SKILL_CATALOG_FILE = path.join('skills', 'catalog.json');
 
-/** Setting key under `cmsis-developer-assistant.` holding the user's explicit pack picks. */
+/**
+ * Setting key under `cmsis-developer-assistant.` holding the explicit pack
+ * picks. Where the value is stored says where the skills go: the user value
+ * fills the personal skills directories, a workspace or folder value the
+ * project's own (`<folder>/.agents/skills`, `<folder>/.claude/skills`).
+ */
 export const INSTALLED_SKILLS_SETTING = 'installedSkills';
 
 /** Setting key under the prefix: whether the AI Skills Pack (cmsis-skills skills + routers) is installed at all. */
@@ -141,15 +146,23 @@ export interface DesiredSkills {
 export interface DesiredSkillsOptions {
     /** `aiSkills.enabled`. Off: only the bundled skills are desired, whatever was picked. Default on. */
     packEnabled?: boolean;
+    /**
+     * Whether the extension's own skills are part of the result. Default on
+     * — the personal directories always carry them. A project (workspace
+     * folder) selection leaves them out: they are already there for every
+     * agent on the machine, and a second copy in the project would show up
+     * twice in the slash menu.
+     */
+    includeBundled?: boolean;
 }
 
 /**
  * Turn the configured picks into the set to install. The bundled skills are
- * always in; the setting stores only the pack picks; the closure is
- * recomputed here every time, so a dependency added upstream reaches
- * existing users on the next sync. With the pack disabled the picks are
- * reported as `suppressed` and nothing from the pack is desired — the
- * installer's sweep then removes what it installed earlier.
+ * always in (unless `includeBundled` is off); the setting stores only the
+ * pack picks; the closure is recomputed here every time, so a dependency
+ * added upstream reaches existing users on the next sync. With the pack
+ * disabled the picks are reported as `suppressed` and nothing from the pack
+ * is desired — the installer's sweep then removes what it installed earlier.
  */
 export function resolveDesiredSkills(
     catalog: SkillCatalog,
@@ -157,12 +170,13 @@ export function resolveDesiredSkills(
     options: DesiredSkillsOptions = {},
 ): DesiredSkills {
     const packEnabled = options.packEnabled ?? true;
+    const includeBundled = options.includeBundled ?? true;
     const byName = new Map(catalog.skills.map(entry => [entry.name, entry]));
     const order = new Map(catalog.skills.map((entry, index) => [entry.name, index]));
     const sortCatalogOrder = (names: Iterable<string>): string[] =>
         [...new Set(names)].sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
 
-    const explicitSet = new Set<string>(bundledSkillNames(catalog));
+    const explicitSet = new Set<string>(includeBundled ? bundledSkillNames(catalog) : []);
     const unknown: string[] = [];
     const suppressed: string[] = [];
     for (const name of configured) {
@@ -175,6 +189,8 @@ export function resolveDesiredSkills(
             if (!suppressed.includes(name)) {
                 suppressed.push(name);
             }
+        } else if (isBundledSkill(entry) && !includeBundled) {
+            continue; // a pre-2.3.2 selection naming a bundled skill: nothing to do here
         } else {
             explicitSet.add(name);
         }
@@ -191,6 +207,9 @@ export function resolveDesiredSkills(
             }
             if (isPackSkill(entry) && !packEnabled) {
                 continue;
+            }
+            if (isBundledSkill(entry) && !includeBundled) {
+                continue; // available from the personal directories
             }
             closure.add(dependency);
             queue.push(dependency);

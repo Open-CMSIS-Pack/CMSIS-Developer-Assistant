@@ -196,13 +196,22 @@ Deterministic reads of the current target's build output — no debug session ne
 
 ## Agent Skills
 
-Skills are `SKILL.md` workflows in the [Agent Skills](https://agentskills.io/) format that an agent loads on demand. The extension ships a catalog of them and copies the ones you select into the directories your agents read:
+Skills are `SKILL.md` workflows in the [Agent Skills](https://agentskills.io/) format that an agent loads on demand. The extension ships a catalog of them and copies the ones you select into the directories your agents read — for this user, so every workspace has them:
 
 | Directory | Read by |
 |-----------|---------|
 | `~/.agents/skills/` | GitHub Copilot CLI, Codex, Cursor, Gemini CLI, VS Code Copilot Chat (the cross-agent location) |
 | `~/.claude/skills/` | Claude Code (only when a `~/.claude` directory exists; `CLAUDE_CONFIG_DIR` is honoured) |
 | `$COPILOT_HOME/skills/` | GitHub Copilot CLI, only when `COPILOT_HOME` is set (it then ignores `~/.agents/skills`) |
+
+or into the current workspace only, next to your sources, where the same agents look for a project's own skills:
+
+| Directory | Read by |
+|-----------|---------|
+| `<workspace>/.agents/skills/` | GitHub Copilot CLI, Codex, Cursor, Gemini CLI, VS Code Copilot Chat (the cross-agent project location) |
+| `<workspace>/.claude/skills/` | Claude Code (when Claude Code is installed or the project already has a `.claude` directory) |
+
+A workspace install carries the selected pack skills and their hidden dependencies only — the extension's own skills stay in your personal directories, where every agent on the machine already finds them — and is yours to commit with the project or add to `.gitignore`. A colleague who opens the project gets the skills either way; one with this extension gets them re-synced from the checked-in setting.
 
 The catalog contains:
 
@@ -213,7 +222,7 @@ The catalog contains:
 - **The [Open-CMSIS-Pack/cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills) skills**, vendored at a pinned commit (`skills/cmsis-skills.lock.json`): project setup (`add-cmsis-target`, `identify-cmsis-board-support`, `start-zephyr-project`, …), device debug and trace knowledge (`debug-access-knowledge`, `debug-knowledge`, `trace-knowledge`, …), and CMSIS-Pack debug authoring (`generate-debug-sequences`, `generate-trace-sequences`, `manage-pdsc-debugvars`, …).
 - **One entry point per category** — `cmsis-project`, `cmsis-bring-up`, `cmsis-pack`. Selecting an entry point gives the agent a single slash command for the whole category: the member skills are installed with `user-invocable: false`, so agents that honour that flag (Claude Code, VS Code, Copilot CLI) keep them out of the `/` menu while the model can still invoke them by description. Selecting an individual skill makes it visible; skills it depends on (the `$name` references in its text) are installed hidden.
 
-The cmsis-skills skills and their entry points form the **AI Skills Pack**. Choose from it with **CMSIS Developer Assistant: Select Agent Skills** (also step 2 of **Configure Agents and Skills**) or edit the `cmsis-developer-assistant.installedSkills` setting; the extension's own `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed and are not part of the selection. The selection is applied on every activation and whenever the setting changes, including through Settings Sync. Every directory the extension writes carries a `.cmsis-developer-assistant.json` marker; deselected skills with that marker are removed, and a skill you installed yourself is never overwritten or removed, even if it shares a name.
+The cmsis-skills skills and their entry points form the **AI Skills Pack**. Choose from it with **CMSIS Developer Assistant: Select Agent Skills** (also step 2 of **Configure Agents and Skills**): it first asks where the skills go — **This workspace only** (the default; one entry per folder in a multi-root workspace) or **This user**, each showing what it currently selects — and then which skills. The workspace is the default because a skill in your personal directories is offered to the agent in every project, and its description costs context there whether the project is CMSIS or not; installed into the project, it is loaded only where it applies. Or edit the `cmsis-developer-assistant.installedSkills` setting directly: as a User setting it fills the personal directories, as a Workspace or Folder setting the project's; the two selections are independent, and a workspace selection is applied on top of the user's. The extension's own `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed personally and are not part of the selection. Every selection is applied on every activation and whenever the setting changes — through Settings Sync, or a `.vscode/settings.json` checked out with the project. Every directory the extension writes carries a `.cmsis-developer-assistant.json` marker; deselected skills with that marker are removed, and a skill you installed yourself is never overwritten or removed, even if it shares a name.
 
 Turning `cmsis-developer-assistant.aiSkills.enabled` off switches the pack off: the pack skills this extension installed are removed (marker-guarded, your own skills are untouched), the skills step of the setup and the install prompt are skipped, and the bundled skills stay. Your selection is kept, so turning it back on restores exactly what you had.
 
@@ -221,7 +230,7 @@ Turning `cmsis-developer-assistant.aiSkills.enabled` off switches the pack off: 
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `cmsis-developer-assistant.installedSkills` | `[]` | The AI Skills Pack skills (entry points or individual skills) to install into your personal skills directories; the bundled `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed. See [Agent Skills](#agent-skills). |
+| `cmsis-developer-assistant.installedSkills` | `[]` | The AI Skills Pack skills (entry points or individual skills) to install. As a User setting they go into your personal skills directories, as a Workspace or Folder setting into that project's `.agents/skills` only; the bundled `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed personally. See [Agent Skills](#agent-skills). |
 | `cmsis-developer-assistant.aiSkills.enabled` | `true` | Enable the AI Skills Pack for selected agents. Off: pack skills this extension installed are removed, the skills setup step and the install prompt are skipped, the selection is kept. |
 | `cmsis-developer-assistant.aiSkills.promptOnDetect` | `true` | Prompt to install the CMSIS AI Skills for selected agents — monthly, until a pack skill is added. |
 | `cmsis-developer-assistant.serverPort` | `3001` | Port of the MCP server. One window binds it and routes to the others. Changing the port requires a window reload; the extension offers to reload. |

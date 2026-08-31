@@ -5,7 +5,8 @@
 Onboards AI coding agents onto the CMSIS Developer Assistant: registers the
 MCP server in each agent's own configuration file, and installs the Agent
 Skills the user selected into the personal skills directories those agents
-read. Both are opt-in through one two-step setup flow.
+read — or, per workspace folder, into the project's own. Both are opt-in
+through one two-step setup flow.
 
 ## Motivation
 
@@ -28,8 +29,10 @@ directory next to things the extension does not own.
   install nudge for agents that have the server but no pack skill
   (`maybePromptForSkills()`, decision in `skillPrompt.ts`).
 - Apply the `installedSkills` and `aiSkills.enabled` settings to disk
-  (`syncSkills()`), using the pure helpers in `skillCatalog.ts` (what to
-  install) and `skillInstaller.ts` (how to write it safely).
+  (`syncSkills()`), scope by scope — the user value to the personal
+  directories, each workspace folder's value to that project — using the
+  pure helpers in `skillCatalog.ts` (what to install) and
+  `skillInstaller.ts` (how to write it safely).
 
 ## Key Concepts
 
@@ -65,8 +68,9 @@ members of its category. The cmsis-skills skills plus the routers are the
 ### Explicit vs implied skills
 
 The `installedSkills` setting stores only the pack skills the user picked;
-the bundled skills are always desired, whatever it says.
-`resolveDesiredSkills(catalog, configured, { packEnabled })` adds the
+the bundled skills are always desired, whatever it says (in the user scope —
+a project selection is resolved with `includeBundled: false`, see below).
+`resolveDesiredSkills(catalog, configured, { packEnabled, includeBundled })` adds the
 transitive dependency closure: the explicit set is installed visible, the
 closure is installed with `user-invocable: false` injected into the copied
 frontmatter, so a user who picks `cmsis-pack` sees one slash command and the
@@ -76,16 +80,50 @@ know the field ignore it. With `aiSkills.enabled` off the picks come back as
 removes what it installed earlier — the setting keeps the picks for
 re-enabling.
 
+### Scopes: this user or this workspace
+
+The target of the `installedSkills` setting (scope `resource`) *is* the
+"where" choice — there is no second setting to keep in step with it. The
+manager reads the setting with `inspect()` per `SkillScope`: the
+`globalValue` (default `[]`) is the user's selection, and for every
+workspace folder on disk `workspaceFolderValue ?? workspaceValue` is that
+project's. A folder without a value has not opted in: its roots are swept
+for leftovers but never created. Each scope is resolved and synced on its
+own (`syncScope()`); the report `syncSkills()` returns covers all of them.
+
+A project selection is resolved with `includeBundled: false`: it installs
+the picked pack skills and their hidden pack dependencies, nothing else. The
+extension's own skills are in the personal directories already, and a
+project copy would show up twice in the slash menu. So a project can hold
+"only `cmsis-pack`" while the user profile holds a different selection; the
+agent sees the union.
+
+The picker (`showSkillSelectionDialog()` → `pickSkillScope()`) asks for the
+scope first — skipped when no folder is open — with the workspace as the
+first, pre-selected item (a personal skill costs context in every project;
+a project skill only where it applies) and each scope's current count, then
+reads and writes that scope's own value
+(`updateConfiguredSkills()`: `ConfigurationTarget.Global`; for a folder,
+`WorkspaceFolder` in a multi-root workspace and `Workspace` in a
+single-folder one, where `.vscode/settings.json` is the workspace file).
+The toast reports the chosen scope's roots only. `hasPackSkillSelected()`
+for the install nudge sees the union of all scopes.
+
 ### Install roots and the marker file
 
-`getSkillInstallRoots()`: `~/.agents/skills` always; `~/.claude/skills` when a
-Claude home exists (Claude Code does not read `~/.agents`);
+`getSkillInstallRoots()` (user): `~/.agents/skills` always; `~/.claude/skills`
+when a Claude home exists (Claude Code does not read `~/.agents`);
 `$COPILOT_HOME/skills` only when that variable is set. `~/.copilot/skills`,
-which earlier releases wrote, is only swept. Every directory the installer
-writes carries `.cmsis-developer-assistant.json`; only directories with that
-marker (or the pre-marker `cmsis-debug-live` whose frontmatter name matches)
-are ever replaced or removed. Anything else in those roots belongs to the
-user.
+which earlier releases wrote, is only swept.
+`getProjectSkillInstallRoots(folder)` (workspace): `<folder>/.agents/skills`
+always; `<folder>/.claude/skills` when a Claude home exists or the folder
+already has a `.claude` directory, otherwise only swept. The installer takes
+the roots per `sync()` call and creates a root only when something is to be
+installed into it. Every directory the installer writes carries
+`.cmsis-developer-assistant.json`; only directories with that marker (or the
+pre-marker `cmsis-debug-live` whose frontmatter name matches) are ever
+replaced or removed. Anything else in those roots belongs to the user or
+the project.
 
 ### Popup state
 
@@ -114,7 +152,7 @@ again* (turns the setting off).
 - Class: `src/utils/agentConfigurationManager.ts`
   - agents: `getSupportedAgents()`, `addDebugMCPToAgent()`, `migrateExistingConfigurations()`, `agentConfigHasServer()`
   - setup flow: `runSetupFlow()`, `showAgentSelectionDialog()`, `showSkillSelectionDialog()`
-  - skills: `syncSkills()`, `maybePromptForSkills()`
+  - skills: `syncSkills()` / `syncScope()`, `pickSkillScope()`, `getConfiguredSkills()` / `updateConfiguredSkills()`, `maybePromptForSkills()`
 - Catalog model and selection logic: `src/utils/skillCatalog.ts`
 - Install-prompt decision: `src/utils/skillPrompt.ts`
 - Help skill renderer (generator + tests only): `src/utils/skillHelp.ts`
@@ -124,13 +162,17 @@ again* (turns the setting off).
 
 ## User Flow
 
-1. Extension activates; `syncSkills('activation')` applies the setting.
+1. Extension activates; `syncSkills('activation')` applies the setting —
+   the user value and every workspace folder's own.
 2. If the setup was never shown (for this version of the flow), after 2 s:
-   step 1 multi-select of agents → config files written; step 2 multi-select
-   of skills → setting written, skills synced.
+   step 1 multi-select of agents → config files written; step 2 "this user
+   or this workspace?", then multi-select of skills → that scope's setting
+   written, skills synced.
 3. Any later change to `installedSkills` or `aiSkills.enabled` (picker,
-   settings.json, Settings Sync) triggers a sync through
-   `onDidChangeConfiguration`.
+   settings.json in either scope, Settings Sync, a checked-out
+   `.vscode/settings.json`) triggers a sync through
+   `onDidChangeConfiguration`; a folder added to the workspace triggers one
+   through `onDidChangeWorkspaceFolders`.
 4. Once the setup has been answered, the 2 s timer runs
    `maybePromptForSkills()` instead: the monthly nudge for agents that have
    the server registered but no pack skill selected.

@@ -20,7 +20,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { DocRef } from '../core/packDocs/pdscBooks';
 import { PageStore } from '../core/packDocs/pageStore';
-import { PdfExtractor, PdftotextExtractor, splitPages } from '../core/packDocs/pdfExtract';
+import { PdfExtractor, PdfjsExtractor, PdftotextExtractor, itemsToPageText, selectExtractor, splitPages } from '../core/packDocs/pdfExtract';
+import { defaultSettings } from '../core/packDocs/host';
 
 const FIXTURES = path.join(__dirname, '..', '..', '..', 'src', 'test', 'fixtures', 'packdocs');
 
@@ -218,5 +219,37 @@ suite('pageStore', () => {
         const avail = await extractor.available();
         assert.strictEqual(avail.ok, false);
         assert.match(avail.detail, /pdftotext/);
+    });
+
+    test('pdf.js extracts the fixture PDF page by page with nothing installed', async () => {
+        const extractor = new PdfjsExtractor();
+        const avail = await extractor.available();
+        assert.ok(avail.ok, avail.detail);
+        assert.match(avail.detail, /pdf\.js \d/);
+        const result = await extractor.extract(path.join(FIXTURES, 'test-rm.pdf'));
+        assert.strictEqual(result.extractor, 'pdfjs');
+        assert.strictEqual(result.pages.length, 2);
+        assert.match(result.pages[0], /RCC_AHB1ENR/);
+        assert.match(result.pages[0], /GPIOAEN: IO port A clock enable/);
+        assert.match(result.pages[1], /0x4002_3800/);
+        assert.match(result.pages[0].split('\n')[0], /^TEST-RM Reference manual/, 'the running header is the first line, as with pdftotext');
+        await assert.rejects(() => extractor.extract(path.join(FIXTURES, 'test-rm.pdf'), { timeoutMs: -1 }), /timed out/);
+    });
+
+    test('itemsToPageText rebuilds lines by baseline and keeps table columns apart', () => {
+        const text = itemsToPageText([
+            { str: 'Bit 0', transform: [1, 0, 0, 1, 40, 700], width: 20, height: 10 },
+            { str: 'GPIOAEN', transform: [1, 0, 0, 1, 120, 700], width: 40, height: 10 },
+            { str: 'IO port A clock enable', transform: [1, 0, 0, 1, 162, 700.5], width: 100, height: 10 },
+            { str: 'Address offset: 0x30', transform: [1, 0, 0, 1, 40, 720], width: 90, height: 10 },
+            { str: '', transform: [1, 0, 0, 1, 0, 0] },
+        ]);
+        assert.strictEqual(text, 'Address offset: 0x30\nBit 0  GPIOAEN IO port A clock enable\n');
+    });
+
+    test('selectExtractor: pdf.js unless pdftotext is asked for', () => {
+        assert.strictEqual(selectExtractor(defaultSettings).name, 'pdfjs');
+        assert.strictEqual(selectExtractor({ ...defaultSettings, extractor: 'pdfjs' }).name, 'pdfjs');
+        assert.strictEqual(selectExtractor({ ...defaultSettings, extractor: 'pdftotext' }).name, 'pdftotext');
     });
 });

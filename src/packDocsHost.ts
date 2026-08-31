@@ -50,7 +50,7 @@ export function readPackDocsGates(): { packDocsEnabled: boolean; buildInfoEnable
 export function readPackDocsSettings(): PackDocsSettings {
     const c = vscode.workspace.getConfiguration(`${CONFIG}.packDocs`);
     return {
-        extractor: c.get<'auto' | 'pdftotext'>('extractor', defaultSettings.extractor),
+        extractor: c.get<'auto' | 'pdftotext' | 'pdfjs'>('extractor', defaultSettings.extractor),
         pdftotextPath: c.get<string>('pdftotextPath', defaultSettings.pdftotextPath) || defaultSettings.pdftotextPath,
         maxPdfMb: c.get<number>('maxPdfMb', defaultSettings.maxPdfMb),
         includeUnlisted: c.get<boolean>('includeUnlisted', defaultSettings.includeUnlisted),
@@ -157,7 +157,7 @@ export function createPackDocsHandlers(context: vscode.ExtensionContext, timeout
             logger.info(`Pack docs extractor: ${a.detail}`);
         } else {
             logger.warn(`Pack docs extractor unavailable — ${a.detail}. Documents are listed but cannot be searched: ` +
-                `install poppler (brew install poppler) or set ${CONFIG}.packDocs.pdftotextPath.`);
+                `set ${CONFIG}.packDocs.extractor to pdfjs (bundled), or install poppler / set ${CONFIG}.packDocs.pdftotextPath.`);
         }
     });
     return { docs, build };

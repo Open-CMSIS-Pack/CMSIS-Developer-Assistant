@@ -113,6 +113,8 @@ check('the bundle keeps serialport external',
 check('the agent skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-debug-live', 'SKILL.md')));
 check('the help skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-help', 'SKILL.md')));
 check('the pack-docs skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-pack-docs', 'SKILL.md')));
+check('the pdf.js worker ships for the extension host', fs.existsSync(path.join(root, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs'))
+    && fs.existsSync(path.join(root, 'node_modules', 'pdfjs-dist', 'package.json')));
 check('the core-peripheral SVDs ship', fs.existsSync(path.join(root, 'assets', 'svd', 'core', 'index.json'))
     && fs.existsSync(path.join(root, 'assets', 'svd', 'core', 'Cortex_M33.svd')));
 check('the skill catalog ships', fs.existsSync(path.join(root, 'skills', 'catalog.json')));

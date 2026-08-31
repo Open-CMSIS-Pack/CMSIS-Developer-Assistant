@@ -378,7 +378,11 @@ export class PageStore {
         if (!doc.path) { throw new Error(`${doc.id} is not a local document`); }
         const p = this.paths(doc);
         const meta = this.readMeta(doc);
-        if (meta && this.isCurrent(doc, meta)) {
+        if (meta && this.isCurrent(doc, meta) && meta.extractor !== extractor.name && meta.extractor !== 'fake') {
+            // A different extractor is selected now: re-extract, so one
+            // document's text never mixes pdftotext and pdf.js pages.
+            log.info(`${doc.id}: cached text is from ${meta.extractor}, re-extracting with ${extractor.name}`);
+        } else if (meta && this.isCurrent(doc, meta)) {
             log.debug(`${doc.id}: cache hit (${meta.pageCount} pages, extracted ${meta.createdAt})`);
             const index = this.loadIndex(doc, p);
             doc.cached = doc.indexed = true;

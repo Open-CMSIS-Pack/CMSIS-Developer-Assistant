@@ -178,18 +178,22 @@
         "cmsis-developer-assistant.packDocs.enabled": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Offer the documentation tools to AI agents: `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` — page-cited search over the reference manuals, datasheets, errata and board manuals the current csolution target's DFP/BSP ship or link, plus Arm documents, your own imported manuals and the workspace `docs/` folder. Adds five tools to the MCP tool list every agent turn carries; needs `pdftotext` (poppler) on the PATH to index PDFs. Read once at activation: changing it needs a window reload."
+          "markdownDescription": "Offer the documentation tools to AI agents: `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` — page-cited search over the reference manuals, datasheets, errata and board manuals the current csolution target's DFP/BSP ship or link, plus Arm documents, your own imported manuals and the workspace `docs/` folder. Adds five tools to the MCP tool list every agent turn carries; PDFs are indexed with the bundled pdf.js (poppler optional, see `packDocs.extractor`). Read once at activation: changing it needs a window reload."
         },
         "cmsis-developer-assistant.packDocs.extractor": {
           "type": "string",
-          "enum": ["auto", "pdftotext"],
+          "enum": [
+            "auto",
+            "pdfjs",
+            "pdftotext"
+          ],
           "default": "auto",
-          "description": "PDF text extractor. pdftotext (poppler) must be on the PATH or named by packDocs.pdftotextPath."
+          "markdownDescription": "PDF text extractor. `pdfjs` is bundled and needs nothing installed (what `auto` uses); `pdftotext` uses poppler from the PATH or `packDocs.pdftotextPath`. Switching re-extracts documents on their next use."
         },
         "cmsis-developer-assistant.packDocs.pdftotextPath": {
           "type": "string",
           "default": "pdftotext",
-          "description": "Executable name or path of pdftotext, used to extract PDF text for indexing."
+          "description": "Executable name or path of pdftotext, used when packDocs.extractor is pdftotext."
         },
         "cmsis-developer-assistant.packDocs.maxPdfMb": {
           "type": "number",
@@ -203,8 +207,13 @@
         },
         "cmsis-developer-assistant.packDocs.workspaceDocDirs": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": [".agent-artifacts/docs", "docs"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".agent-artifacts/docs",
+            "docs"
+          ],
           "markdownDescription": "Folders (relative to each workspace folder) whose PDFs are listed and searched together with the target's pack documents — the drop folder for a datasheet or manual the packs do not ship."
         },
         "cmsis-developer-assistant.packDocs.userDocsDir": {
@@ -226,8 +235,13 @@
         },
         "cmsis-developer-assistant.buildInfo.logGlobs": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["**/out/**/*.log", "**/build*.log"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/out/**/*.log",
+            "**/build*.log"
+          ],
           "markdownDescription": "Workspace globs searched for build logs by `get_build_diagnostics` (newest first). Capture one with `cbuild … --log out/build.log`."
         }
       }
@@ -257,6 +271,7 @@
     "@types/express": "^5.0.6",
     "express": "^5.2.1",
     "jsonc-parser": "^3.3.1",
+    "pdfjs-dist": "6.3.289",
     "serialport": "^13.0.0",
     "zod": "^4.5.2"
   },

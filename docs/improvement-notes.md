@@ -175,3 +175,17 @@ Shipped: index version 2 with the heading field, weight 5, post boost 1.5.
 The remaining set-(a) misses are registers whose SVD description is generic
 ("control register 1") — the SVD-driven query expansion (#29 part 2) is the
 next lever.
+
+Extractor comparison (issue #28), same RM0455 PDF, heading field on (weight 5,
+post boost 1.5), NFKC tokenizer. pdf.js (bundled, legacy build) extracted the
+2 965 pages in 3.9 s; pdftotext in 3.0 s.
+
+| extractor | set (a) R@1 | R@3 | MRR | set (b) R@1 | R@3 | MRR |
+|---|---|---|---|---|---|---|
+| pdftotext -layout | 64.5% | 81.8% | 0.740 | 98.8% | 100.0% | 0.994 |
+| pdf.js (lines rebuilt by baseline, column gaps kept) | 65.0% | 81.2% | 0.739 | 99.1% | 100.0% | 0.995 |
+
+Within noise, so pdf.js is the default (`packDocs.extractor: auto`); poppler
+stays selectable. Body-only ranking (the 0.x index) was noticeably worse on
+pdf.js text (MRR 0.559 vs 0.613 on set a) — the heading field is what makes the
+two extractors equivalent.

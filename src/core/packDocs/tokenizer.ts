@@ -51,7 +51,10 @@ function expand(token: string, out: string[]): void {
 /** Tokens for indexing a page, expansions included, stop words removed. */
 export function tokenize(text: string): string[] {
     const out: string[] = [];
-    const lower = text.toLowerCase();
+    // NFKC folds what extractors emit differently: ligatures (ﬁ → fi),
+    // full-width digits, superscripts, so "conﬁguration" and "configuration"
+    // are one term whichever PDF library produced the page.
+    const lower = text.normalize('NFKC').toLowerCase();
     let m: RegExpExecArray | null;
     TOKEN_RE.lastIndex = 0;
     while ((m = TOKEN_RE.exec(lower)) !== null) {

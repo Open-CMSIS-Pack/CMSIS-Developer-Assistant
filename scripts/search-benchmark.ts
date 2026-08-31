@@ -38,13 +38,19 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { buildIndex } from '../src/core/packDocs/bm25Index';
+import { detectHeading } from '../src/core/packDocs/headings';
 import { LoadedDoc, PageRecord } from '../src/core/packDocs/pageStore';
+import { PdfjsExtractor, PdftotextExtractor } from '../src/core/packDocs/pdfExtract';
 import { DocRef } from '../src/core/packDocs/pdscBooks';
 import { isTocLike, searchLoaded } from '../src/core/packDocs/search';
 import { loadSvd, registersOf } from '../src/core/packDocs/svdLite';
 
 interface Args {
     pages: string;
+    /** Alternatively extract a PDF with `--extractor` (and `--save` the pages for reuse). */
+    pdf: string;
+    extractor: 'pdfjs' | 'pdftotext';
+    save: string;
     svd: string;
     headingWeights: number[];
     postBoosts: number[];
@@ -53,11 +59,14 @@ interface Args {
 }
 
 function parseArgs(argv: string[]): Args {
-    const args: Args = { pages: '', svd: '', headingWeights: [], postBoosts: [], limit: 10, verbose: false };
+    const args: Args = { pages: '', pdf: '', extractor: 'pdfjs', save: '', svd: '', headingWeights: [], postBoosts: [], limit: 10, verbose: false };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
         const next = () => argv[++i];
         if (a === '--pages') { args.pages = next(); }
+        else if (a === '--pdf') { args.pdf = next(); }
+        else if (a === '--extractor') { args.extractor = next() as Args['extractor']; }
+        else if (a === '--save') { args.save = next(); }
         else if (a === '--svd') { args.svd = next(); }
         else if (a === '--heading-weight') { args.headingWeights.push(Number(next())); }
         else if (a === '--post-boost') { args.postBoosts.push(Number(next())); }
@@ -65,17 +74,35 @@ function parseArgs(argv: string[]): Args {
         else if (a === '--verbose') { args.verbose = true; }
         else { throw new Error(`unknown argument ${a}`); }
     }
-    if (!args.pages || !args.svd) { throw new Error('usage: --pages <doc.pages.jsonl> --svd <device.svd> [--heading-weight n]* [--post-boost n]*'); }
-    if (!args.headingWeights.length) { args.headingWeights = [0, 3]; }
+    if ((!args.pages && !args.pdf) || !args.svd) {
+        throw new Error('usage: (--pages <doc.pages.jsonl> | --pdf <file.pdf> [--extractor pdfjs|pdftotext] [--save <pages.jsonl>]) --svd <device.svd> [--heading-weight n]* [--post-boost n]*');
+    }
+    if (!args.headingWeights.length) { args.headingWeights = [0, 5]; }
     if (!args.postBoosts.length) { args.postBoosts = [1.5]; }
     return args;
 }
 
 interface Query { name: string; text: string; gold: Set<number> }
 
-function main(): void {
+async function loadPages(args: Args): Promise<PageRecord[]> {
+    if (!args.pdf) {
+        return fs.readFileSync(args.pages, 'utf-8').split('\n').filter(Boolean).map(l => JSON.parse(l) as PageRecord);
+    }
+    const extractor = args.extractor === 'pdftotext' ? new PdftotextExtractor() : new PdfjsExtractor();
+    const t0 = Date.now();
+    const result = await extractor.extract(args.pdf, { timeoutMs: 20 * 60_000 });
+    const pages = result.pages.map((text, i) => ({ p: i + 1, heading: detectHeading(text), text }));
+    console.log(`${extractor.name}: ${pages.length} pages from ${path.basename(args.pdf)} in ${Date.now() - t0} ms`);
+    if (args.save) {
+        fs.writeFileSync(args.save, pages.map(r => JSON.stringify(r)).join('\n') + '\n');
+        console.log(`saved ${args.save}`);
+    }
+    return pages;
+}
+
+async function main(): Promise<void> {
     const args = parseArgs(process.argv.slice(2));
-    const pages = fs.readFileSync(args.pages, 'utf-8').split('\n').filter(Boolean).map(l => JSON.parse(l) as PageRecord);
+    const pages = await loadPages(args);
     const svd = loadSvd(args.svd);
 
     // Gold pages per register full name.
@@ -151,4 +178,4 @@ function main(): void {
     }
 }
 
-main();
+main().catch((e) => { console.error(e instanceof Error ? e.message : e); process.exit(1); });

@@ -40,5 +40,12 @@
         "spdx": "MIT",
         "url": "https://github.com/colinhacks/zod",
         "license": "https://github.com/colinhacks/zod/blob/main/LICENSE"
+    },
+    {
+        "name": "pdfjs-dist",
+        "version": "6.3.289",
+        "spdx": "Apache-2.0",
+        "url": "https://github.com/mozilla/pdf.js",
+        "license": "https://github.com/mozilla/pdf.js/blob/master/LICENSE"
     }
 ]

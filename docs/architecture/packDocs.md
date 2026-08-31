@@ -25,6 +25,13 @@ router the same way as the serial tool group.
 - **Router**: `RoutingDebuggingHandler.packDocsOp` forwards like `serialOp`; `WindowCoordinator.sessionHandlers()` returns `packDocs: (op, args) => router.packDocsOp(op, args)`. The tools carry no path, so they resolve through the pinned / cached / sole-window rungs, exactly like `cmsis_action`.
 - **Gates**: `DebugMCPServerOptions.packDocsEnabled` and `buildInfoEnabled` (default `false`), fixed per server instance; `setupTools` registers the two groups only when a gate is on and the session has a dispatch. The MCP `instructions` gain one sentence per enabled group. The bare single-window `DebugMCPServer` default (tests) has no dispatch and registers neither group.
 
+## Extraction and ranking
+
+- **Extractor** (`pdfExtract.ts`): `PdfjsExtractor` is the bundled default (`packDocs.extractor: auto`/`pdfjs`) — pdf.js legacy build, loaded on first use with a dynamic import; lines are rebuilt from text items by baseline and wide gaps become double spaces so table columns survive. In VS Code's extension host pdf.js does not detect Node, so `GlobalWorkerOptions.workerSrc` points at the shipped `node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs` (re-included by `.vscodeignore`) and runs as a fake worker on the same thread. `PdftotextExtractor` (poppler) stays selectable; a document extracted by the other extractor is re-extracted on its next use so text sources never mix.
+- **Tokenizer** (`tokenizer.ts`): NFKC before tokenising, identifier expansion (`RCC_AHB2ENR1` → `rcc`, `ahb2enr1`), hex spellings folded.
+- **Index** (`bm25Index.ts`, version 2): body postings plus heading postings per page; BM25 over the body plus `headingWeight` (5) × the heading term score; a version-1 index on disk is rebuilt from `pages.jsonl` on first load. `search.ts` adds phrase, manual and table-of-contents adjustments and a 1.5 heading tie-breaker.
+- **Benchmark** (`scripts/search-benchmark.ts`, `npm run bench:search`): gold pages are the manual headings that name a register, queries come from the SVD descriptions; reports R@1 / R@3 / MRR per heading weight and post boost, and can extract a PDF with either extractor first. Numbers in `docs/improvement-notes.md` §11.
+
 ## Storage
 
 Extracted page text, metadata and indexes live under `<globalStorageUri>/packdocs/` — `<vendor>/<pack>/<version>/<slug>.{pages.jsonl,meta.json,idx.json}` for pack documents, `workspace/<hash>/…`, `user/<hash>/…`, `web|arm/<id>/…` for fetched ones. PDFs themselves stay where they are. The user documents folder defaults to `~/.cmsis-pack-docs/user` so documents imported with the standalone extension stay attributed.

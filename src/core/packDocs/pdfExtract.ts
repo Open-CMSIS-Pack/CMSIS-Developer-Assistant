@@ -24,6 +24,8 @@
  * for machines without poppler.
  */
 
+import * as fs from 'fs';
+import { pathToFileURL } from 'url';
 import { spawn } from 'child_process';
 import { PackDocsLog, PackDocsSettings, silentLog } from './host';
 
@@ -119,8 +121,148 @@ export class PdftotextExtractor implements PdfExtractor {
     }
 }
 
+/** The subset of pdf.js's text item this extractor reads. */
+interface TextItemLike {
+    str: string;
+    transform?: number[];
+    width?: number;
+    height?: number;
+    hasEOL?: boolean;
+}
+
+/**
+ * Rebuild lines from pdf.js text items — the analogue of `pdftotext -layout`
+ * for register tables: items on one baseline (y within `tolerance`) form a
+ * line ordered by x, and a horizontal gap wider than ~1.5 em becomes two
+ * spaces so table columns stay separable. Exported for the tests.
+ */
+export function itemsToPageText(items: TextItemLike[], tolerance = 2): string {
+    type Placed = { x: number; y: number; w: number; h: number; str: string };
+    const placed: Placed[] = [];
+    for (const it of items) {
+        if (!it.str || !it.transform) { continue; }
+        placed.push({ x: it.transform[4], y: it.transform[5], w: it.width ?? 0, h: it.height ?? Math.abs(it.transform[3]) ?? 10, str: it.str });
+    }
+    if (!placed.length) { return ''; }
+    // Top of the page first (PDF y grows upwards), then left to right.
+    placed.sort((a, b) => (b.y - a.y) || (a.x - b.x));
+    const lines: Placed[][] = [];
+    for (const p of placed) {
+        const last = lines[lines.length - 1];
+        if (last && Math.abs(last[0].y - p.y) <= Math.max(tolerance, last[0].h * 0.4)) {
+            last.push(p);
+        } else {
+            lines.push([p]);
+        }
+    }
+    const out: string[] = [];
+    for (const line of lines) {
+        line.sort((a, b) => a.x - b.x);
+        let text = '';
+        let cursor = line[0].x;
+        for (const p of line) {
+            const gap = p.x - cursor;
+            const em = p.h || 10;
+            if (text) {
+                if (gap > 1.5 * em) { text += '  '; }
+                else if (gap > 0.15 * em && !text.endsWith(' ') && !p.str.startsWith(' ')) { text += ' '; }
+            }
+            text += p.str;
+            cursor = p.x + p.w;
+        }
+        out.push(text.replace(/[ \t]+$/g, ''));
+    }
+    return out.join('\n') + '\n';
+}
+
+/**
+ * The bundled extractor: pdf.js (legacy build, pure JavaScript), so a host
+ * without poppler — most Windows machines — indexes documents too. Text
+ * only: no fonts are rendered, no canvas is needed. Loaded on first use
+ * through a dynamic import, which keeps the 1 MB library out of the
+ * activation path.
+ */
+/** What this extractor uses of pdf.js — typed locally, since the library is ESM and this module is CommonJS. */
+interface PdfjsLib {
+    version: string;
+    GlobalWorkerOptions: { workerSrc: string };
+    getDocument(params: { data: Uint8Array; disableFontFace?: boolean; useSystemFonts?: boolean; verbosity?: number }): {
+        promise: Promise<PdfjsDocument>;
+        destroy(): Promise<void>;
+    };
+}
+interface PdfjsDocument {
+    numPages: number;
+    getPage(n: number): Promise<{ getTextContent(): Promise<{ items: unknown[] }>; cleanup(): void }>;
+}
+
+export class PdfjsExtractor implements PdfExtractor {
+    readonly name = 'pdfjs';
+    private lib?: Promise<PdfjsLib>;
+
+    private load(): Promise<PdfjsLib> {
+        if (!this.lib) {
+            this.lib = (import('pdfjs-dist/legacy/build/pdf.mjs') as unknown as Promise<PdfjsLib>).then((lib) => {
+                // Plain Node runs pdf.js on the main thread with no worker file.
+                // VS Code's extension host is Electron, which pdf.js does not
+                // take for Node, so it insists on a worker source: point it at
+                // the shipped worker module — with no Worker global it is
+                // imported as a "fake worker" on this thread, same effect.
+                if (!lib.GlobalWorkerOptions.workerSrc) {
+                    try {
+                        lib.GlobalWorkerOptions.workerSrc = pathToFileURL(require.resolve('pdfjs-dist/legacy/build/pdf.worker.min.mjs')).href;
+                    } catch {
+                        // Not resolvable: pdf.js will say so on the first extraction.
+                    }
+                }
+                return lib;
+            });
+        }
+        return this.lib;
+    }
+
+    async available(): Promise<{ ok: boolean; detail: string }> {
+        try {
+            const lib = await this.load();
+            return { ok: true, detail: `pdf.js ${lib.version} (bundled)` };
+        } catch (e) {
+            return { ok: false, detail: `pdf.js failed to load: ${e instanceof Error ? e.message : e}` };
+        }
+    }
+
+    async extract(file: string, opts: { timeoutMs?: number; log?: PackDocsLog } = {}): Promise<ExtractResult> {
+        const log = opts.log ?? silentLog;
+        const deadline = Date.now() + (opts.timeoutMs ?? 120_000);
+        const started = Date.now();
+        const lib = await this.load();
+        const data = new Uint8Array(await fs.promises.readFile(file));
+        const task = lib.getDocument({ data, disableFontFace: true, useSystemFonts: false, verbosity: 0 });
+        const pages: string[] = [];
+        try {
+            const doc = await task.promise;
+            for (let i = 1; i <= doc.numPages; i++) {
+                if (Date.now() > deadline) {
+                    throw new Error(`pdf.js timed out after ${opts.timeoutMs ?? 120_000} ms on ${file} (page ${i} of ${doc.numPages})`);
+                }
+                const page = await doc.getPage(i);
+                const content = await page.getTextContent();
+                pages.push(itemsToPageText(content.items as TextItemLike[]));
+                page.cleanup();
+            }
+        } finally {
+            await task.destroy();
+        }
+        const ms = Date.now() - started;
+        log.debug(`pdf.js: ${pages.length} pages in ${ms} ms`);
+        return { pages, extractor: this.name, ms };
+    }
+}
+
 export function selectExtractor(settings: PackDocsSettings): PdfExtractor {
-    // `auto` and `pdftotext` are the same in the test version; the bundled
-    // fallback arrives with the pdfjs work package.
-    return new PdftotextExtractor(settings.pdftotextPath || 'pdftotext');
+    // pdf.js is bundled and the default; poppler stays available for users
+    // who prefer its `-layout` text (see the search benchmark notes).
+    if (settings.extractor === 'pdftotext') {
+        return new PdftotextExtractor(settings.pdftotextPath || 'pdftotext');
+    }
+    return new PdfjsExtractor();
 }

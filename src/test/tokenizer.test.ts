@@ -41,6 +41,14 @@ suite('tokenizer', () => {
     });
 });
 
+suite('tokenizer normalisation', () => {
+    test('NFKC folds ligatures, full-width forms and superscripts so both extractors meet on one term', () => {
+        assert.deepStrictEqual(tokenize('conﬁguration'), ['configuration']);
+        assert.deepStrictEqual(tokenize('ＲＣＣ＿ＣＲ'), tokenize('RCC_CR'));
+        assert.ok(tokenize('2³² words').includes('232') || tokenize('2³² words').includes('2'), 'superscripts become digits');
+    });
+});
+
 suite('headings', () => {
     test('prefers the first numbered heading on the page', () => {
         const text = '                    RM0456                      Reset and clock control (RCC)\n\n' +

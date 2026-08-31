@@ -31,8 +31,11 @@ export interface PackDocsLog {
 }
 
 export interface PackDocsSettings {
-    /** `auto` picks pdftotext when it is on PATH. */
-    extractor: 'auto' | 'pdftotext';
+    /**
+     * `pdfjs` is bundled and needs nothing installed; `pdftotext` (poppler)
+     * must be on the PATH; `auto` takes pdfjs.
+     */
+    extractor: 'auto' | 'pdftotext' | 'pdfjs';
     /** Executable name or absolute path. */
     pdftotextPath: string;
     /** PDFs above this size are listed but never extracted. */

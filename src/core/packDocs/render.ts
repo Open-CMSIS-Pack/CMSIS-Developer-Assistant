@@ -116,6 +116,8 @@ export interface SearchInfo {
     web: DocRef[];
     /** Unlisted pack PDFs left out of this search. */
     unlistedSkipped?: DocRef[];
+    /** Identifiers expanded from the SVD, one note each (`USART1 (peripheral): universal …`). */
+    expandedWith?: string[];
     ms: number;
 }
 
@@ -132,6 +134,9 @@ export function renderSearch(query: string, hits: SearchHit[], info: SearchInfo)
     }
     lines.push(`Searched ${info.searched.length} document${info.searched.length === 1 ? '' : 's'} ` +
         `(${info.searched.reduce((n, d) => n + (d.pages ?? 0), 0)} pages) for "${query}" in ${info.ms} ms — ${hits.length} hit${hits.length === 1 ? '' : 's'}:`);
+    if (info.expandedWith?.length) {
+        lines.push(`Expanded from the SVD (lower weight): ${info.expandedWith.join('; ')}`);
+    }
     hits.forEach((h, i) => {
         const rev = h.doc.revision ? ` [${h.doc.revision}]` : '';
         lines.push(`#${i + 1} ${h.doc.id}${rev} ${unitLabel(h.doc)}.${h.page}${h.heading ? ` §${h.heading}` : ''}  (score ${h.score.toFixed(1)})`);

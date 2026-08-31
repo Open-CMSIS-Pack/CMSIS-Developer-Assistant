@@ -42,6 +42,7 @@ import { detectHeading } from '../src/core/packDocs/headings';
 import { LoadedDoc, PageRecord } from '../src/core/packDocs/pageStore';
 import { PdfjsExtractor, PdftotextExtractor } from '../src/core/packDocs/pdfExtract';
 import { DocRef } from '../src/core/packDocs/pdscBooks';
+import { expandQuery } from '../src/core/packDocs/queryExpansion';
 import { isTocLike, searchLoaded } from '../src/core/packDocs/search';
 import { loadSvd, registersOf } from '../src/core/packDocs/svdLite';
 
@@ -56,10 +57,12 @@ interface Args {
     postBoosts: number[];
     limit: number;
     verbose: boolean;
+    /** Also run every configuration with SVD query expansion. */
+    expand: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
-    const args: Args = { pages: '', pdf: '', extractor: 'pdfjs', save: '', svd: '', headingWeights: [], postBoosts: [], limit: 10, verbose: false };
+    const args: Args = { pages: '', pdf: '', extractor: 'pdfjs', save: '', svd: '', headingWeights: [], postBoosts: [], limit: 10, verbose: false, expand: false };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
         const next = () => argv[++i];
@@ -72,6 +75,7 @@ function parseArgs(argv: string[]): Args {
         else if (a === '--post-boost') { args.postBoosts.push(Number(next())); }
         else if (a === '--limit') { args.limit = Number(next()); }
         else if (a === '--verbose') { args.verbose = true; }
+        else if (a === '--expand') { args.expand = true; }
         else { throw new Error(`unknown argument ${a}`); }
     }
     if ((!args.pages && !args.pdf) || !args.svd) {
@@ -118,6 +122,8 @@ async function main(): Promise<void> {
 
     const setA: Query[] = [];
     const setB: Query[] = [];
+    /** (c) the bare register name — what an agent types after lookup_register. */
+    const setC: Query[] = [];
     const seen = new Set<string>();
     for (const peripheral of svd.peripherals) {
         for (const reg of registersOf(svd, peripheral)) {
@@ -131,6 +137,7 @@ async function main(): Promise<void> {
             const mentionsName = description.toLowerCase().includes(bare.toLowerCase()) || description.toLowerCase().includes(full.toLowerCase());
             if (!mentionsName) { setA.push({ name: full, text: description, gold }); }
             setB.push({ name: full, text: `${description} ${full}`, gold });
+            setC.push({ name: full, text: full, gold });
         }
     }
 
@@ -148,11 +155,12 @@ async function main(): Promise<void> {
     console.log(`${pages.length} pages, ${byName.size} register headings, ${svd.peripherals.length} SVD peripherals; ` +
         `set (a) ${setA.length} description-only queries, set (b) ${setB.length} description+name queries; index built in ${Date.now() - t0} ms\n`);
 
-    const evaluate = (queries: Query[], headingWeight: number, headingPostBoost: number) => {
+    const evaluate = (queries: Query[], headingWeight: number, headingPostBoost: number, expand: boolean) => {
         let r1 = 0, r3 = 0, mrr = 0;
         const misses: string[] = [];
         for (const q of queries) {
-            const hits = searchLoaded([loaded], q.text, args.limit, undefined, { headingWeight, headingPostBoost }).hits;
+            const expansions = expand ? expandQuery(q.text, svd).expansions : undefined;
+            const hits = searchLoaded([loaded], q.text, args.limit, undefined, { headingWeight, headingPostBoost, expansions }).hits;
             const rank = hits.findIndex(h => q.gold.has(h.page));
             if (rank === 0) { r1++; }
             if (rank >= 0 && rank < 3) { r3++; }
@@ -163,15 +171,17 @@ async function main(): Promise<void> {
     };
     const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 
-    for (const [label, queries] of [['(a) SVD description only', setA], ['(b) description + register name', setB]] as const) {
+    for (const [label, queries] of [['(a) SVD description only', setA], ['(b) description + register name', setB], ['(c) register name only', setC]] as const) {
         console.log(`### ${label} — ${queries.length} queries\n`);
-        console.log('| heading weight | post boost | R@1 | R@3 | MRR |');
-        console.log('|---|---|---|---|---|');
+        console.log('| heading weight | post boost | SVD expansion | R@1 | R@3 | MRR |');
+        console.log('|---|---|---|---|---|---|');
         for (const hw of args.headingWeights) {
             for (const pb of args.postBoosts) {
-                const t1 = Date.now();
-                const r = evaluate(queries, hw, pb);
-                console.log(`| ${hw} | ${pb} | ${pct(r.r1)} | ${pct(r.r3)} | ${r.mrr.toFixed(3)} |${args.verbose ? ` ${Date.now() - t1} ms, misses: ${r.misses.slice(0, 8).join(', ')}` : ''}`);
+                for (const expand of args.expand ? [false, true] : [false]) {
+                    const t1 = Date.now();
+                    const r = evaluate(queries, hw, pb, expand);
+                    console.log(`| ${hw} | ${pb} | ${expand ? 'on' : 'off'} | ${pct(r.r1)} | ${pct(r.r3)} | ${r.mrr.toFixed(3)} |${args.verbose ? ` ${Date.now() - t1} ms, misses: ${r.misses.slice(0, 8).join(', ')}` : ''}`);
+                }
             }
         }
         console.log();

@@ -155,9 +155,13 @@ export function scorePages(indexes: DocIndex[], terms: string[], opts: Bm25Optio
         });
     }
 
+    // The all-terms boost is about the words the user typed; expansions
+    // (weight < 1) are optional extras and do not withhold it.
+    const primary = terms.filter(t => (opts.termWeights?.[t] ?? 1) >= 1);
     const out: ScoredPage[] = [];
     for (const e of scores.values()) {
-        const score = terms.length > 1 && e.matched.size === terms.length ? e.score * allBoost : e.score;
+        const allPrimary = primary.length > 1 && primary.every(t => e.matched.has(t));
+        const score = allPrimary ? e.score * allBoost : e.score;
         out.push({ doc: e.doc, page: e.page, score, matched: [...e.matched] });
     }
     out.sort((x, y) => y.score - x.score || x.doc - y.doc || x.page - y.page);

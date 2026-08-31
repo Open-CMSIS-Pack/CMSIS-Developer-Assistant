@@ -54,6 +54,8 @@ export interface SearchOptions {
     headingWeight?: number;
     /** Multiplier applied after BM25 when a query term is in the heading. Default 1.5. */
     headingPostBoost?: number;
+    /** Extra index terms with weights below 1 (SVD query expansion); they never gate the all-terms boost. */
+    expansions?: Record<string, number>;
 }
 
 /**
@@ -62,7 +64,7 @@ export interface SearchOptions {
  * field at weight 5; description + register name 0.873 → 0.994. The post
  * boost no longer moves the numbers; it stays as a tie-breaker.
  */
-export const DEFAULT_SEARCH_OPTIONS: Required<SearchOptions> = { headingWeight: 5, headingPostBoost: 1.5 };
+export const DEFAULT_SEARCH_OPTIONS: Required<Pick<SearchOptions, 'headingWeight' | 'headingPostBoost'>> = { headingWeight: 5, headingPostBoost: 1.5 };
 
 const PHRASE_BOOST = 2.0;
 const MANUAL_BOOST = 1.1;
@@ -134,7 +136,11 @@ export function searchLoaded(docs: LoadedDoc[], query: string, limit: number, lo
     if (!parsed.terms.length || !docs.length) {
         return { hits: [], terms: parsed.terms, phrases: parsed.phrases, candidates: 0, ms: Date.now() - started };
     }
-    const candidates = scorePages(docs.map(d => d.index), parsed.terms, { limit: Math.max(limit * 5, 30), headingWeight: opts.headingWeight });
+    const expansions = options.expansions ?? {};
+    const terms = [...parsed.terms, ...Object.keys(expansions).filter(t => !parsed.terms.includes(t))];
+    const candidates = scorePages(docs.map(d => d.index), terms, {
+        limit: Math.max(limit * 5, 30), headingWeight: opts.headingWeight, termWeights: expansions,
+    });
     log.debug(`query terms [${parsed.terms.join(', ')}]${parsed.phrases.length ? ` phrases [${parsed.phrases.map(p => `"${p}"`).join(', ')}]` : ''} → ${candidates.length} candidate pages in ${Date.now() - started} ms`);
 
     const re = matchRegex(parsed.words, parsed.phrases);

@@ -22,6 +22,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { expandQuery } from './core/packDocs/queryExpansion';
 import {
     ALL_ASPECTS, Aspect, CbuildRunInfo, Chapter, DocRef, FetchOutcome, LoadedDoc, PackDocsHost, PageStore, PdfExtractor, ResolveContext,
     SvdPeripheral, SvdRegister, TargetArgs, TargetDocs, TargetResolution, armDocId, armDocUrl, buildChapterIndex, buildDossier,
@@ -199,8 +200,20 @@ export class PackDocsHandler {
 
             const { loaded, indexedNow, skipped } = await this.ensureAll(candidates, log, deadline);
 
+            // Identifiers in the query (USART1, RCC_APB2ENR, GPIOAEN) are
+            // expanded with their SVD descriptions at a lower weight, so the
+            // manual's wording is found even when it never spells the name.
+            let expansion = { expansions: {}, notes: [] as string[] };
+            try {
+                const dev = this.deviceSvd(target, log);
+                expansion = expandQuery(args.query, dev && 'summary' in dev ? dev.summary : undefined);
+                if (expansion.notes.length) { log.debug(`query expansion: ${expansion.notes.join('; ')}`); }
+            } catch (e) {
+                log.debug(`query expansion skipped: ${e instanceof Error ? e.message : e}`);
+            }
+
             const limit = Math.min(Math.max(args.limit ?? 8, 1), 25);
-            const outcome = searchLoaded(loaded, args.query, limit, log);
+            const outcome = searchLoaded(loaded, args.query, limit, log, { expansions: expansion.expansions });
             return renderSearch(args.query, outcome.hits, {
                 resolution: this.describe(target),
                 indexedNow,
@@ -208,6 +221,7 @@ export class PackDocsHandler {
                 searched: loaded.map(l => l.doc),
                 web: docs.filter(d => d.source === 'web' && !isReadable(d)),
                 unlistedSkipped,
+                expandedWith: expansion.notes,
                 ms: outcome.ms,
             });
         });

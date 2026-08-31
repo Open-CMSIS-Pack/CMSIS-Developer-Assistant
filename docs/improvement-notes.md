@@ -189,3 +189,18 @@ Within noise, so pdf.js is the default (`packDocs.extractor: auto`); poppler
 stays selectable. Body-only ranking (the 0.x index) was noticeably worse on
 pdf.js text (MRR 0.559 vs 0.613 on set a) — the heading field is what makes the
 two extractors equivalent.
+
+SVD query expansion (issue #29 part 2), pdf.js pages, heading weight 5:
+
+| query set | expansion off | expansion on (registers + acronyms too) | expansion on (instances + fields only, shipped) |
+|---|---|---|---|
+| (a) description only, 309 | R@1 65.0% · MRR 0.739 | 62.8% · 0.725 | 65.0% · 0.739 |
+| (b) description + name, 329 | 99.1% · 0.995 | 99.1% · 0.995 | 99.1% · 0.995 |
+| (c) register name only, 329 | 98.2% · 0.987 | 97.9% · 0.986 | 98.2% · 0.987 |
+
+Expanding register names or the acronyms inside a sentence dilutes the
+ranking, and the heading field already finds register pages from the bare
+name; expansion is therefore limited to peripheral instances (`USART1` →
+its long name and type synonyms) and bare field names (`GPIOAEN` → its
+register) — the queries where the manual's wording differs from the
+identifier, which this benchmark cannot score against register headings.

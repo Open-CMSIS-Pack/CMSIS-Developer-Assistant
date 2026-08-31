@@ -81,6 +81,22 @@ suite('bm25 + search', () => {
         assert.match(searchLoaded([rm], 'PWR_CR1', 3).hits[0].heading, /PWR_CR1/);
     });
 
+    test('expansion terms find pages the typed words miss, at lower weight, without gating the all-terms boost', () => {
+        const rm = loaded(doc('p/rm', 'manual'), [
+            'RM-TEST Contents\n1 Overview . . . . . . . 2\n',
+            'RM-TEST USART\n30.1 Universal synchronous asynchronous receiver transmitter introduction\nThe interface supports full-duplex exchange.',
+            'RM-TEST Timers\n20.1 Timer overview\nCounter and prescaler.',
+        ]);
+        const plain = searchLoaded([rm], 'USART1', 5);
+        assert.strictEqual(plain.hits.length, 0, 'the manual never writes USART1');
+        const expanded = searchLoaded([rm], 'USART1', 5, undefined, { expansions: { universal: 0.5, receiver: 0.5, transmitter: 0.5 } });
+        assert.strictEqual(expanded.hits[0]?.page, 2);
+        // With two typed terms present on a page, the all-terms boost still applies even though no expansion matched.
+        const two = searchLoaded([rm], 'counter prescaler', 5, undefined, { expansions: { nonexistent: 0.5 } });
+        const single = searchLoaded([rm], 'counter', 5);
+        assert.ok(two.hits[0].score > single.hits[0].score * 1.4, 'all typed terms matched → boosted');
+    });
+
     test('scorePages ranks the page that mentions all terms first', () => {
         const ix = buildIndex('rm', pagesOf(RM_PAGES));
         const hits = scorePages([ix], ['gpioaen', 'rcc_ahb1enr'], { limit: 5 });

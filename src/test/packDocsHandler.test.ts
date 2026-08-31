@@ -225,6 +225,13 @@ suite('PackDocsHandler (end to end)', () => {
         assert.match(ws, /Searched 1 document \(2 pages\)/);
         assert.match(ws, /#1 workspace\/board-um p\.2/);
 
+        // An identifier is expanded from the device SVD; the manual is found through the expansion.
+        const expanded = await handler.handleSearchTargetDocs({ query: 'GPIOAEN', doc: 'test-rm' });
+        assert.match(expanded, /Expanded from the SVD \(lower weight\): GPIOAEN \(field of RCC_AHB1ENR\): .*port/);
+        assert.match(expanded, /#1 stm32f7xx-dfp\/test-rm p\.1/);
+        const quoted = await handler.handleSearchTargetDocs({ query: '"IO port A clock"', doc: 'test-rm' });
+        assert.doesNotMatch(quoted, /Expanded from the SVD/);
+
         const listed = await handler.handleListTargetDocs({});
         assert.match(listed, /Test Reference Manual · indexed, 2 p/);
         assert.match(listed, /workspace\/board-um · workspace · board-um · indexed, 2 p/);

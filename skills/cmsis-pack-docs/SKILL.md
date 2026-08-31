@@ -107,3 +107,13 @@ the Evidence table, so a later change of `latest` is detectable.
 - Prefer one search with the exact identifier over several vague ones.
 - If `list_target_docs` cannot resolve the target, build the solution first
   (so `*.cbuild-run.yml` exists) or pass `pack` and `device`.
+- Never ask the user for a datasheet or manual before `list_target_docs` and
+  `fetch_doc` have been tried, and never read a PDF into your context — it
+  costs hundreds of thousands of tokens and yields no page cites. A document
+  the user hands you goes into the workspace `docs/` folder (or the *CMSIS
+  Developer Assistant: Import Document for Current Target* command for
+  documents that should be attributed to a pack, device or board and kept
+  outside the repository); then it is indexed and searched like the rest.
+- If the tools are missing from your tool list they are switched off: point
+  the user at `cmsis-developer-assistant.packDocs.enabled` (window reload)
+  instead of asking for documents.

@@ -112,6 +112,9 @@ async function main() {
     });
     const sid = init.headers['mcp-session-id'];
     check('POST initialize returns 200', init.status === 200, `status=${init.status}`);
+    const instructions = parseSse(init.body)?.result?.instructions ?? '';
+    check('the default instructions point at the documentation setting instead of leaving agents to ask for PDFs',
+        /packDocs\.enabled/.test(instructions) && /rather than asking the user for a document/.test(instructions));
     check('POST initialize mints an mcp-session-id', typeof sid === 'string' && sid.length > 0, `sid=${sid}`);
 
     await request(port, 'POST', { 'mcp-session-id': sid }, {

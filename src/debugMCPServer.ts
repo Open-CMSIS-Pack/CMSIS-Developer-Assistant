@@ -317,7 +317,17 @@ export class DebugMCPServer {
         if (this.options.packDocsEnabled) {
             text += ' The documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, ' +
                 'get_peripheral_docs) answer from the manuals the target\'s packs ship or link, page-cited; they ' +
-                'accept timeoutMs up to 600 s because indexing a manual on first use can take minutes.';
+                'accept timeoutMs up to 600 s because indexing a manual on first use can take minutes. Use them ' +
+                'before asking the user for a datasheet or reference manual (list_target_docs, then fetch_doc for ' +
+                'a web-linked one) and instead of reading a PDF into your context: a document the user provides ' +
+                'belongs in the workspace docs/ folder or the "Import Document for Current Target" command, then ' +
+                'search it.';
+        } else {
+            // Off by default: say so, or an agent on a default install asks the
+            // user for the manual and reads PDFs itself.
+            text += ' Page-cited documentation tools (search over the target\'s pack manuals, datasheets and errata) ' +
+                'are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling ' +
+                'it rather than asking the user for a document or reading a PDF yourself.';
         }
         if (this.options.buildInfoEnabled) {
             text += ' The build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, ' +

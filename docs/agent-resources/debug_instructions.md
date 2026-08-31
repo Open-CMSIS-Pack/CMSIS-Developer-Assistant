@@ -68,12 +68,13 @@ Ask the user to:
 
 You cannot do this for the user — it is a UI-driven step in the CMSIS Solution extension.
 
-### Documentation links from CMSIS packs
+### The pack documentation is a tool call away
 
-Some projects expose **documentation links** in the CMSIS Solution dialog (board datasheets, MCU reference manuals, BSP/DFP READMEs). These come from the installed CMSIS-Packs (DFP, BSP) or external URLs declared in the pack manifest. Before assuming peripheral semantics, addresses, or fault behavior:
+The DFP/BSP ship or link the reference manual, datasheet, errata and board manual. With `cmsis-developer-assistant.packDocs.enabled` on, `list_target_docs` lists them with ids and state, `search_target_docs` finds the page for a register, bit or address, `read_doc_pages` reads it (cite `<doc id> <edition> p.<n>`), `fetch_doc` downloads a web-linked or Arm document, and `get_peripheral_docs` assembles a page-cited dossier for one peripheral. Before assuming peripheral semantics, addresses, clock or fault behaviour:
 
-- Check the pack documentation surfaced in the CMSIS Solution UI.
-- The SVD shipped with the DFP is the authoritative source for peripheral names and bit fields used by `read_peripheral_register`.
+- Search the documentation first. Do **not** ask the user for a manual before `list_target_docs` / `fetch_doc` have been tried, and do not read a PDF into your context — a document the user provides belongs in the workspace `docs/` folder (or the **Import Document for Current Target** command), where it is indexed and searched.
+- If the tools are absent from your tool list, they are switched off: suggest the setting instead of asking for documents.
+- The SVD shipped with the DFP (`lookup_register`, `lookup_peripheral`) is authoritative for register names, offsets and bit positions; the manual is where the meaning, sequences and constraints live. Use both.
 
 ### Cross-check with `get_device_info`
 
@@ -86,7 +87,7 @@ After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_inf
 - [ ] Read the matching `<context>.cbuild-run.yml` — know the probe, port, SVD.
 - [ ] Know which target-type the panel is on; on a multi-target solution pass `target` and check the `on <target>` in the reply.
 - [ ] Confirmed `launch.json` has a `gdbtarget` entry whose name to pass to `start_debugging`.
-- [ ] Skimmed any pack documentation linked from the CMSIS dialog.
+- [ ] Documentation questions go to `search_target_docs` / `get_peripheral_docs` (or the `packDocs.enabled` suggestion) — never to the user, never to a PDF read whole.
 - [ ] (After attaching) `get_device_info` matches expectations.
 
 ## 🔨 Build, flash, attach

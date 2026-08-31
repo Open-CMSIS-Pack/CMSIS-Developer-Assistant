@@ -1,6 +1,6 @@
 %% Architecture of the CMSIS Developer Assistant.
-%% Export to assets/architecture.svg after editing, e.g. with
-%%   npx -y @mermaid-js/mermaid-cli -i assets/architecture.mmd -o assets/architecture.svg -b transparent
+%% Export to assets/architecture.png (used by the README) after editing, e.g. with
+%%   npx -y @mermaid-js/mermaid-cli -i assets/architecture.mmd -o assets/architecture.png -b transparent -s 2
 flowchart LR
     agent["AI Agent<br/>(Copilot, Claude Code, Cursor, …)"]
     agent -- "MCP over HTTP<br/>localhost:3001" --> srvA

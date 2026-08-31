@@ -39,7 +39,7 @@
     "npm": "^10.0.0",
     "vscode": "^1.109.0"
   },
-  "icon": "assets/debug_mcp_icon.png",
+  "icon": "assets/arm.png",
   "categories": [
     "Debuggers",
     "AI",

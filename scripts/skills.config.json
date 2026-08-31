@@ -62,11 +62,11 @@
         "summary": "`get_session_status`, `check_target_connection`, `get_debug_instructions`; with several VS Code windows `list_debug_windows` and `select_debug_window`."
       },
       {
-        "name": "Documentation (off by default — cmsis-developer-assistant.packDocs.enabled)",
+        "name": "Documentation (experimental, off by default — cmsis-developer-assistant.packDocs.enabled)",
         "summary": "`list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` — page-cited answers from the reference manuals, datasheets, errata and board manuals the target's packs ship or link, Arm documents, imported and workspace PDFs, and third-party part datasheets (sensors, ADCs) — start any part-number lookup here; fetch_doc indexes a PDF URL found on the web."
       },
       {
-        "name": "Build artefacts (off by default — cmsis-developer-assistant.buildInfo.enabled)",
+        "name": "Build artefacts (experimental, off by default — cmsis-developer-assistant.buildInfo.enabled)",
         "summary": "`list_build_artifacts`, `get_memory_usage`, `lookup_symbol`, `get_section_layout`, `get_build_diagnostics` — the ELF, linker map and build log of the current target, read deterministically."
       }
     ],
@@ -74,8 +74,8 @@
       "installedSkills": "The AI Skills Pack skills (entry points or individual skills) to copy into your personal skills directories; `cmsis-debug-live`, `add-board-layer` and `cmsis-help` are always installed.",
       "aiSkills.enabled": "Install the AI Skills Pack at all. Off: pack skills this extension installed are removed, the skills setup step and the install prompt are skipped; the selection is kept.",
       "aiSkills.promptOnDetect": "Offer to install the pack — at most once a month — when an agent has the MCP server registered but no pack skill is selected.",
-      "packDocs.enabled": "Offer the documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) to agents. Off by default; needs pdftotext (poppler); window reload.",
-      "buildInfo.enabled": "Offer the build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, get_build_diagnostics) to agents. Off by default; window reload."
+      "packDocs.enabled": "Experimental. Offer the documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) to agents. Off by default; needs pdftotext (poppler); window reload.",
+      "buildInfo.enabled": "Experimental. Offer the build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, get_build_diagnostics) to agents. Off by default; window reload."
     }
   },
   "categories": [

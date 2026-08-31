@@ -126,7 +126,7 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 | `serial_open_monitor` | Opens the Serial Monitor panel for the user. |
 | `serial_subscribe_monitor`, `serial_unsubscribe_monitor` | Reads data through an open Serial Monitor session once the Serial Monitor extension exposes a data event in its API (see [Known Limitations](#known-limitations-and-workarounds)). |
 
-### Documentation (off by default — `cmsis-developer-assistant.packDocs.enabled`)
+### Documentation (experimental, off by default — `cmsis-developer-assistant.packDocs.enabled`)
 
 Page-cited answers from the documentation of the current csolution target: the reference manuals, datasheets, errata and board manuals its DFP/BSP ship or link, the Arm documents for the device's core (architecture reference manual, ADIv5/ADIv6, CoreSight and core TRMs), the shipped Cortex-M core-peripheral SVDs, and your own PDFs. PDFs are extracted with the bundled pdf.js (or `pdftotext` from poppler when `packDocs.extractor` says so) and indexed on first use; the text stays in the extension's global storage. The `cmsis-pack-docs` skill teaches the workflow.
 
@@ -140,7 +140,7 @@ Page-cited answers from the documentation of the current csolution target: the r
 
 Documents the packs do not ship take two routes: the **user documents folder** (`packDocs.userDocsDir`, default `~/.cmsis-pack-docs/user`, outside any workspace and shared by every project; sub-folders such as `Keil/STM32U5xx_DFP/`, `devices/STM32U5*/`, `boards/<name>/`, `cores/Cortex-M33/` say which targets see a file — the command **Import Document for Current Target** does the attribution, title, category and indexing for you) and the workspace folders `.agent-artifacts/docs/` and `docs/` (`packDocs.workspaceDocDirs`) for project-specific documents. **Open Pack Docs Panel** shows the resolved target, its documents and index state, the SVD peripherals and the page store, and runs the tools in place. Third-party parts on the board — sensors, ADCs, codecs — take the same routes: drop the datasheet into `docs/`, import it, or let the agent `fetch_doc` its URL; the agent is told to start any part-number lookup at `list_target_docs` and never to read a PDF directly.
 
-### Build artefacts (off by default — `cmsis-developer-assistant.buildInfo.enabled`)
+### Build artefacts (experimental, off by default — `cmsis-developer-assistant.buildInfo.enabled`)
 
 Deterministic reads of the current target's build output — no debug session needed.
 
@@ -213,8 +213,8 @@ Turning `cmsis-developer-assistant.aiSkills.enabled` off switches the pack off: 
 | `cmsis-developer-assistant.memoryReadTimeoutMs` | `30000` | Overall timeout for a single `read_memory` or `read_core_registers` call. |
 | `cmsis-developer-assistant.redactSecrets` | `true` | Withholds variable and expression values that look like credentials. |
 | `cmsis-developer-assistant.serial.enabled` | `true` | Offer the `serial_*` tools to agents. Off drops the ten serial tools from the tool list every agent turn carries; needs a window reload. |
-| `cmsis-developer-assistant.packDocs.enabled` | `false` | Offer the five documentation tools to agents; window reload. `packDocs.extractor` (`auto` = the bundled pdf.js; `pdftotext` for poppler's `-layout` text), `packDocs.pdftotextPath`, `packDocs.maxPdfMb` (150), `packDocs.includeUnlisted` (true), `packDocs.workspaceDocDirs` (`.agent-artifacts/docs`, `docs`) and `packDocs.userDocsDir` (empty → `~/.cmsis-pack-docs/user`) tune them and apply live. |
-| `cmsis-developer-assistant.buildInfo.enabled` | `false` | Offer the five build-artefact tools to agents; window reload. `buildInfo.maxSymbols` (20) and `buildInfo.logGlobs` (`**/out/**/*.log`, `**/build*.log`) tune them. |
+| `cmsis-developer-assistant.packDocs.enabled` | `false` | **Experimental.** Offer the five documentation tools to agents; window reload. `packDocs.extractor` (`auto` = the bundled pdf.js; `pdftotext` for poppler's `-layout` text), `packDocs.pdftotextPath`, `packDocs.maxPdfMb` (150), `packDocs.includeUnlisted` (true), `packDocs.workspaceDocDirs` (`.agent-artifacts/docs`, `docs`) and `packDocs.userDocsDir` (empty → `~/.cmsis-pack-docs/user`) tune them and apply live. |
+| `cmsis-developer-assistant.buildInfo.enabled` | `false` | **Experimental.** Offer the five build-artefact tools to agents; window reload. `buildInfo.maxSymbols` (20) and `buildInfo.logGlobs` (`**/out/**/*.log`, `**/build*.log`) tune them. |
 | `cmsis-developer-assistant.telemetry.jsonlPath` | `""` | Append one JSON line per MCP tool call — name, bytes in/out, duration, outcome; never arguments or results — to this file for offline analysis. Off when empty; `get_session_status` and the `cmsis-developer-assistant://stats` resource always show the in-memory statistics. |
 
 ### Networking and multiple windows

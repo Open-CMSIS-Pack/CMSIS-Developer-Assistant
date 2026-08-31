@@ -1,6 +1,7 @@
 %% Architecture of the CMSIS Developer Assistant.
-%% Export to assets/architecture.png (used by the README) after editing, e.g. with
-%%   npx -y @mermaid-js/mermaid-cli -i assets/architecture.mmd -o assets/architecture.png -b transparent -s 2
+%% Export to assets/architecture.png (used by the README) after editing:
+%%   npm run diagram
+%% (mermaid-cli with the local Chrome; opaque background so the extension page renders it in dark themes too).
 flowchart LR
     agent["AI Agent<br/>(Copilot, Claude Code, Cursor, …)"]
     agent -- "MCP over HTTP<br/>localhost:3001" --> srvA
@@ -9,6 +10,7 @@ flowchart LR
         direction TB
         srvA["MCP server"]
         srvA -- "runs the tool locally" --> dbgA["Debug pipeline"]
+        srvA -- "documentation tools" --> docsA["Pack docs"]
     end
 
     srvA -- "forwards the tool call<br/>127.0.0.1 + token" --> srvB
@@ -17,6 +19,7 @@ flowchart LR
         direction TB
         srvB["Control server"]
         srvB --> dbgB["Debug pipeline"]
+        srvB --> docsB["Pack docs"]
     end
 
     subgraph pipeline["Debug pipeline (per window)"]
@@ -28,5 +31,19 @@ flowchart LR
         api -.-> svd["Peripheral Inspector API /<br/>SVD parser"]
     end
 
+    subgraph docs["Documentation retrieval (per window, experimental)"]
+        direction TB
+        store["Page store<br/>(page text + BM25 index,<br/>extension global storage)"]
+        extract["pdf.js (bundled) /<br/>pdftotext"] --> store
+        packs["DFP / BSP PDFs<br/>(CMSIS_PACK_ROOT)"] --> extract
+        user["User documents folder ·<br/>workspace docs/<br/>(sensor and ADC datasheets)"] --> extract
+        web["developer.arm.com ·<br/>PDF URLs (fetch_doc)"] --> extract
+        store --> search["search_target_docs ·<br/>read_doc_pages ·<br/>get_peripheral_docs"]
+        svdDocs["Device / core SVD"] -.-> search
+        build["ELF · linker map · build log<br/>(build-artefact tools)"]
+    end
+
     dbgA -.-> pipeline
     dbgB -.-> pipeline
+    docsA -.-> docs
+    docsB -.-> docs

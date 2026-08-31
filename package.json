@@ -294,7 +294,8 @@
     "skills:sync": "tsx scripts/sync-skills.ts",
     "tpip:update": "tsx scripts/update-tpip docs/third-party-licenses.json",
     "tpip:report": "tsx scripts/tpip-reporter --header docs/tpip-header.md docs/third-party-licenses.json TPIP.md",
-    "lint:md": "markdownlint **/*.md -c ./.github/markdownlint.jsonc -i ./node_modules -i ./dist -i ./coverage -i ./out -i ./docs/architecture -i ./skills/cmsis-skills -i CHANGELOG.md"
+    "lint:md": "markdownlint **/*.md -c ./.github/markdownlint.jsonc -i ./node_modules -i ./dist -i ./coverage -i ./out -i ./docs/architecture -i ./skills/cmsis-skills -i CHANGELOG.md",
+    "diagram": "npx -y @mermaid-js/mermaid-cli@11 -p scripts/puppeteer.json -i assets/architecture.mmd -o assets/architecture.png -b white -s 2"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",

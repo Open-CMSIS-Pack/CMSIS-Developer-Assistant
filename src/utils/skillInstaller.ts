@@ -268,6 +268,10 @@ export class SkillInstaller {
                 return;
             }
 
+            // Staging left behind by a process that died mid-copy (an
+            // extension host killed during a sync) would sit in the root as a
+            // dot-directory the harnesses list as a skill; clear ours first.
+            await this.removeStaleStaging(root, entry.name);
             await fs.promises.rm(staging, { recursive: true, force: true });
             await fs.promises.cp(source, staging, { recursive: true });
 
@@ -295,6 +299,22 @@ export class SkillInstaller {
         } catch (error) {
             report.failed.push({ root, name: entry.name, error: describe(error) });
             await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => undefined);
+        }
+    }
+
+    /** Remove `.<name>.tmp-<pid>` staging directories of earlier, interrupted syncs. */
+    private async removeStaleStaging(root: string, name: string): Promise<void> {
+        let entries: string[];
+        try {
+            entries = await fs.promises.readdir(root);
+        } catch {
+            return;
+        }
+        const prefix = `.${name}.tmp-`;
+        for (const entry of entries) {
+            if (entry.startsWith(prefix)) {
+                await fs.promises.rm(path.join(root, entry), { recursive: true, force: true }).catch(() => undefined);
+            }
         }
     }
 

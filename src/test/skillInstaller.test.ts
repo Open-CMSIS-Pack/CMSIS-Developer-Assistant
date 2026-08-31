@@ -230,6 +230,17 @@ suite('Agent skill installer', () => {
         }
     });
 
+    test('staging left by an interrupted sync is removed on the next install of that skill', async () => {
+        writeSkill(path.join(rootA, '.gen.tmp-12345'), 'gen');
+        writeSkill(path.join(rootA, '.gen.tmp-67890'), 'gen');
+        writeSkill(path.join(rootA, '.other.tmp-1'), 'other'); // not ours to judge: a different skill's staging
+        await installer().sync(homeRoots(), catalog, ['gen'], []);
+        assert.ok(!fs.existsSync(path.join(rootA, '.gen.tmp-12345')));
+        assert.ok(!fs.existsSync(path.join(rootA, '.gen.tmp-67890')));
+        assert.ok(fs.existsSync(path.join(rootA, '.other.tmp-1')));
+        assert.ok(fs.existsSync(path.join(rootA, 'gen', SKILL_MARKER_FILE)));
+    });
+
     test('a project without a selection is only swept: its roots are never created', async () => {
         const project = path.join(tmp, 'project');
         fs.mkdirSync(project);

@@ -218,11 +218,12 @@ export class BuildInfoHandler {
         return this.options.workspaceRoot?.() ?? this.host.workspaceFolders()[0];
     }
 
+    /** Workspace-relative with forward slashes on every platform; absolute when outside the workspace. */
     private rel(p: string): string {
         const root = this.root();
         if (!root) { return p; }
         const r = path.relative(root, p);
-        return r && !r.startsWith('..') ? r : p;
+        return r && !r.startsWith('..') ? r.split(path.sep).join('/') : p;
     }
 
     private top(requested?: number): number {

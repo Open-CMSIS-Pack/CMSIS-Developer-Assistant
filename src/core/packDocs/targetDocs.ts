@@ -314,6 +314,7 @@ export function describeResolution(res: TargetResolution, root?: string): string
     if (res.devicePack) { parts.push(`device-pack ${formatPackId(res.devicePack)}`); }
     if (res.board) { parts.push(`board ${res.board.name}${res.board.revision ? `:${res.board.revision}` : ''}`); }
     if (res.boardPack) { parts.push(`board-pack ${formatPackId(res.boardPack)}`); }
-    const from = res.cbuildRunFile ? ` — from ${root ? path.relative(root, res.cbuildRunFile) || res.cbuildRunFile : res.cbuildRunFile}` : ' — from arguments';
+    const relRun = root && res.cbuildRunFile ? path.relative(root, res.cbuildRunFile).split(path.sep).join('/') : '';
+    const from = res.cbuildRunFile ? ` — from ${relRun || res.cbuildRunFile}` : ' — from arguments';
     return `Target: ${parts.join(', ') || 'unknown'}${from}`;
 }

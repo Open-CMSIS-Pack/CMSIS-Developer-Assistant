@@ -273,7 +273,10 @@ suite('PackDocsHandler (end to end)', () => {
         assert.match(search, /Searched 1 document \(2 pages\)/);
         assert.match(search, /#1 arm\/dui0646-latest \[r1p2\] p\.1 §1 Debug/);
         const all = await h.handleSearchTargetDocs({ query: 'VECTRESET' });
-        assert.match(all, /#1 arm\/dui0646-latest \[r1p2\] p\.2/, 'fetched documents are searched by default');
+        // Presence, not rank: VECTRESET is identifier-shaped, so the SVD expansion adds its
+        // description words and the "1 Debug" heading page can outrank p.2 depending on what
+        // else the store has indexed (IDF) — the ranking itself is covered by the search tests.
+        assert.match(all, /arm\/dui0646-latest \[r1p2\] p\.2/, 'fetched documents are searched by default');
         assert.match(all, /Not searched: \d+ web documents not fetched yet \(stm32f7xx-dfp\/[^)]*\) — fetch_doc \{ doc \} makes one searchable\./);
         const page = await h.handleReadDocPages({ doc: 'arm/dui0646-latest', pages: '2' });
         assert.match(page, /^— arm\/dui0646-latest \[r1p2\] p\.2 §2 Reset \(of 2\) —\n/);

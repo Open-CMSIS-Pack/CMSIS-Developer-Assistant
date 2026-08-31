@@ -30,11 +30,12 @@ import { RankedSymbol, RegionUsage, UncoveredRange } from './usage';
 
 export const DEFAULT_MAX_CHARS = 12_000;
 
+/** Workspace-relative with forward slashes on every platform (the agent copies them into commands); absolute when outside. */
 function rel(p: string | undefined, root?: string): string {
     if (!p) { return '-'; }
     if (root) {
         const r = path.relative(root, p);
-        if (r && !r.startsWith('..')) { return r; }
+        if (r && !r.startsWith('..')) { return r.split(path.sep).join('/'); }
     }
     return p;
 }

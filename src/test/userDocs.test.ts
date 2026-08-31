@@ -46,8 +46,12 @@ suite('userDocs', () => {
         touch(path.join(root, 'Keil', 'vendor-wide.pdf'));
         touch(path.join(root, 'Keil', 'STM32F7xx_DFP', 'other-pack.pdf'));
         touch(path.join(root, 'Infineon', 'XMC4000_DFP', 'other-vendor.pdf'));
-        touch(path.join(root, 'devices', 'STM32U5*', 'errata-prelim.pdf'));
-        touch(path.join(root, 'devices', 'STM32H7*', 'wrong-family.pdf'));
+        // Glob characters are not allowed in Windows file names: the device folders are POSIX-only.
+        const globFolders = process.platform !== 'win32';
+        if (globFolders) {
+            touch(path.join(root, 'devices', 'STM32U5*', 'errata-prelim.pdf'));
+            touch(path.join(root, 'devices', 'STM32H7*', 'wrong-family.pdf'));
+        }
         touch(path.join(root, 'boards', 'B-U585I-IOT02A', 'schematic.pdf'));
         touch(path.join(root, 'cores', 'cortex-m33', 'trm-notes.pdf'));
         touch(path.join(root, 'cores', 'Cortex-M7', 'not-mine.pdf'));
@@ -58,9 +62,9 @@ suite('userDocs', () => {
 
         const r = collectUserDocs(root, TARGET);
         assert.deepStrictEqual(r.docs.map(d => d.id).sort(), [
-            'user/an-deep', 'user/errata-prelim', 'user/everyone', 'user/rm0456-nda', 'user/schematic', 'user/trm-notes', 'user/vendor-wide',
+            'user/an-deep', ...(globFolders ? ['user/errata-prelim'] : []), 'user/everyone', 'user/rm0456-nda', 'user/schematic', 'user/trm-notes', 'user/vendor-wide',
         ]);
-        assert.deepStrictEqual(r.matched, ['.', 'Keil', 'Keil/STM32U5xx_DFP', 'boards/B-U585I-IOT02A', 'cores/cortex-m33', 'devices/STM32U5*']);
+        assert.deepStrictEqual(r.matched, ['.', 'Keil', 'Keil/STM32U5xx_DFP', 'boards/B-U585I-IOT02A', 'cores/cortex-m33', ...(globFolders ? ['devices/STM32U5*'] : [])]);
         const rm = r.docs.find(d => d.id === 'user/rm0456-nda')!;
         assert.strictEqual(rm.title, 'STM32U5 reference manual');
         assert.strictEqual(rm.category, 'manual');
@@ -89,8 +93,8 @@ suite('userDocs', () => {
         assert.strictEqual(userScopeDir(root, { kind: 'board', pattern: 'a/b' }), path.join(root, 'boards', 'a_b'), 'path separators are neutralised');
         assert.strictEqual(userScopeDir(root, { kind: 'core', core: 'Cortex-M33' }), path.join(root, 'cores', 'Cortex-M33'));
         assert.strictEqual(resolveUserDocsDir('', '/home/x'), path.join('/home/x', '.cmsis-pack-docs', 'user'));
-        assert.strictEqual(resolveUserDocsDir('~/docs', '/home/x'), path.join('/home/x', 'docs'));
-        assert.strictEqual(resolveUserDocsDir('/abs/dir', '/home/x'), '/abs/dir');
+        assert.strictEqual(resolveUserDocsDir('~/docs', '/home/x'), path.resolve('/home/x', 'docs'));
+        assert.strictEqual(resolveUserDocsDir('/abs/dir', '/home/x'), path.resolve('/abs/dir'), 'a drive letter is added on Windows');
     });
 
     test('importUserDoc copies into the scope folder, records the manifest, and the document is then listed for the target', () => {
@@ -122,7 +126,8 @@ suite('userDocs', () => {
         const host = { ...world.host, settings: () => ({ ...world.host.settings(), userDocsDir: root }) };
         const h = new PackDocsHandler(host, { timeoutMs: 30_000, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['1 Secret\nUSART_CR1 UE bit', '2 More']) });
         const list = await h.handleListTargetDocs({});
-        assert.match(list, new RegExp(`User documents \\(${root.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}: Keil\\/STM32F7xx_DFP\\):\\n  user\\/nda-manual · user \\[manual\\] · NDA manual · 1 kB, not indexed yet\\n`));
+        const escapedRoot = root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the temp dir has backslashes on Windows
+        assert.match(list, new RegExp(`User documents \\(${escapedRoot}: Keil\\/STM32F7xx_DFP\\):\\n  user\\/nda-manual · user \\[manual\\] · NDA manual · 1 kB, not indexed yet\\n`));
         const search = await h.handleSearchTargetDocs({ query: 'USART_CR1', doc: 'nda-manual' });
         assert.match(search, /#1 user\/nda-manual \[Rev 1\] p\.1 §1 Secret/);
         const listed = await h.handleListTargetDocs({});

@@ -136,16 +136,17 @@ suite('BuildInfoHandler (end to end)', () => {
     });
 
     test('cbuild-run outputs and memory, cbuild.yml outputs', () => {
+        const abs = (p: string): string => path.resolve(p); // Windows: drive letter and backslashes
         const extra = parseCbuildRunOutputs(NUCLEO_RUN, '/ws/out/x.cbuild-run.yml');
         assert.strictEqual(extra.compiler, 'AC6');
-        assert.deepStrictEqual(extra.outputs.map(o => [o.type, o.file, o.load]), [['elf', '/ws/out/Blinky/NUCLEO-F756ZG/Debug/Blinky.axf', 'image+symbols'], ['hex', '/ws/out/Blinky/NUCLEO-F756ZG/Debug/Blinky.hex', 'image']]);
+        assert.deepStrictEqual(extra.outputs.map(o => [o.type, o.file, o.load]), [['elf', abs('/ws/out/Blinky/NUCLEO-F756ZG/Debug/Blinky.axf'), 'image+symbols'], ['hex', abs('/ws/out/Blinky/NUCLEO-F756ZG/Debug/Blinky.hex'), 'image']]);
         assert.deepStrictEqual(extra.memory.map(m => [m.name, m.access, m.start, m.size, m.default, m.fromPack]), [
             ['IROM1', 'rx', 0x08000000, 0x100000, true, 'Keil::STM32F7xx_DFP@3.0.0'], ['IRAM1', 'rw', 0x20000000, 0x50000, true, 'Keil::STM32F7xx_DFP@3.0.0'], ['IRAM2', 'rw', 0x20050000, 0x10000, undefined, 'Keil::STM32F7xx_DFP@3.0.0'],
         ]);
         const ctx = parseCbuildYml(cbuildYml('Blinky.Debug+NUCLEO-F756ZG', 'AC6', [['elf', 'Blinky.axf'], ['map', 'Blinky.axf.map']]), '/ws/out/Blinky/NUCLEO-F756ZG/Debug/Blinky.Debug+NUCLEO-F756ZG.cbuild.yml');
         assert.deepStrictEqual([ctx.context, ctx.compiler, ctx.processor, ctx.device], ['Blinky.Debug+NUCLEO-F756ZG', 'AC6', 'Cortex-M7', 'STMicroelectronics::STM32F756ZGTx']);
-        assert.deepStrictEqual(ctx.outputs.map(o => [o.type, o.file]), [['elf', '/ws/out/Blinky/NUCLEO-F756ZG/Debug/Blinky.axf'], ['map', '/ws/out/Blinky/NUCLEO-F756ZG/Debug/Blinky.axf.map']]);
-        assert.strictEqual(ctx.linkerScript, '/ws/RTE/Device/STM32F756ZGTx/ac6_linker_script.sct');
+        assert.deepStrictEqual(ctx.outputs.map(o => [o.type, o.file]), [['elf', abs('/ws/out/Blinky/NUCLEO-F756ZG/Debug/Blinky.axf')], ['map', abs('/ws/out/Blinky/NUCLEO-F756ZG/Debug/Blinky.axf.map')]]);
+        assert.strictEqual(ctx.linkerScript, abs('/ws/RTE/Device/STM32F756ZGTx/ac6_linker_script.sct'));
     });
 
     test('resolveBuildContext prefers the active csolution context', async () => {

@@ -29,6 +29,7 @@ import {
     CbuildRunInfo, PackId, QualifiedName, formatPackId, packDir, parseCbuildRun, parsePackId, parseQualifiedName,
 } from './cbuildRun';
 import { PackDocsHost } from './host';
+import { activeContextOf, describeActiveContext, matchesActiveContext } from './cbuildRun';
 import { archOf, armDocsFor } from './armDocs';
 import {
     DocRef, ProcessorInfo, SvdRef, armDocRef, collectBooks, collectNpus, collectProcessors, dedupeIds, findPdscFile, findSvd, loadPdsc, sortDocs, unlistedPdfs,
@@ -119,10 +120,27 @@ export async function resolveTarget(host: PackDocsHost, args: TargetArgs): Promi
         }
     }
     if (chosen.length > 1) {
+        // Several solutions in the workspace (a fixture next to the real
+        // project, two boards): the CMSIS Solution panel's active context
+        // decides when the host knows it, so the first call works without
+        // `target` — the friction that sends agents to the web otherwise.
+        let hintText = '';
+        if (!args.target) {
+            const hint = await activeContextOf(host);
+            if (hint) {
+                const preferred = chosen.filter(i => matchesActiveContext(i, hint));
+                if (preferred.length) {
+                    chosen = preferred;
+                    notes.push(`active csolution context ${describeActiveContext(hint)}: using ${path.basename(chosen[0].file)}`);
+                } else {
+                    hintText = `Active csolution ${describeActiveContext(hint)} has no cbuild-run here (build it first?). `;
+                }
+            }
+        }
         const distinct = new Set(chosen.map(i => `${formatPackId(i.devicePack!)}|${i.boardPack ? formatPackId(i.boardPack) : ''}|${i.device?.name}`));
         if (distinct.size > 1) {
             return {
-                error: `${chosen.length} cbuild-run contexts with different targets — pass target to pick one:\n  - ` +
+                error: `${hintText}${chosen.length} cbuild-run contexts with different targets — pass target to pick one:\n  - ` +
                     chosen.map(i => describeCbuildRun(i)).join('\n  - '),
             };
         }

@@ -27,6 +27,8 @@ import * as path from 'path';
 import { BuildInfoHost, BuildInfoSettings, defaultBuildInfoSettings } from './core/buildInfo/host';
 import { PackDocsHost, PackDocsSettings, defaultSettings } from './core/packDocs/host';
 import { defaultPackRoot, resolveUserDocsDir } from './core/packDocs';
+import { ActiveContextHint } from './core/packDocs/cbuildRun';
+import { withTimeout } from './utils/timeout';
 import { PackDocsHandler } from './packDocsHandler';
 import { BuildInfoHandler } from './buildInfoHandler';
 import { PackDocsHandlers } from './packDocsDispatch';
@@ -82,6 +84,29 @@ async function findFiles(glob: string, max: number): Promise<string[]> {
     return files;
 }
 
+/**
+ * What the CMSIS Solution panel has active — csolution name and target-type —
+ * so a workspace with several solutions resolves without `target`. Asks the
+ * CMSIS Solution extension (`getSolutionFile`, `getActiveTargetSet`); absent
+ * extension, no solution or a slow answer all yield undefined, never throw.
+ */
+async function activeContext(): Promise<ActiveContextHint | undefined> {
+    try {
+        const [file, set] = await Promise.all([
+            withTimeout('cmsis getSolutionFile', 3_000, Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.getSolutionFile'))),
+            withTimeout('cmsis getActiveTargetSet', 3_000, Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.getActiveTargetSet'))),
+        ]);
+        const record = file as Record<string, any> | undefined;
+        const solutionPath = typeof file === 'string' ? file : record?.solutionFile ?? record?.fsPath ?? record?.path ?? record?.uri?.fsPath;
+        const solution = typeof solutionPath === 'string' && solutionPath
+            ? path.basename(solutionPath).replace(/\.csolution\.ya?ml$/i, '') : undefined;
+        const targetType = typeof set === 'string' && set.trim() ? set.trim().split('@')[0] : undefined;
+        return solution || targetType ? { solution, targetType } : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 export function makePackDocsHost(context: vscode.ExtensionContext): PackDocsHost {
     return {
         packRoot: defaultPackRoot(),
@@ -97,6 +122,7 @@ export function makePackDocsHost(context: vscode.ExtensionContext): PackDocsHost
         // csolution writes <solution>+<target>.cbuild-run.yml next to the
         // csolution file (CMSIS-Toolbox 2.8) or under out/ (older layouts).
         findCbuildRunFiles: () => findFiles('**/*.cbuild-run.yml', 50),
+        activeContext,
     };
 }
 
@@ -106,6 +132,7 @@ export function makeBuildInfoHost(): BuildInfoHost {
         findFiles: (glob) => findFiles(glob, 200),
         settings: () => readBuildInfoSettings(),
         log: logger,
+        activeContext,
     };
 }
 

@@ -148,6 +148,15 @@ suite('BuildInfoHandler (end to end)', () => {
         assert.strictEqual(ctx.linkerScript, '/ws/RTE/Device/STM32F756ZGTx/ac6_linker_script.sct');
     });
 
+    test('resolveBuildContext prefers the active csolution context', async () => {
+        const fvp = await resolveBuildContext({ ...world.host, activeContext: async () => ({ solution: 'Blinky', targetType: 'FVP' }) }, {});
+        assert.ok(!('error' in fvp), 'the hinted context resolves without target');
+        assert.strictEqual(fvp.compiler, 'GCC');
+        assert.match(fvp.notes.join('\n'), /active csolution context Blinky \(FVP\): using Blinky\+FVP\.cbuild-run\.yml/);
+        const stale = await resolveBuildContext({ ...world.host, activeContext: async () => ({ solution: 'Blinky', targetType: 'Nope' }) }, {});
+        assert.ok('error' in stale && /2 cbuild-run contexts — pass target/.test(stale.error), 'a hint matching nothing keeps the ambiguity error');
+    });
+
     test('resolveBuildContext: ambiguity, target by run name, target-type and image name, missing', async () => {
         const both = await resolveBuildContext(world.host, {});
         assert.ok('error' in both && /2 cbuild-run contexts — pass target/.test(both.error) && /Blinky\+FVP\.cbuild-run\.yml \(FVP: SSE-300-MPS3, GCC; Blinky\.elf\)/.test(both.error));

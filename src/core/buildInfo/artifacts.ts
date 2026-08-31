@@ -27,7 +27,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { CbuildRunInfo, parseCbuildRun } from '../packDocs/cbuildRun';
+import { CbuildRunInfo, activeContextOf, describeActiveContext, matchesActiveContext, parseCbuildRun } from '../packDocs/cbuildRun';
 import { BuildInfoHost } from './host';
 
 export interface MemoryRegion {
@@ -329,6 +329,21 @@ export async function resolveBuildContext(host: BuildInfoHost, args: BuildContex
             imageFilter = wanted;
         }
     }
+    const notes: string[] = [];
+    if (chosen.length > 1 && !args.target) {
+        // The CMSIS Solution panel's active context picks one when the host
+        // knows it (several solutions in the workspace); see targetDocs.ts.
+        const hint = await activeContextOf(host);
+        if (hint) {
+            const preferred = chosen.filter(r => matchesActiveContext(r.run, hint));
+            if (preferred.length === 1) {
+                chosen = preferred;
+                notes.push(`active csolution context ${describeActiveContext(hint)}: using ${path.basename(chosen[0].run.file)}`);
+            } else if (preferred.length > 1) {
+                chosen = preferred;
+            }
+        }
+    }
     if (chosen.length > 1) {
         // Prefer the newest image set when the contexts differ.
         const newest = (r: { extra: CbuildRunOutputs }) => Math.max(0, ...r.extra.outputs.filter(o => o.type === 'elf').map(o => fileInfo(o.file).mtimeMs ?? 0));
@@ -339,7 +354,6 @@ export async function resolveBuildContext(host: BuildInfoHost, args: BuildContex
         };
     }
     const { run, extra } = chosen[0];
-    const notes: string[] = [];
     let elfs = extra.outputs.filter(o => o.type === 'elf');
     if (imageFilter) {
         elfs = elfs.filter(o => path.basename(o.file).toLowerCase().includes(imageFilter!) || (o.pname ?? '').toLowerCase().includes(imageFilter!));

@@ -55,6 +55,56 @@ export interface CbuildRunInfo {
     boardPack?: PackId;
 }
 
+/**
+ * What the CMSIS Solution panel has active, when the host can tell: the
+ * csolution name (file basename without `.csolution.yml`) and the target-type.
+ * Used to pick one cbuild-run context when a workspace holds several
+ * solutions — the case that otherwise makes every documentation and
+ * build-artefact call fail until the agent passes `target`.
+ */
+export interface ActiveContextHint {
+    solution?: string;
+    targetType?: string;
+}
+
+/** A host that may know the active context; both cores accept it optionally. */
+export interface ActiveContextSource {
+    activeContext?(): Promise<ActiveContextHint | undefined>;
+}
+
+/** The hint, or undefined when the host has none or it fails — never throws. */
+export async function activeContextOf(host: ActiveContextSource): Promise<ActiveContextHint | undefined> {
+    if (!host.activeContext) { return undefined; }
+    try {
+        const hint = await host.activeContext();
+        return hint && (hint.solution || hint.targetType) ? hint : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/** Does this cbuild-run belong to the active solution (and target-type, when the hint names one)? */
+export function matchesActiveContext(info: CbuildRunInfo, hint: ActiveContextHint): boolean {
+    const eq = (a: string | undefined, b: string | undefined) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+    const base = path.basename(info.file);
+    if (hint.solution) {
+        // `solution:` in a cbuild-run is a path (`../Blinky.csolution.yml`); the hint is the bare name.
+        // The file name (`<solution>+<target>.cbuild-run.yml`) is the fallback only when the field is absent.
+        const solutionName = info.solution ? path.basename(info.solution).replace(/\.csolution\.ya?ml$/i, '') : undefined;
+        const wanted = path.basename(hint.solution).replace(/\.csolution\.ya?ml$/i, '');
+        const bySolution = solutionName ? eq(solutionName, wanted) : base.toLowerCase().startsWith(`${wanted.toLowerCase()}+`);
+        if (!bySolution) { return false; }
+    }
+    if (hint.targetType) {
+        return info.targetType ? eq(info.targetType, hint.targetType) : base.toLowerCase().includes(`+${hint.targetType.toLowerCase()}.`);
+    }
+    return true;
+}
+
+export function describeActiveContext(hint: ActiveContextHint): string {
+    return `${hint.solution ?? '?'}${hint.targetType ? ` (${hint.targetType})` : ''}`;
+}
+
 /** `Keil::STM32F7xx_DFP@3.0.0` → vendor, name, version. */
 export function parsePackId(text: string | undefined): PackId | undefined {
     if (!text) { return undefined; }

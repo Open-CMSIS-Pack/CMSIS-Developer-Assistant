@@ -112,3 +112,37 @@ DebugMCP. This is a living document — keep it in sync as items ship.
   ("all GDB strategies exhausted") until probe reconnect. A `reconnect_probe`
   or automatic retry-with-reconnect inside read_memory would save the manual
   server bounce.
+
+### 10. Documentation lookups (bypassed with a web search for a datasheet)
+
+**Observed (2026-08-31, STM32 board with an Analog Devices AD4883 ADC):** the
+agent had the documentation tools and the datasheet was already indexed as
+`user/ad4883` (116 pages), yet it web-searched the part, timed out, fetched
+twice more, and never called `list_target_docs`. Its own diagnosis:
+
+- it read the tools as "what the DFP/BSP ship" — an ADC datasheet did not fit
+  that category, and nothing said the user/workspace document folders are
+  *for* third-party parts;
+- "what is an AD4883?" pattern-matched to a web lookup, and once in web mode it
+  stayed there;
+- there was no cheap discovery step in its habit loop — one `list_target_docs`
+  call would have answered;
+- the first correct call resolved an unrelated `Blinky+MPS3` cbuild-run from a
+  fixture folder in the same workspace, so it failed until `pack`/`device` were
+  passed — friction that trains an agent to reach for the web.
+
+**Shipped (unreleased):** the MCP instructions, the tool descriptions, the
+`cmsis-pack-docs` / `cmsis-debug-live` / `add-board-layer` skills and the
+`build` topic say that third-party parts (sensors, ADCs, codecs, radios) are
+documented the same way — any part number starts at `list_target_docs`, an
+unlisted datasheet is fetched by URL with `fetch_doc` (the web finds the URL,
+the tools read the document), never read as a PDF — and that a document the
+user provides goes into `docs/` or through *Import Document for Current
+Target*. Target resolution asks the CMSIS Solution extension for the active
+csolution and target-type and picks that context when the workspace holds
+several solutions, so the first call works without `target`.
+
+**Not covered here:** the agent-side habit itself. A project `CLAUDE.md` /
+`AGENTS.md` line — "before any web search for a part number, run
+`list_target_docs`" — is the project's call; the Claude Code `PreToolUse`
+hook that denies `Read` on `*.pdf` is the hard stop for the ingest half.

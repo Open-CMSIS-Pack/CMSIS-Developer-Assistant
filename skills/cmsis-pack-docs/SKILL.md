@@ -1,6 +1,6 @@
 ---
 name: cmsis-pack-docs
-description: Look things up in the documentation of the current CMSIS csolution target through the CMSIS Developer Assistant documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) — the reference manual, datasheet, errata and board manual the packs ship or link, the Arm documents for the device's core (architecture reference manual, ADIv5/ADIv6, CoreSight and ETM specifications, core TRM), and PDFs the user dropped into the workspace docs folders. Use before assuming what a peripheral register or bit does, when the SVD gives a bit position but not its meaning, when a peripheral does not behave as expected (check the errata), when a debug/trace bring-up skill needs a vendor or Arm document, or when the user asks where something is documented. Cites document id, edition and page. The tools are off by default: the setting `cmsis-developer-assistant.packDocs.enabled` turns them on (window reload).
+description: Look things up in the documentation of the current CMSIS csolution target through the CMSIS Developer Assistant documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) — the reference manual, datasheet, errata and board manual the packs ship or link, the Arm documents for the device's core (architecture reference manual, ADIv5/ADIv6, CoreSight and ETM specifications, core TRM), and the datasheets of third-party parts (sensors, ADCs, codecs) the user added or fetch_doc downloaded. Use for any part number before searching the web, before assuming what a peripheral register or bit does, when the SVD gives a bit position but not its meaning, when a peripheral does not behave as expected (check the errata), when a debug/trace bring-up skill needs a vendor or Arm document, or when the user asks where something is documented. Cites document id, edition and page. The tools are off by default: the setting `cmsis-developer-assistant.packDocs.enabled` turns them on (window reload).
 ---
 
 # CMSIS Pack Docs
@@ -25,9 +25,19 @@ and fetch what is only linked.
      attributed to this pack/device/board/core; searchable like pack docs;
    - workspace documents — PDFs in `.agent-artifacts/docs` or `docs`
      (setting `cmsis-developer-assistant.packDocs.workspaceDocDirs`), searchable.
+   **Any part number** — a sensor, ADC, codec, radio or other third-party
+   part on the board — starts here too: its datasheet lives in the user or
+   workspace rows, not on the web. Call `list_target_docs` before any web
+   search for a part.
    When a pack ships no manual and a document is needed, tell the user
    about *CMSIS Developer Assistant: Import Document for Current Target* — a PDF they
    have becomes searchable in one step.
+   **Not listed?** Web-search `<part number> datasheet pdf` to find the
+   PDF's URL, then `fetch_doc { url }` — it is downloaded, indexed and cited
+   like a pack document (`web/<name> p.<n>`). Or tell the user to drop the
+   PDF into the workspace `docs/` folder, or to import it with the scope
+   *board* or *all targets*. The web search finds the URL; the datasheet is
+   read through `search_target_docs` / `read_doc_pages`, never directly.
 2. `search_target_docs { query }` with the identifiers the manual uses:
    register names (`RCC_AHB1ENR`), bit names (`GPIOAEN`), addresses
    (`0x40023800`), or a `"quoted phrase"`. Narrow with `doc` when the target
@@ -114,6 +124,8 @@ the Evidence table, so a later change of `latest` is detectable.
   Developer Assistant: Import Document for Current Target* command for
   documents that should be attributed to a pack, device or board and kept
   outside the repository); then it is indexed and searched like the rest.
+- A web search is for finding a datasheet's PDF URL for `fetch_doc`, never
+  for reading the datasheet: a fetched page is cited, a web snippet is not.
 - If the tools are missing from your tool list they are switched off: point
   the user at `cmsis-developer-assistant.packDocs.enabled` (window reload)
   instead of asking for documents.

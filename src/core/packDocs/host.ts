@@ -21,6 +21,8 @@
  * host arrives through this interface.
  */
 
+import { ActiveContextHint } from './cbuildRun';
+
 export interface PackDocsLog {
     debug(message: string): void;
     info(message: string): void;
@@ -68,6 +70,13 @@ export interface PackDocsHost {
     fetchFn?: (url: string, init?: RequestInit) => Promise<Response>;
     settings(): PackDocsSettings;
     log: PackDocsLog;
+    /**
+     * The csolution and target-type the CMSIS Solution panel has active, when
+     * the host can ask (the VS Code extension does). Picks one cbuild-run
+     * context when the workspace holds several solutions; absent or
+     * undefined leaves the choice to `target` / the caller.
+     */
+    activeContext?(): Promise<ActiveContextHint | undefined>;
 }
 
 export const silentLog: PackDocsLog = {

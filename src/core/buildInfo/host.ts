@@ -23,6 +23,7 @@
  */
 
 import { PackDocsLog, prefixedLog, silentLog } from '../packDocs/host';
+import { ActiveContextHint } from '../packDocs/cbuildRun';
 
 export type BuildInfoLog = PackDocsLog;
 
@@ -44,6 +45,8 @@ export interface BuildInfoHost {
     findFiles(glob: string): Promise<string[]>;
     settings(): BuildInfoSettings;
     log: BuildInfoLog;
+    /** The active csolution / target-type, when the host can ask — picks one of several cbuild-run contexts. */
+    activeContext?(): Promise<ActiveContextHint | undefined>;
 }
 
 export const defaultBuildInfoSettings: BuildInfoSettings = {

@@ -73,6 +73,7 @@ You cannot do this for the user — it is a UI-driven step in the CMSIS Solution
 The DFP/BSP ship or link the reference manual, datasheet, errata and board manual. With `cmsis-developer-assistant.packDocs.enabled` on, `list_target_docs` lists them with ids and state, `search_target_docs` finds the page for a register, bit or address, `read_doc_pages` reads it (cite `<doc id> <edition> p.<n>`), `fetch_doc` downloads a web-linked or Arm document, and `get_peripheral_docs` assembles a page-cited dossier for one peripheral. Before assuming peripheral semantics, addresses, clock or fault behaviour:
 
 - Search the documentation first. Do **not** ask the user for a manual before `list_target_docs` / `fetch_doc` have been tried, and do not read a PDF into your context — a document the user provides belongs in the workspace `docs/` folder (or the **Import Document for Current Target** command), where it is indexed and searched.
+- Third-party parts on the board — sensors, ADCs, codecs, radios — are documented the same way: for any part number call `list_target_docs` first; if the datasheet is not listed, find its PDF URL on the web and `fetch_doc { url }`. The web finds the URL; the datasheet is read through the tools.
 - If the tools are absent from your tool list, they are switched off: suggest the setting instead of asking for documents.
 - The SVD shipped with the DFP (`lookup_register`, `lookup_peripheral`) is authoritative for register names, offsets and bit positions; the manual is where the meaning, sequences and constraints live. Use both.
 

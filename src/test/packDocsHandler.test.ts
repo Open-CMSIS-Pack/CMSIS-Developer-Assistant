@@ -98,7 +98,9 @@ export function buildWorld(): World {
         packRoot,
         storageDir: path.join(root, 'store'),
         assetsDir: path.join(__dirname, '..', '..', '..', 'assets'),
-        settings: () => defaultSettings,
+        // A private user documents folder: the default (~/.cmsis-pack-docs/user)
+        // is the developer's real one and its contents would change the counts.
+        settings: () => ({ ...defaultSettings, userDocsDir: path.join(root, 'user') }),
         log,
         userAgent: 'cmsis-pack-docs/test',
         fetchFn: fake.fn,
@@ -132,6 +134,50 @@ suite('PackDocsHandler (end to end)', () => {
         assert.match(none.error, /No \*\.cbuild-run\.yml found in the workspace/);
         const missing = await resolveTarget(world.host, { target: 'nonexistent' });
         assert.ok('error' in missing && /No cbuild-run context matches target 'nonexistent'/.test(missing.error));
+    });
+
+    test('resolveTarget prefers the active csolution context when the workspace holds several solutions', async () => {
+        // A second solution (a fixture next to the real project) with another device.
+        const other = SAMPLE_CBUILD_RUN
+            .replace('solution: TFLiteRT_HelloWorld.csolution.yml', 'solution: ../Blinky.csolution.yml')
+            .replace('target-type: STM32F756ZGTx', 'target-type: MPS3')
+            .replace('device: STMicroelectronics::STM32F756ZGTx', 'device: ARM::SSE-300-MPS3');
+        const otherFile = path.join(world.workspace, 'fixture', 'Blinky+MPS3.cbuild-run.yml');
+        fs.mkdirSync(path.dirname(otherFile), { recursive: true });
+        fs.writeFileSync(otherFile, other);
+        const both = [...(await world.host.findCbuildRunFiles()), otherFile];
+
+        const ambiguous = await resolveTarget({ ...world.host, findCbuildRunFiles: async () => both }, {});
+        assert.ok('error' in ambiguous && /2 cbuild-run contexts with different targets — pass target/.test(ambiguous.error),
+            'without a hint the ambiguity is reported as before');
+
+        const hinted = await resolveTarget({
+            ...world.host, findCbuildRunFiles: async () => both,
+            activeContext: async () => ({ solution: 'TFLiteRT_HelloWorld', targetType: 'STM32F756ZGTx' }),
+        }, {});
+        assert.ok(!('error' in hinted));
+        assert.strictEqual(hinted.device?.name, 'STM32F756ZGTx');
+        assert.match(hinted.notes.join('\n'), /active csolution context TFLiteRT_HelloWorld \(STM32F756ZGTx\): using TFLiteRT_HelloWorld\+STM32F756ZGTx|using Blinky\+STM32F756ZGTx/);
+
+        const bySolutionPath = await resolveTarget({
+            ...world.host, findCbuildRunFiles: async () => both,
+            activeContext: async () => ({ solution: 'Blinky' }),
+        }, {});
+        assert.ok(!('error' in bySolutionPath) && bySolutionPath.device?.name === 'SSE-300-MPS3',
+            'a relative solution: path in the cbuild-run matches the bare csolution name');
+
+        const stale = await resolveTarget({
+            ...world.host, findCbuildRunFiles: async () => both,
+            activeContext: async () => ({ solution: 'Elsewhere', targetType: 'HP' }),
+        }, {});
+        assert.ok('error' in stale && /Active csolution Elsewhere \(HP\) has no cbuild-run here/.test(stale.error)
+            && /pass target/.test(stale.error), 'a hint that matches nothing still lists the contexts');
+
+        const explicit = await resolveTarget({
+            ...world.host, findCbuildRunFiles: async () => both,
+            activeContext: async () => { throw new Error('extension gone'); },
+        }, { target: 'MPS3' });
+        assert.ok(!('error' in explicit) && explicit.device?.name === 'SSE-300-MPS3', 'target wins and a failing hint is ignored');
     });
 
     test('list_target_docs lists device, family, board, unlisted and workspace documents with states', async () => {

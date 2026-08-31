@@ -63,7 +63,7 @@
       },
       {
         "name": "Documentation (off by default — cmsis-developer-assistant.packDocs.enabled)",
-        "summary": "`list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` — page-cited answers from the reference manuals, datasheets, errata and board manuals the target's packs ship or link, Arm documents, imported and workspace PDFs."
+        "summary": "`list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` — page-cited answers from the reference manuals, datasheets, errata and board manuals the target's packs ship or link, Arm documents, imported and workspace PDFs, and third-party part datasheets (sensors, ADCs) — start any part-number lookup here; fetch_doc indexes a PDF URL found on the web."
       },
       {
         "name": "Build artefacts (off by default — cmsis-developer-assistant.buildInfo.enabled)",

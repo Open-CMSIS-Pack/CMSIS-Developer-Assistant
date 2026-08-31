@@ -321,13 +321,16 @@ export class DebugMCPServer {
                 'before asking the user for a datasheet or reference manual (list_target_docs, then fetch_doc for ' +
                 'a web-linked one) and instead of reading a PDF into your context: a document the user provides ' +
                 'belongs in the workspace docs/ folder or the "Import Document for Current Target" command, then ' +
-                'search it.';
+                'search it. Third-party parts on the board (sensors, ADCs, codecs, radios) are documented the same ' +
+                'way: for any part number call list_target_docs first, then search_target_docs; if the datasheet ' +
+                'is not listed, find its PDF URL on the web and fetch_doc { url } — never read the PDF yourself.';
         } else {
             // Off by default: say so, or an agent on a default install asks the
             // user for the manual and reads PDFs itself.
-            text += ' Page-cited documentation tools (search over the target\'s pack manuals, datasheets and errata) ' +
-                'are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling ' +
-                'it rather than asking the user for a document or reading a PDF yourself.';
+            text += ' Page-cited documentation tools (search over the target\'s pack manuals, datasheets, errata and ' +
+                'third-party part datasheets) are available behind the setting ' +
+                'cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a ' +
+                'document or reading a PDF yourself.';
         }
         if (this.options.buildInfoEnabled) {
             text += ' The build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, ' +

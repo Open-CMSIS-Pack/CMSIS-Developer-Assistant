@@ -218,7 +218,9 @@ This is the characteristic embedded bug, and the reason the memory tools exist.
   `buildInfo.enabled` are on (off by default; see `$cmsis-pack-docs`). Do not
   ask the user for a manual and do not read a PDF into your context: search,
   or suggest the setting; a PDF the user provides goes into `docs/` and is
-  searched.
+  searched. Third-party parts (sensors, ADCs, codecs) included: a part-number
+  lookup starts with `list_target_docs`; the web is only for finding a PDF
+  URL to hand to `fetch_doc`.
 - **Read the address directly.** `read_memory` on the register address tells you
   what the bus sees. A mismatch against the C variable means the write never
   landed — wrong alias, missing `volatile`, or a peripheral clock that is off.

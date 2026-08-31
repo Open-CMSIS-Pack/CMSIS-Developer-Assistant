@@ -25,8 +25,11 @@ skill goes through them — register offsets and bit meanings, the reset clock
 tree, UART/VCP instance and pin muxing, memory map, boot pins, errata. Do not
 ask the user for a datasheet or manual before `list_target_docs` / `fetch_doc`
 have been tried, and do not read a PDF into your context: a document the user
-provides goes into the workspace `docs/` folder and is searched. If the tools
-are missing from your tool list, suggest the setting instead of asking.
+provides goes into the workspace `docs/` folder and is searched. The same
+holds for third-party parts on the board (sensors, ADCs, codecs): a part
+number starts at `list_target_docs`, and the web is only for finding a PDF
+URL to hand to `fetch_doc`. If the tools are missing from your tool list,
+suggest the setting instead of asking.
 `list_target_docs` once, `search_target_docs` with the identifier the manual
 uses (`RCC_AHB4ENR`, `USART1`, `0x58024400`), `read_doc_pages` around the best
 hit, and **cite `<doc id> p.<n>`** in what you write. The SVD (via the

@@ -41,8 +41,9 @@ function text(result: string) {
 export function registerPackDocsTools(mcpServer: McpServer, dispatch: PackDocsDispatch): void {
     mcpServer.registerTool('list_target_docs', {
         description: 'List the documentation of the current csolution target: the reference manuals, datasheets, errata ' +
-            'and board manuals its DFP/BSP ship or link, with ids for search_target_docs and read_doc_pages. Resolves the ' +
-            'target from out/**/*.cbuild-run.yml; pass pack + device when there is no build.',
+            'and board manuals its DFP/BSP ship or link, plus the datasheets of third-party parts (sensors, ADCs) the ' +
+            'user added — call it first for any part number. Ids for search_target_docs and read_doc_pages. Resolves ' +
+            'the target from *.cbuild-run.yml; pass pack + device when there is no build.',
         annotations: { readOnlyHint: true, destructiveHint: false },
         inputSchema: {
             ...targetShape,
@@ -51,8 +52,8 @@ export function registerPackDocsTools(mcpServer: McpServer, dispatch: PackDocsDi
     }, async (args) => text(await dispatch('handleListTargetDocs', args)));
 
     mcpServer.registerTool('search_target_docs', {
-        description: 'Search the target\'s pack, fetched and workspace documents page by page (register names, bit fields, addresses, ' +
-            'quoted phrases) and get ranked pages with section and snippet. Extracts and indexes documents on first use.',
+        description: 'Search the target\'s pack, fetched, user and workspace documents page by page (register names, bit fields, ' +
+            'addresses, part numbers, quoted phrases) and get ranked pages with section and snippet. Extracts and indexes on first use.',
         annotations: { readOnlyHint: true, destructiveHint: false },
         inputSchema: {
             query: z.string().min(1).describe('Words, identifiers (RCC_AHB1ENR, GPIOAEN, 0x40023800) or "quoted phrases"'),
@@ -64,8 +65,9 @@ export function registerPackDocsTools(mcpServer: McpServer, dispatch: PackDocsDi
     }, async (args) => text(await dispatch('handleSearchTargetDocs', args)));
 
     mcpServer.registerTool('fetch_doc', {
-        description: 'Download a web-linked document (an arm.com book or Arm document id such as ddi0553, or a direct PDF URL) ' +
-            'into the local cache and index it, so search_target_docs and read_doc_pages can use it. Only this call downloads anything.',
+        description: 'Download a web-linked document (an arm.com book or Arm document id such as ddi0553, or a direct PDF URL ' +
+            'found on the web — a sensor or ADC datasheet) into the local cache and index it for search_target_docs and ' +
+            'read_doc_pages instead of reading the PDF. Only this call downloads anything.',
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
         inputSchema: {
             doc: z.string().optional().describe('Document id from list_target_docs (arm/ddi0553-latest) or an Arm document id (ddi0553)'),

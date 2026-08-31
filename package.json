@@ -244,6 +244,7 @@
     "test:transport": "npm run compile && node test/transport/session-lifecycle.js && node test/transport/two-window-routing.js",
     "test:skill-trigger-agent": "tsx scripts/test-skill-trigger.ts",
     "eval:scenario": "tsx scripts/eval-scenario.ts",
+    "bench:search": "tsx scripts/search-benchmark.ts",
     "bundle": "node esbuild.js",
     "package": "npm run build && tsx scripts/package.ts",
     "skills:sync": "tsx scripts/sync-skills.ts",

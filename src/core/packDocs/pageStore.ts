@@ -33,7 +33,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { lookupArmDoc, parseArmDocId } from './armDocs';
-import { DocIndex, buildIndex } from './bm25Index';
+import { DocIndex, INDEX_VERSION, buildIndex } from './bm25Index';
 import { detectHeading } from './headings';
 import { PackDocsLog, silentLog } from './host';
 import { DocRef, DocSource, slug } from './pdscBooks';
@@ -404,7 +404,7 @@ export class PageStore {
         const p = this.paths(doc);
         const st = fs.statSync(doc.path);
         const t0 = Date.now();
-        const index = buildIndex(doc.id, pages.map(r => r.text));
+        const index = buildIndex(doc.id, pages);
         const indexMs = Date.now() - t0;
         const t1 = Date.now();
         const newMeta: StoreMeta = {
@@ -454,8 +454,16 @@ export class PageStore {
         const hit = this.indexCache.get(doc.id);
         if (hit) { return hit; }
         const t0 = Date.now();
-        const index = JSON.parse(fs.readFileSync(p.index, 'utf-8')) as DocIndex;
-        this.log.debug(`${doc.id}: loaded index (${Object.keys(index.postings).length} tokens) in ${Date.now() - t0} ms`);
+        let index = JSON.parse(fs.readFileSync(p.index, 'utf-8')) as DocIndex;
+        if (index.version !== INDEX_VERSION) {
+            // An index from before the heading field: rebuild it from the
+            // persisted pages — seconds, and no re-extraction.
+            index = buildIndex(doc.id, this.loadPages(doc, p));
+            fs.writeFileSync(p.index, JSON.stringify(index));
+            this.log.info(`${doc.id}: index rebuilt as version ${INDEX_VERSION} (heading field) in ${Date.now() - t0} ms`);
+        } else {
+            this.log.debug(`${doc.id}: loaded index (${Object.keys(index.postings).length} tokens) in ${Date.now() - t0} ms`);
+        }
         this.remember(this.indexCache, doc.id, index);
         return index;
     }

@@ -55,8 +55,21 @@ suite('pageStore', () => {
         assert.strictEqual(first.meta.pageCount, 2);
         assert.strictEqual(first.pages()[1].heading, '2 More');
         assert.ok(first.index.postings['gpioaen']);
+        assert.strictEqual(first.index.version, 2);
+        assert.ok(first.index.headingPostings?.['intro'], 'the heading field is indexed');
         const p = store.paths(doc);
         assert.ok(fs.existsSync(p.pages) && fs.existsSync(p.meta) && fs.existsSync(p.index));
+
+        // An index written before the heading field (version 1) is rebuilt from
+        // the persisted pages on load — no re-extraction.
+        const v1 = { version: 1, docId: doc.id, pageCount: 2, lengths: [3, 2], postings: { hello: [0, 1] } };
+        fs.writeFileSync(p.index, JSON.stringify(v1));
+        const again = new PageStore(path.join(dir, 'store')).load(doc);
+        assert.ok(again, 'still current: the pages and meta are intact');
+        assert.strictEqual(again!.index.version, 2);
+        assert.ok(again!.index.headingPostings?.['more'] && again!.index.postings['gpioaen'], 'rebuilt from the pages');
+        assert.strictEqual((JSON.parse(fs.readFileSync(p.index, 'utf-8')) as { version: number }).version, 2, 'and written back');
+        assert.strictEqual(fake.calls, 1, 'no extraction happened');
         assert.strictEqual(p.dir, path.join(dir, 'store', 'v', 'p', '1.0.0'));
         assert.strictEqual(doc.indexed, true);
         assert.strictEqual(doc.pages, 2);

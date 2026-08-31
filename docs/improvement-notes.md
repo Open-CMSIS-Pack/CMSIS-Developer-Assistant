@@ -146,3 +146,32 @@ several solutions, so the first call works without `target`.
 `AGENTS.md` line — "before any web search for a part number, run
 `list_target_docs`" — is the project's call; the Claude Code `PreToolUse`
 hook that denies `Read` on `*.pdf` is the hard stop for the ingest half.
+
+### 11. Search ranking benchmark (issue #29)
+
+`npm run bench:search -- --pages <doc.pages.jsonl> --svd <device.svd>` — gold =
+manual pages whose heading names a register in parentheses; queries from the SVD
+`<description>` of each register (set a: descriptions that do not contain the
+register name; set b: description + name). RM0455 rev 3 (2 965 pages, 495 register
+headings) × STM32H7B3.svd (Keil::STM32H7xx_DFP 4.1.3), pdftotext extraction.
+
+Set (a), 313 queries:
+
+| index | heading weight | post boost | R@1 | R@3 | MRR |
+|---|---|---|---|---|---|
+| body only (0.x) | 0 | 3 | 49.5% | 70.9% | 0.621 |
+| body + heading | 3 | 1.5 | 62.9% | 81.8% | 0.734 |
+| body + heading | **5** | **1.5** | **64.5%** | **81.8%** | **0.741** |
+
+Set (b), 333 queries:
+
+| index | heading weight | post boost | R@1 | R@3 | MRR |
+|---|---|---|---|---|---|
+| body only (0.x) | 0 | 3 | 78.1% | 96.7% | 0.873 |
+| body + heading | 3 | 1.5 | 98.2% | 100.0% | 0.990 |
+| body + heading | **5** | **1.5** | **98.8%** | **100.0%** | **0.994** |
+
+Shipped: index version 2 with the heading field, weight 5, post boost 1.5.
+The remaining set-(a) misses are registers whose SVD description is generic
+("control register 1") — the SVD-driven query expansion (#29 part 2) is the
+next lever.

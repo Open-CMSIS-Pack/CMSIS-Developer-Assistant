@@ -26,13 +26,17 @@ function doc(id: string, category?: 'manual' | 'overview'): DocRef {
     return { id, title: id, category, scope: 'device', pack: 'V::P@1.0.0', packId: { vendor: 'V', name: 'P', version: '1.0.0' }, source: 'pack', path: `/x/${id}.pdf`, cached: true, indexed: true };
 }
 
+function pagesOf(texts: string[]): PageRecord[] {
+    return texts.map((text, i) => ({ p: i + 1, heading: detectHeading(text), text }));
+}
+
 function loaded(ref: DocRef, texts: string[]): LoadedDoc {
-    const pages: PageRecord[] = texts.map((text, i) => ({ p: i + 1, heading: detectHeading(text), text }));
+    const pages = pagesOf(texts);
     ref.pages = pages.length;
     return {
         doc: ref,
         meta: { version: 1, docId: ref.id, file: ref.path!, size: 1, mtimeMs: 1, sha256: '', pageCount: pages.length, extractor: 'test', extractMs: 0, createdAt: '' },
-        index: buildIndex(ref.id, texts),
+        index: buildIndex(ref.id, pages),
         pages: () => pages,
     };
 }
@@ -47,8 +51,38 @@ const RM_PAGES = [
 ];
 
 suite('bm25 + search', () => {
+    test('the heading is an indexed field: a page whose body never spells the term is still found', () => {
+        // The register page's body speaks of bits; only its heading names the register.
+        const pages = pagesOf([
+            'RM-TEST Contents\n1 Overview . . . . . . . 2\n',
+            'RM-TEST Power control\n5.4.1 PWR control register 1 (PWR_CR1)\nBits 31:9 Reserved\nBit 8 DBP: Disable backup domain write protection\nBit 4 PVDE: Programmable voltage detector enable',
+            'RM-TEST Power control\n5.4.2 PWR control status register 1 (PWR_CSR1)\nBit 13 ACTVOS: Voltage level ready\nBit 4 PVDO: Programmable voltage detector output',
+            ...Array.from({ length: 20 }, (_, i) => `RM-TEST Filler\n9.${i + 1} Timer ${i}\nCounter register bits and prescaler values ${i}.`),
+        ]);
+        const ix = buildIndex('rm', pages);
+        assert.strictEqual(ix.version, 2);
+        assert.ok(ix.headingPostings?.['pwr_cr1'], 'heading tokens are indexed');
+        // A description query (no register name at all) prefers the pages whose
+        // heading says it over the filler pages that repeat "register" in the body.
+        const described = scorePages([ix], ['control', 'register'], { limit: 3 });
+        assert.deepStrictEqual(described.slice(0, 2).map(h => h.page).sort(), [2, 3]);
+        // The mechanism itself: a term that occurs only in the heading field is a candidate.
+        const explicit = buildIndex('x', [
+            { heading: 'PWR control register 1 (PWR_CR1)', text: 'Bits 31:9 Reserved. Bit 8 DBP: disable backup domain write protection.' },
+            { heading: 'Timers', text: 'Counter and prescaler.' },
+        ]);
+        assert.ok(!explicit.postings['pwr_cr1'] && explicit.headingPostings?.['pwr_cr1']);
+        const hits = scorePages([explicit], ['pwr_cr1'], { limit: 3 });
+        assert.strictEqual(hits[0]?.page, 1, 'a heading-only match is a candidate');
+        assert.deepStrictEqual(hits[0].matched, ['pwr_cr1']);
+        assert.strictEqual(scorePages([explicit], ['pwr_cr1'], { limit: 3, headingWeight: 0 }).length, 0, 'headingWeight 0 is the old body-only ranking');
+        const rm = loaded(doc('p/rm', 'manual'), pages.map(p => p.text));
+        assert.strictEqual(searchLoaded([rm], 'PWR_CR1', 3).hits[0].page, 2);
+        assert.match(searchLoaded([rm], 'PWR_CR1', 3).hits[0].heading, /PWR_CR1/);
+    });
+
     test('scorePages ranks the page that mentions all terms first', () => {
-        const ix = buildIndex('rm', RM_PAGES);
+        const ix = buildIndex('rm', pagesOf(RM_PAGES));
         const hits = scorePages([ix], ['gpioaen', 'rcc_ahb1enr'], { limit: 5 });
         // Pages 1 (contents), 3 and 5 carry both terms and get the all-terms boost; BM25's
         // length normalisation orders them, the heading boost and TOC penalty in searchLoaded settle it.
@@ -60,7 +94,7 @@ suite('bm25 + search', () => {
     });
 
     test('hex addresses are found however they are spelled', () => {
-        const ix = buildIndex('rm', RM_PAGES);
+        const ix = buildIndex('rm', pagesOf(RM_PAGES));
         assert.strictEqual(scorePages([ix], ['0x40023800'], { limit: 1 })[0].page, 4);
         assert.strictEqual(scorePages([ix], ['40023800'], { limit: 1 })[0].page, 4);
     });

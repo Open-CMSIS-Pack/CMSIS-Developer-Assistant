@@ -44,8 +44,26 @@ export interface SearchOutcome {
     ms: number;
 }
 
-/** A heading match is the strongest signal that this page *describes* the thing rather than lists it. */
-const HEADING_BOOST = 3.0;
+/**
+ * Ranking knobs. The heading is an indexed field (`bm25Index.ts`), so the
+ * post-hoc heading boost is now a tie-breaker; both are exposed so the
+ * search benchmark (`scripts/search-benchmark.ts`) can sweep them.
+ */
+export interface SearchOptions {
+    /** Weight of heading matches inside BM25 (0 = body only). Default 5. */
+    headingWeight?: number;
+    /** Multiplier applied after BM25 when a query term is in the heading. Default 1.5. */
+    headingPostBoost?: number;
+}
+
+/**
+ * RM0455, queries from STM32H7B3.svd (npm run bench:search): description-only
+ * MRR 0.621 with the old body index + ×3 post boost → 0.741 with the heading
+ * field at weight 5; description + register name 0.873 → 0.994. The post
+ * boost no longer moves the numbers; it stays as a tie-breaker.
+ */
+export const DEFAULT_SEARCH_OPTIONS: Required<SearchOptions> = { headingWeight: 5, headingPostBoost: 1.5 };
+
 const PHRASE_BOOST = 2.0;
 const MANUAL_BOOST = 1.1;
 /** Table-of-contents and index pages mention everything once and explain nothing. */
@@ -109,13 +127,14 @@ export function makeSnippet(text: string, re: RegExp | undefined, width = 400): 
     return `${bestStart > 0 ? '…' : ''}${marked}${bestStart + width < collapsed.length ? '…' : ''}`;
 }
 
-export function searchLoaded(docs: LoadedDoc[], query: string, limit: number, log: PackDocsLog = silentLog): SearchOutcome {
+export function searchLoaded(docs: LoadedDoc[], query: string, limit: number, log: PackDocsLog = silentLog, options: SearchOptions = {}): SearchOutcome {
     const started = Date.now();
+    const opts = { ...DEFAULT_SEARCH_OPTIONS, ...options };
     const parsed = parseQuery(query);
     if (!parsed.terms.length || !docs.length) {
         return { hits: [], terms: parsed.terms, phrases: parsed.phrases, candidates: 0, ms: Date.now() - started };
     }
-    const candidates = scorePages(docs.map(d => d.index), parsed.terms, { limit: Math.max(limit * 5, 30) });
+    const candidates = scorePages(docs.map(d => d.index), parsed.terms, { limit: Math.max(limit * 5, 30), headingWeight: opts.headingWeight });
     log.debug(`query terms [${parsed.terms.join(', ')}]${parsed.phrases.length ? ` phrases [${parsed.phrases.map(p => `"${p}"`).join(', ')}]` : ''} → ${candidates.length} candidate pages in ${Date.now() - started} ms`);
 
     const re = matchRegex(parsed.words, parsed.phrases);
@@ -132,9 +151,9 @@ export function searchLoaded(docs: LoadedDoc[], query: string, limit: number, lo
         const text = page?.text ?? '';
         const heading = page?.heading ?? '';
         let score = c.score;
-        if (heading) {
+        if (heading && opts.headingPostBoost !== 1) {
             const headingTokens = new Set(tokenize(heading));
-            if (parsed.terms.some(t => headingTokens.has(t))) { score *= HEADING_BOOST; }
+            if (parsed.terms.some(t => headingTokens.has(t))) { score *= opts.headingPostBoost; }
         }
         if (parsed.phrases.length) {
             const lower = text.replace(/\s+/g, ' ').toLowerCase();

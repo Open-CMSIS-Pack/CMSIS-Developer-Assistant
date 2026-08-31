@@ -64,7 +64,8 @@ suite('userDocs', () => {
         assert.deepStrictEqual(r.docs.map(d => d.id).sort(), [
             'user/an-deep', ...(globFolders ? ['user/errata-prelim'] : []), 'user/everyone', 'user/rm0456-nda', 'user/schematic', 'user/trm-notes', 'user/vendor-wide',
         ]);
-        assert.deepStrictEqual(r.matched, ['.', 'Keil', 'Keil/STM32U5xx_DFP', 'boards/B-U585I-IOT02A', 'cores/cortex-m33', ...(globFolders ? ['devices/STM32U5*'] : [])]);
+        // Directory enumeration order differs between file systems (NTFS sorts case-insensitively), so compare as sets.
+        assert.deepStrictEqual([...r.matched].sort(), ['.', 'Keil', 'Keil/STM32U5xx_DFP', 'boards/B-U585I-IOT02A', 'cores/cortex-m33', ...(globFolders ? ['devices/STM32U5*'] : [])].sort());
         const rm = r.docs.find(d => d.id === 'user/rm0456-nda')!;
         assert.strictEqual(rm.title, 'STM32U5 reference manual');
         assert.strictEqual(rm.category, 'manual');

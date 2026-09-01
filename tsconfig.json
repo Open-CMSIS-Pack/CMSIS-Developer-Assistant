@@ -7,8 +7,6 @@
 		"ES2022"
 		],
 		"skipLibCheck": true,
-		/* TypeScript 6 no longer includes every @types package it finds; name the globals the sources use. */
-		"types": ["node", "mocha", "vscode"],
 		"sourceMap": true,
 		"rootDir": ".",
 		"strict": true,   /* enable all strict type-checking options */

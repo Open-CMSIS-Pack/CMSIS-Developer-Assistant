@@ -278,6 +278,42 @@ suite('pageStore', () => {
         assert.match(result.pages[1], /0x4002_3800/);
         assert.match(result.pages[0].split('\n')[0], /^TEST-RM Reference manual/, 'the running header is the first line, as with pdftotext');
         await assert.rejects(() => extractor.extract(path.join(FIXTURES, 'test-rm.pdf'), { timeoutMs: -1 }), /timed out/);
+        // The timeout terminated the worker thread; the next request starts a fresh one.
+        const again = await extractor.extract(path.join(FIXTURES, 'test-rm.pdf'));
+        assert.strictEqual(again.pages.length, 2);
+        extractor.dispose();
+    });
+
+    test('pdf.js extracts when another extension has patched Array.prototype in the host', async () => {
+        // The CMSIS csolution extension assigns `Array.prototype.groupedBy` in
+        // the shared extension host; pdf.js refuses to start on a prototype
+        // with an enumerable property ("The `Array.prototype` contains
+        // unexpected enumerable property") — on the host's thread, that is.
+        const proto = Array.prototype as unknown as Record<string, unknown>;
+        proto.groupedBy = function () { return new Map(); };
+        const extractor = new PdfjsExtractor();
+        try {
+            const seen: string[] = [];
+            for (const key in []) { seen.push(key); }
+            assert.deepStrictEqual(seen, ['groupedBy'], 'the patch is enumerable, as in the csolution extension');
+            const result = await extractor.extract(path.join(FIXTURES, 'test-rm.pdf'));
+            assert.strictEqual(result.pages.length, 2);
+            assert.match(result.pages[0], /RCC_AHB1ENR/);
+        } finally {
+            delete proto.groupedBy;
+            extractor.dispose();
+        }
+    });
+
+    test('pdf.js reports a missing file from the worker and stays usable', async () => {
+        const extractor = new PdfjsExtractor();
+        try {
+            await assert.rejects(() => extractor.extract(path.join(FIXTURES, 'not-here.pdf')), /pdf\.js: .*ENOENT/);
+            const result = await extractor.extract(path.join(FIXTURES, 'test-rm.pdf'));
+            assert.strictEqual(result.pages.length, 2);
+        } finally {
+            extractor.dispose();
+        }
     });
 
     test('itemsToPageText rebuilds lines by baseline and keeps table columns apart', () => {

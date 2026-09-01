@@ -17,17 +17,23 @@
 /**
  * PDF → one text string per page.
  *
- * The test version uses poppler's `pdftotext -layout`, spawned like the
- * CMSIS Developer Assistant spawns pyOCD: it is fast (a 3 600-page reference
- * manual in about four seconds), keeps register tables legible, and emits a
- * form feed between pages. A bundled pdfjs extractor is the planned fallback
- * for machines without poppler.
+ * `PdfjsExtractor` is the bundled default: pdf.js on a worker thread of its
+ * own (`pdfWorker.ts`), nothing to install. `PdftotextExtractor` spawns
+ * poppler's `pdftotext -layout` like the CMSIS Developer Assistant spawns
+ * pyOCD: fast (a 3 600-page reference manual in about four seconds), with
+ * legible register tables and a form feed between pages, for users who have
+ * it and prefer its text.
  */
 
 import * as fs from 'fs';
-import { pathToFileURL } from 'url';
+import * as path from 'path';
 import { spawn } from 'child_process';
+import { Worker } from 'worker_threads';
 import { PackDocsLog, PackDocsSettings, silentLog } from './host';
+import type { PdfWorkerCall, PdfWorkerRequest, PdfWorkerResponse } from './pdfWorker';
+
+export { itemsToPageText } from './pdfText';
+export type { TextItemLike } from './pdfText';
 
 export interface ExtractResult {
     pages: string[];
@@ -39,6 +45,8 @@ export interface PdfExtractor {
     readonly name: string;
     available(): Promise<{ ok: boolean; detail: string }>;
     extract(file: string, opts?: { timeoutMs?: number; log?: PackDocsLog }): Promise<ExtractResult>;
+    /** Release what the extractor holds (a worker thread); a later call starts it again. */
+    dispose?(): void;
 }
 
 /** Split pdftotext output on form feeds; the trailing feed leaves an empty last segment. */
@@ -121,140 +129,136 @@ export class PdftotextExtractor implements PdfExtractor {
     }
 }
 
-/** The subset of pdf.js's text item this extractor reads. */
-interface TextItemLike {
-    str: string;
-    transform?: number[];
-    width?: number;
-    height?: number;
-    hasEOL?: boolean;
+/**
+ * Locate the worker entry beside this module: `dist/pdfWorker.js` in the
+ * bundle, `out/src/core/packDocs/pdfWorker.js` from tsc, `pdfWorker.ts` when a
+ * script runs the sources through tsx.
+ */
+function workerEntry(): string {
+    for (const name of ['pdfWorker.js', 'pdfWorker.ts']) {
+        const candidate = path.join(__dirname, name);
+        if (fs.existsSync(candidate)) { return candidate; }
+    }
+    throw new Error(`pdf.js worker not found beside ${__dirname}`);
 }
 
-/**
- * Rebuild lines from pdf.js text items — the analogue of `pdftotext -layout`
- * for register tables: items on one baseline (y within `tolerance`) form a
- * line ordered by x, and a horizontal gap wider than ~1.5 em becomes two
- * spaces so table columns stay separable. Exported for the tests.
- */
-export function itemsToPageText(items: TextItemLike[], tolerance = 2): string {
-    type Placed = { x: number; y: number; w: number; h: number; str: string };
-    const placed: Placed[] = [];
-    for (const it of items) {
-        if (!it.str || !it.transform) { continue; }
-        placed.push({ x: it.transform[4], y: it.transform[5], w: it.width ?? 0, h: it.height ?? Math.abs(it.transform[3]) ?? 10, str: it.str });
-    }
-    if (!placed.length) { return ''; }
-    // Top of the page first (PDF y grows upwards), then left to right.
-    placed.sort((a, b) => (b.y - a.y) || (a.x - b.x));
-    const lines: Placed[][] = [];
-    for (const p of placed) {
-        const last = lines[lines.length - 1];
-        if (last && Math.abs(last[0].y - p.y) <= Math.max(tolerance, last[0].h * 0.4)) {
-            last.push(p);
-        } else {
-            lines.push([p]);
-        }
-    }
-    const out: string[] = [];
-    for (const line of lines) {
-        line.sort((a, b) => a.x - b.x);
-        let text = '';
-        let cursor = line[0].x;
-        for (const p of line) {
-            const gap = p.x - cursor;
-            const em = p.h || 10;
-            if (text) {
-                if (gap > 1.5 * em) { text += '  '; }
-                else if (gap > 0.15 * em && !text.endsWith(' ') && !p.str.startsWith(' ')) { text += ' '; }
-            }
-            text += p.str;
-            cursor = p.x + p.w;
-        }
-        out.push(text.replace(/[ \t]+$/g, ''));
-    }
-    return out.join('\n') + '\n';
-}
+type Pending = { resolve: (r: PdfWorkerResponse) => void; reject: (e: Error) => void };
 
 /**
  * The bundled extractor: pdf.js (legacy build, pure JavaScript), so a host
- * without poppler — most Windows machines — indexes documents too. Text
- * only: no fonts are rendered, no canvas is needed. Loaded on first use
- * through a dynamic import, which keeps the 1 MB library out of the
- * activation path.
+ * without poppler — most Windows machines — indexes documents too. The
+ * library runs on a `worker_threads` worker (`pdfWorker.ts`): a realm of its
+ * own, out of reach of the extension host's other extensions and their
+ * prototype patches, which pdf.js refuses to start on. The thread is started
+ * on the first request, kept for the next document, and terminated after a
+ * minute idle — or at once when an extraction times out, which is the only
+ * way to stop pdf.js mid-document.
  */
-/** What this extractor uses of pdf.js — typed locally, since the library is ESM and this module is CommonJS. */
-interface PdfjsLib {
-    version: string;
-    GlobalWorkerOptions: { workerSrc: string };
-    getDocument(params: { data: Uint8Array; disableFontFace?: boolean; useSystemFonts?: boolean; verbosity?: number }): {
-        promise: Promise<PdfjsDocument>;
-        destroy(): Promise<void>;
-    };
-}
-interface PdfjsDocument {
-    numPages: number;
-    getPage(n: number): Promise<{ getTextContent(): Promise<{ items: unknown[] }>; cleanup(): void }>;
-}
-
 export class PdfjsExtractor implements PdfExtractor {
     readonly name = 'pdfjs';
-    private lib?: Promise<PdfjsLib>;
+    private worker?: Worker;
+    private readonly pending = new Map<number, Pending>();
+    private nextId = 1;
+    private idleTimer?: NodeJS.Timeout;
+    private availability?: { ok: boolean; detail: string };
 
-    private load(): Promise<PdfjsLib> {
-        if (!this.lib) {
-            this.lib = (import('pdfjs-dist/legacy/build/pdf.mjs') as unknown as Promise<PdfjsLib>).then((lib) => {
-                // Plain Node runs pdf.js on the main thread with no worker file.
-                // VS Code's extension host is Electron, which pdf.js does not
-                // take for Node, so it insists on a worker source: point it at
-                // the shipped worker module — with no Worker global it is
-                // imported as a "fake worker" on this thread, same effect.
-                if (!lib.GlobalWorkerOptions.workerSrc) {
-                    try {
-                        lib.GlobalWorkerOptions.workerSrc = pathToFileURL(require.resolve('pdfjs-dist/legacy/build/pdf.worker.min.mjs')).href;
-                    } catch {
-                        // Not resolvable: pdf.js will say so on the first extraction.
-                    }
-                }
-                return lib;
+    constructor(private readonly idleMs = 60_000) { }
+
+    private spawn(): Worker {
+        if (this.worker) { return this.worker; }
+        const worker = new Worker(workerEntry());
+        worker.on('message', (msg: PdfWorkerResponse) => {
+            const p = this.pending.get(msg.id);
+            if (!p) { return; }
+            this.pending.delete(msg.id);
+            p.resolve(msg);
+            this.settle();
+        });
+        worker.on('error', (e: Error) => this.drop(worker, new Error(`pdf.js worker failed: ${e.message}`)));
+        worker.on('exit', (code) => this.drop(worker, new Error(`pdf.js worker exited with code ${code}`)));
+        // Idle, the thread must not keep a script's process alive; ref'd while a request is out.
+        worker.unref();
+        this.worker = worker;
+        return worker;
+    }
+
+    /** Forget a worker that is gone (or going) and fail what it still owed. */
+    private drop(worker: Worker, reason: Error): void {
+        if (this.worker !== worker) { return; }
+        this.worker = undefined;
+        clearTimeout(this.idleTimer);
+        const owed = [...this.pending.values()];
+        this.pending.clear();
+        for (const p of owed) { p.reject(reason); }
+    }
+
+    /** Nothing pending: let the process exit without us, and retire the thread after a while. */
+    private settle(): void {
+        if (this.pending.size || !this.worker) { return; }
+        this.worker.unref();
+        clearTimeout(this.idleTimer);
+        this.idleTimer = setTimeout(() => this.dispose(), this.idleMs);
+        this.idleTimer.unref();
+    }
+
+    private request(call: PdfWorkerCall, timeoutMs: number, timeoutMessage: string): Promise<PdfWorkerResponse> {
+        const id = this.nextId++;
+        const worker = this.spawn();
+        clearTimeout(this.idleTimer);
+        worker.ref();
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                if (!this.pending.delete(id)) { return; }
+                reject(new Error(timeoutMessage));
+                // Terminating the thread is what stops pdf.js; anything else it
+                // owed fails with it and the next request starts a fresh one.
+                this.drop(worker, new Error(`pdf.js worker terminated: ${timeoutMessage}`));
+                void worker.terminate();
+            }, Math.max(0, timeoutMs));
+            this.pending.set(id, {
+                resolve: (r) => { clearTimeout(timer); resolve(r); },
+                reject: (e) => { clearTimeout(timer); reject(e); },
             });
-        }
-        return this.lib;
+            const request: PdfWorkerRequest = { id, ...call };
+            worker.postMessage(request);
+        });
     }
 
     async available(): Promise<{ ok: boolean; detail: string }> {
+        if (this.availability) { return this.availability; }
+        let result: { ok: boolean; detail: string };
         try {
-            const lib = await this.load();
-            return { ok: true, detail: `pdf.js ${lib.version} (bundled)` };
+            const r = await this.request({ kind: 'version' }, 30_000, 'pdf.js worker did not load within 30 s');
+            result = !r.ok ? { ok: false, detail: `pdf.js failed to load: ${r.error}` }
+                : 'version' in r ? { ok: true, detail: `pdf.js ${r.version} (bundled, worker thread)` }
+                    : { ok: false, detail: 'pdf.js worker answered without a version' };
         } catch (e) {
-            return { ok: false, detail: `pdf.js failed to load: ${e instanceof Error ? e.message : e}` };
+            result = { ok: false, detail: `pdf.js worker failed to start: ${e instanceof Error ? e.message : e}` };
         }
+        // Only a working library is remembered; a failure is retried on the next call.
+        if (result.ok) { this.availability = result; }
+        return result;
     }
 
     async extract(file: string, opts: { timeoutMs?: number; log?: PackDocsLog } = {}): Promise<ExtractResult> {
         const log = opts.log ?? silentLog;
-        const deadline = Date.now() + (opts.timeoutMs ?? 120_000);
+        const timeoutMs = opts.timeoutMs ?? 120_000;
         const started = Date.now();
-        const lib = await this.load();
-        const data = new Uint8Array(await fs.promises.readFile(file));
-        const task = lib.getDocument({ data, disableFontFace: true, useSystemFonts: false, verbosity: 0 });
-        const pages: string[] = [];
-        try {
-            const doc = await task.promise;
-            for (let i = 1; i <= doc.numPages; i++) {
-                if (Date.now() > deadline) {
-                    throw new Error(`pdf.js timed out after ${opts.timeoutMs ?? 120_000} ms on ${file} (page ${i} of ${doc.numPages})`);
-                }
-                const page = await doc.getPage(i);
-                const content = await page.getTextContent();
-                pages.push(itemsToPageText(content.items as TextItemLike[]));
-                page.cleanup();
-            }
-        } finally {
-            await task.destroy();
-        }
+        const r = await this.request({ kind: 'extract', file }, timeoutMs, `pdf.js timed out after ${timeoutMs} ms on ${file}`);
+        if (!r.ok) { throw new Error(`pdf.js: ${r.error}`); }
+        if (!('pages' in r)) { throw new Error('pdf.js worker answered without pages'); }
         const ms = Date.now() - started;
-        log.debug(`pdf.js: ${pages.length} pages in ${ms} ms`);
-        return { pages, extractor: this.name, ms };
+        log.debug(`pdf.js: ${r.pages.length} pages in ${ms} ms`);
+        return { pages: r.pages, extractor: this.name, ms };
+    }
+
+    /** Stop the worker thread; the next request starts a new one. */
+    dispose(): void {
+        clearTimeout(this.idleTimer);
+        const worker = this.worker;
+        if (!worker) { return; }
+        this.drop(worker, new Error('pdf.js extractor disposed'));
+        void worker.terminate();
     }
 }
 

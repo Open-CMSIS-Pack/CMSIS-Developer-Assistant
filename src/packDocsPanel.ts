@@ -164,6 +164,35 @@ export class PackDocsPanel {
                     });
                     return;
                 }
+                case 'store.clear': {
+                    const what = m.what === 'downloads' ? 'downloads' : 'extracted';
+                    const store = this.docs.getStore();
+                    const usage = store.storeUsage();
+                    const u = what === 'downloads' ? usage.downloads : usage.extracted;
+                    if (u.files === 0) {
+                        this.post({ type: 'store.cleared', text: what === 'downloads' ? 'No downloaded documents to delete.' : 'No extracted text to clear.' });
+                        return;
+                    }
+                    const mb = (n: number) => `${(n / 1048576).toFixed(1)} MB`;
+                    const question = what === 'downloads'
+                        ? `Delete the ${u.documents} downloaded document(s) — ${u.files} files, ${mb(u.bytes)} under ${store.dir} (arm/, web/)?\n\n` +
+                            'Their PDFs, fetch records and extracted text are removed. The documents are offered as "not fetched" again; fetch_doc downloads them anew.'
+                        : `Clear the extracted text and search indexes of ${u.documents} document(s) — ${u.files} files, ${mb(u.bytes)} under ${store.dir}?\n\n` +
+                            'Downloaded PDFs and fetch records are kept. Every document is extracted and indexed again on its next use.';
+                    const confirm = what === 'downloads' ? 'Delete Downloads' : 'Clear Extracted Text';
+                    const choice = await vscode.window.showWarningMessage(question, { modal: true }, confirm);
+                    if (choice !== confirm) {
+                        this.post({ type: 'store.cleared', text: 'Cancelled — nothing removed.' });
+                        return;
+                    }
+                    const r = what === 'downloads' ? store.clearDownloads() : store.clearExtracted();
+                    this.docs.dropCaches();
+                    const text = `${what === 'downloads' ? 'Deleted downloads' : 'Cleared extracted text'}: ${r.documents} document(s), ${r.files} files, ${mb(r.bytes)}.`;
+                    this.log.info(`[debug panel] ${text}`);
+                    this.post({ type: 'store.cleared', text });
+                    this.post({ type: 'refresh' });
+                    return;
+                }
                 case 'store.detail': {
                     const entry = this.entries().find(e => e.id === m.id);
                     if (!entry) { this.post({ type: 'error', text: `no cached document ${m.id}` }); return; }
@@ -538,7 +567,7 @@ export class PackDocsPanel {
     storeMsg = msg; entries = msg.entries;
     const only = !!(vscode.getState() || {}).onlyTarget && targetIds.size;
     const shown = only ? entries.filter(e => targetIds.has(e.id)) : entries;
-    let h = '<div class="muted" style="padding:6px 8px">' + esc(msg.storageDir) + ' · ' + entries.length + ' extracted' + (msg.fetchedOnly.length ? ', ' + msg.fetchedOnly.length + ' fetch records without extraction' : '') + ' <a id="refresh">refresh</a><br><label><input type="checkbox" id="onlyTarget"' + (only ? ' checked' : '') + '> only the Target tab\\'s documents (' + targetIds.size + ')</label></div>';
+    let h = '<div class="muted" style="padding:6px 8px">' + esc(msg.storageDir) + ' · ' + entries.length + ' extracted' + (msg.fetchedOnly.length ? ', ' + msg.fetchedOnly.length + ' fetch records without extraction' : '') + ' <a id="refresh">refresh</a> · <a id="clearExtracted" title="Remove the extracted text and search indexes of every document; downloads stay. Asks first.">clear extracted text…</a> · <a id="clearDownloads" title="Remove the documents fetch_doc downloaded (arm/, web/): PDFs, fetch records and their extraction. Asks first.">delete downloaded PDFs…</a><br><label><input type="checkbox" id="onlyTarget"' + (only ? ' checked' : '') + '> only the Target tab\\'s documents (' + targetIds.size + ')</label></div>';
     h += '<table><tr><th>id</th><th>src</th><th>pages</th><th>size</th><th>extracted</th></tr>';
     for (const e of shown) {
       h += '<tr class="row' + (e.id === selected ? ' sel' : '') + '" data-id="' + esc(e.id) + '"><td class="mono">' + esc(e.id) + (e.revision ? ' <span class="badge">' + esc(e.revision) + '</span>' : '') + (e.fileExists ? '' : ' <span class="badge">source missing</span>') + '</td><td>' + esc(e.source) + '</td><td>' + e.pageCount + (e.unit === 'section' ? ' §' : '') + '</td><td>' + kb(e.sizeBytes) + '</td><td class="muted">' + esc((e.createdAt || '').slice(0, 16).replace('T', ' ')) + '</td></tr>';
@@ -551,6 +580,8 @@ export class PackDocsPanel {
     if (!shown.length) { h += '<div class="muted" style="padding:8px">Nothing extracted yet' + (only ? ' for this target' : '') + '. The Target tab\\'s index / fetch actions, or any search, fill the store.</div>'; }
     $('list').innerHTML = h;
     $('refresh').onclick = () => vscode.postMessage({ type: 'store.list' });
+    $('clearExtracted').onclick = () => { $('status').textContent = 'confirm in the dialog…'; vscode.postMessage({ type: 'store.clear', what: 'extracted' }); };
+    $('clearDownloads').onclick = () => { $('status').textContent = 'confirm in the dialog…'; vscode.postMessage({ type: 'store.clear', what: 'downloads' }); };
     $('onlyTarget').onchange = () => { save({ onlyTarget: $('onlyTarget').checked }); renderList(storeMsg); };
     for (const row of document.querySelectorAll('tr.row')) { row.onclick = () => { selected = row.dataset.id; $('detail').innerHTML = '<div class="muted">loading ' + esc(selected) + '…</div>'; vscode.postMessage({ type: 'store.detail', id: selected }); renderList(storeMsg); }; }
   }
@@ -618,6 +649,7 @@ export class PackDocsPanel {
       for (const a of document.querySelectorAll('a[data-h]')) { a.onclick = () => { const x = history[Number(a.dataset.h)]; $('toolSel').value = x.tool; $('args').value = JSON.stringify(JSON.parse(x.args || '{}'), null, 2); $('out').textContent = x.text; }; }
       if (/^(Fetched|Already fetched)|Indexed now|^— /.test(m.text)) { vscode.postMessage({ type: 'store.list' }); if (inspection) vscode.postMessage({ type: 'target.inspect', args: currentArgs() }); }
     }
+    else if (m.type === 'store.cleared') { $('status').textContent = m.text; selected = undefined; $('detail').innerHTML = '<div class="muted">' + esc(m.text) + '</div>'; }
     else if (m.type === 'refresh') { vscode.postMessage({ type: 'store.list' }); if (inspection) vscode.postMessage({ type: 'target.inspect', args: currentArgs() }); }
     else if (m.type === 'error') { $('status').textContent = m.text; $('runBtn').disabled = false; $('runInfo').textContent = 'failed'; $('out').textContent = m.text; $('inspectInfo').textContent = 'failed'; for (const id of ['detail', 'targetDetail']) { const b = $(id); if (b && /loading/.test(b.textContent)) b.innerHTML = '<pre class="mono warn">' + esc(m.text) + '</pre>'; } }
   }

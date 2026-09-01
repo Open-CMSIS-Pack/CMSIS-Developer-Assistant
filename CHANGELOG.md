@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+- **The Pack Docs panel can clear its store — in two separate steps, each behind a confirmation.** *Clear extracted text…* removes every document's extracted pages, metadata and search index (`*.pages.jsonl`, `*.meta.json`, `*.idx.json`) across the store and prunes the emptied directories; downloaded PDFs and fetch records stay, so fetched documents remain fetched and every document is extracted and indexed again on its next use. *Delete downloaded PDFs…* removes what `fetch_doc` downloaded — the `arm/` and `web/` trees with their PDFs, fetch records and extraction — so those documents are offered as "not fetched" again. The modal confirmation names the document count, file count and size it is about to remove; the in-memory page, index and chapter caches are dropped with the files. `PageStore` gains `storeUsage()`, `clearExtracted()` and `clearDownloads()`, tested.
+
 ### Changed
 - **The build uses TypeScript 7.0.** `tsc` is the native compiler (`@typescript/native`, an alias of `typescript@7.0.2`) for `compile`, `check-types` and the test build, while the `typescript` package resolves to `@typescript/typescript6` — the TypeScript 6 API — for typescript-eslint 8.69, which does not support the 7.x API yet ([typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940)); this is the side-by-side setup the TypeScript 7.0 announcement describes. `tsconfig.json` now names the `types` the sources use (`node`, `mocha`, `vscode`): from TypeScript 6.0 on, `@types` packages are no longer included automatically. Nothing in the shipped extension changes — esbuild bundles it as before. Supersedes #35, which bumped `typescript` alone and could not install next to the linter.
 

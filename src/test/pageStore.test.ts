@@ -185,6 +185,50 @@ suite('pageStore', () => {
         assert.deepStrictEqual(new PageStore(path.join(dir, 'empty')).listFetched(), []);
     });
 
+    test('clearExtracted removes the sidecars and keeps downloads; clearDownloads removes arm/ and web/', async () => {
+        const dir = tmp();
+        const file = path.join(dir, 'test-rm.pdf');
+        fs.copyFileSync(path.join(FIXTURES, 'test-rm.pdf'), file);
+        const store = new PageStore(path.join(dir, 'store'));
+        await store.ensure(docFor(file), new FakeExtractor(['1 Intro\nHello', '2 More\nWorld']));
+        // A fetched Arm document as fetch_doc leaves it: download, fetch record, extraction.
+        const armDir = path.join(dir, 'store', 'arm', 'ddi0553-latest');
+        fs.mkdirSync(armDir, { recursive: true });
+        fs.writeFileSync(path.join(armDir, 'doc.pdf'), 'pdf');
+        fs.writeFileSync(path.join(armDir, 'fetch.json'), JSON.stringify({ version: 1, docId: 'arm/ddi0553-latest', sourceUrl: 'u', resolver: 'arm.com', kind: 'pdf', title: 'ARM', downloadUrl: 'x', bytes: 3, sha256: 'a', fetchedAt: 't', userAgent: 'u' }));
+        const armDoc: DocRef = { id: 'arm/ddi0553-latest', title: 'ARM', scope: 'arm', source: 'web', path: path.join(armDir, 'doc.pdf'), cached: true, indexed: false };
+        await store.ensure(armDoc, new FakeExtractor(['1 Debug\nDHCSR']));
+        assert.strictEqual(store.listCached().length, 2);
+
+        const usage = store.storeUsage();
+        assert.strictEqual(usage.extracted.documents, 2);
+        assert.strictEqual(usage.extracted.files, 6, 'three sidecars per extracted document');
+        assert.strictEqual(usage.downloads.documents, 1);
+        assert.strictEqual(usage.downloads.files, 5, 'download, fetch record and three sidecars');
+        assert.ok(usage.downloads.bytes > 3);
+
+        const cleared = store.clearExtracted();
+        assert.deepStrictEqual([cleared.documents, cleared.files], [2, 6]);
+        assert.ok(cleared.bytes > 0);
+        assert.deepStrictEqual(store.listCached(), []);
+        assert.ok(fs.existsSync(path.join(armDir, 'doc.pdf')), 'the download stays');
+        assert.ok(fs.existsSync(path.join(armDir, 'fetch.json')), 'the fetch record stays');
+        assert.deepStrictEqual(store.listFetched().map(d => d.id), ['arm/ddi0553-latest'], 'still fetched');
+        assert.ok(!fs.existsSync(path.join(dir, 'store', 'v')), 'an emptied pack directory is pruned');
+        assert.ok(fs.existsSync(path.join(dir, 'store')), 'the store root stays');
+        assert.strictEqual(store.isCurrent(docFor(file)), false, 'extracted again on its next use');
+        assert.deepStrictEqual(store.storeUsage().extracted, { documents: 0, files: 0, bytes: 0 });
+
+        await store.ensure(docFor(file), new FakeExtractor(['1 Intro\nHello', '2 More\nWorld']));
+        const deleted = store.clearDownloads();
+        assert.deepStrictEqual([deleted.documents, deleted.files], [1, 2]);
+        assert.ok(!fs.existsSync(path.join(dir, 'store', 'arm')));
+        assert.deepStrictEqual(store.listFetched(), []);
+        assert.deepStrictEqual(store.listCached().map(e => e.id), ['p/test-rm'], 'pack extraction survives a download clear');
+        assert.deepStrictEqual(store.clearDownloads(), { documents: 0, files: 0, bytes: 0 }, 'idempotent');
+        assert.deepStrictEqual(new PageStore(path.join(dir, 'nowhere')).clearExtracted(), { documents: 0, files: 0, bytes: 0 }, 'a missing store is fine');
+    });
+
     test('concurrent ensure calls share one extraction', async () => {
         const dir = tmp();
         const file = path.join(dir, 'test-rm.pdf');

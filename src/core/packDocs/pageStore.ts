@@ -139,6 +139,27 @@ function sha256File(file: string): string {
     return h.digest('hex');
 }
 
+/** Files and bytes a clear operation covers, and the documents they belong to. */
+export interface ClearResult {
+    documents: number;
+    files: number;
+    bytes: number;
+}
+
+export interface StoreUsage {
+    /** Extracted text, metadata and index sidecars, store-wide. */
+    extracted: ClearResult;
+    /** The `arm/` and `web/` trees: downloads, fetch records and their extraction. */
+    downloads: ClearResult;
+}
+
+/** Where `fetch_doc` keeps what it downloaded (see the layout above). */
+const DOWNLOAD_DIRS = ['arm', 'web'] as const;
+
+function isSidecar(name: string): boolean {
+    return name.endsWith('.pages.jsonl') || name.endsWith('.meta.json') || name.endsWith('.idx.json');
+}
+
 /** 12 hex characters of sha1 — enough to keep two workspace folders apart. */
 export function shortHash(text: string): string {
     return crypto.createHash('sha1').update(text).digest('hex').slice(0, 12);
@@ -314,6 +335,120 @@ export class PageStore {
             });
         }
         return out;
+    }
+
+    /**
+     * What the two clear operations would remove: the extracted text,
+     * metadata and index sidecars of every document, and the `arm/` and
+     * `web/` trees holding the documents `fetch_doc` downloaded (a fetched
+     * document's sidecars count in both).
+     */
+    storeUsage(): StoreUsage {
+        const usage: StoreUsage = { extracted: { documents: 0, files: 0, bytes: 0 }, downloads: { documents: 0, files: 0, bytes: 0 } };
+        for (const f of this.walkFiles(this.storageDir)) {
+            if (isSidecar(f.name)) {
+                usage.extracted.files++;
+                usage.extracted.bytes += f.size;
+                if (f.name.endsWith('.meta.json')) { usage.extracted.documents++; }
+            }
+        }
+        for (const sub of DOWNLOAD_DIRS) {
+            for (const f of this.walkFiles(path.join(this.storageDir, sub))) {
+                usage.downloads.files++;
+                usage.downloads.bytes += f.size;
+                if (f.name === 'fetch.json') { usage.downloads.documents++; }
+            }
+        }
+        return usage;
+    }
+
+    /**
+     * Remove every extracted text, metadata and index file. Downloads and
+     * fetch records stay, so a fetched document is still fetched; every
+     * document is extracted and indexed again on its next use. Directories
+     * left empty are pruned, the store root stays.
+     */
+    clearExtracted(): ClearResult {
+        const result: ClearResult = { documents: 0, files: 0, bytes: 0 };
+        for (const f of this.walkFiles(this.storageDir)) {
+            if (!isSidecar(f.name)) { continue; }
+            try {
+                fs.unlinkSync(f.path);
+                result.files++;
+                result.bytes += f.size;
+                if (f.name.endsWith('.meta.json')) { result.documents++; }
+            } catch (e) {
+                this.log.warn(`page store: could not remove ${f.path}: ${e instanceof Error ? e.message : String(e)}`);
+            }
+        }
+        this.pruneEmptyDirs(this.storageDir);
+        this.pageCache.clear();
+        this.indexCache.clear();
+        return result;
+    }
+
+    /**
+     * Remove the documents `fetch_doc` downloaded — the `arm/` and `web/`
+     * trees with their PDFs, fetch records and extraction. They are offered
+     * as "not fetched" again and can be fetched anew.
+     */
+    clearDownloads(): ClearResult {
+        const result: ClearResult = { documents: 0, files: 0, bytes: 0 };
+        for (const sub of DOWNLOAD_DIRS) {
+            const dir = path.join(this.storageDir, sub);
+            for (const f of this.walkFiles(dir)) {
+                result.files++;
+                result.bytes += f.size;
+                if (f.name === 'fetch.json') { result.documents++; }
+            }
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+        this.pageCache.clear();
+        this.indexCache.clear();
+        return result;
+    }
+
+    private *walkFiles(dir: string, depth = 0): Generator<{ path: string; name: string; size: number }> {
+        if (depth > 8) { return; }
+        let entries: fs.Dirent[];
+        try {
+            entries = fs.readdirSync(dir, { withFileTypes: true });
+        } catch {
+            return;
+        }
+        for (const e of entries) {
+            const full = path.join(dir, e.name);
+            if (e.isDirectory()) {
+                yield* this.walkFiles(full, depth + 1);
+            } else if (e.isFile()) {
+                let size = 0;
+                try { size = fs.statSync(full).size; } catch { /* gone meanwhile */ }
+                yield { path: full, name: e.name, size };
+            }
+        }
+    }
+
+    /** Remove directories under `root` that hold nothing any more; `root` itself stays. */
+    private pruneEmptyDirs(root: string): void {
+        const prune = (dir: string, depth: number): boolean => {
+            if (depth > 8) { return false; }
+            let entries: fs.Dirent[];
+            try {
+                entries = fs.readdirSync(dir, { withFileTypes: true });
+            } catch {
+                return false;
+            }
+            let empty = true;
+            for (const e of entries) {
+                if (e.isDirectory() && prune(path.join(dir, e.name), depth + 1)) { continue; }
+                empty = false;
+            }
+            if (empty && dir !== root) {
+                try { fs.rmdirSync(dir); return true; } catch { return false; }
+            }
+            return false;
+        };
+        prune(root, 0);
     }
 
     /** The download record of a web document, when it was fetched. */

@@ -157,6 +157,9 @@ export class PackDocsHandler {
     }
 
     public getStore(): PageStore { return this.store; }
+
+    /** Forget what was derived from the store — after the panel cleared it. */
+    public dropCaches(): void { this.chapterCache.clear(); }
     public getExtractor(): PdfExtractor { return this.extractor; }
 
     // ------------------------------------------------------------------ tools

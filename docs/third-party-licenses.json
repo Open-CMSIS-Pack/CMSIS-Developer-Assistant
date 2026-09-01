@@ -36,7 +36,7 @@
     },
     {
         "name": "zod",
-        "version": "3.25.76",
+        "version": "4.5.2",
         "spdx": "MIT",
         "url": "https://github.com/colinhacks/zod",
         "license": "https://github.com/colinhacks/zod/blob/main/LICENSE"

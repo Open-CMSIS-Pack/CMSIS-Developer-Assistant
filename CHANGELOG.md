@@ -4,6 +4,11 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **The build uses TypeScript 7.0.** `tsc` is the native compiler (`@typescript/native`, an alias of `typescript@7.0.2`) for `compile`, `check-types` and the test build, while the `typescript` package resolves to `@typescript/typescript6` — the TypeScript 6 API — for typescript-eslint 8.69, which does not support the 7.x API yet ([typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940)); this is the side-by-side setup the TypeScript 7.0 announcement describes. `tsconfig.json` now names the `types` the sources use (`node`, `mocha`, `vscode`): from TypeScript 6.0 on, `@types` packages are no longer included automatically. Nothing in the shipped extension changes — esbuild bundles it as before. Supersedes #35, which bumped `typescript` alone and could not install next to the linter.
+
 ## [2.3.9] - 2026-08-31
 
 ### Added

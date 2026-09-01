@@ -15,14 +15,22 @@
  */
 
 /**
- * A debug webview for the experiment (host code, not merged):
+ * The Pack Docs webview: what the documentation tools see for a target, and
+ * a way to run them by hand.
  *
- *  - Target: the cbuild-run context (or pack + device), its resolution and
- *    core, every document the tools would see (pack, web, Arm catalogue,
- *    workspace) with its cache state and one-click fetch / browse / run,
- *    and the SVD with its groups, instances, registers and interrupts;
- *  - Store: what the cache holds — metadata, fetch record, chapter index,
- *    index statistics and page text per extracted document;
+ * A header shared by every tab picks the target — a cbuild-run context of
+ * the workspace, or pack + device — and shows its resolution and core. Below
+ * it, four tabs:
+ *
+ *  - Documents: every document the tools would offer for the target (pack,
+ *    vendor web, Arm catalogue, user, workspace) with its fetch and index
+ *    state, and one-click fetch / index / browse / search;
+ *  - Peripherals: the register maps — the device SVD, the Arm core
+ *    peripherals and the NPU — as groups, instances and registers with bit
+ *    views, and get_peripheral_docs from there;
+ *  - Page store: what is extracted and indexed on disk across all targets —
+ *    page text, chapters, index statistics, fetch record and metadata per
+ *    document, with the two confirmed clear actions;
  *  - Tools: any of the tools, run in-process with hand-written arguments.
  */
 
@@ -281,14 +289,25 @@ export class PackDocsPanel {
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <title>CMSIS Pack Docs</title>
 <style>
-  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); margin: 0; }
-  .tabs { display: flex; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--vscode-panel-border); position: sticky; top: 0; background: var(--vscode-editor-background); z-index: 2; }
-  .tabs button { background: none; border: none; color: var(--vscode-foreground); padding: 4px 10px; cursor: pointer; border-bottom: 2px solid transparent; font: inherit; }
-  .tabs button.active { border-bottom-color: var(--vscode-focusBorder); font-weight: 600; }
-  .view { display: none; } .view.active { display: block; }
-  #store { display: grid; grid-template-columns: minmax(280px, 34%) 1fr; height: calc(100vh - 40px); }
+  html, body { height: 100%; }
+  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); margin: 0; display: flex; flex-direction: column; }
+  /* The header — target picker, its summary, the tabs — stays; the active view scrolls. */
+  .header { flex: none; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
+  .header .toolbar { margin: 0; padding: 6px 12px 2px; }
+  #targetSummary { padding: 2px 12px 6px; }
+  .tabs { display: flex; gap: 2px; padding: 0 8px; }
+  .tabs button { background: none; border: none; color: var(--vscode-foreground); padding: 6px 10px; cursor: pointer; border-bottom: 2px solid transparent; font: inherit; opacity: .75; }
+  .tabs button:hover { opacity: 1; }
+  .tabs button.active { border-bottom-color: var(--vscode-focusBorder); font-weight: 600; opacity: 1; }
+  .tabs button .badge { margin-left: 4px; font-weight: normal; }
+  .tabs button .badge:empty { display: none; }
+  .view { display: none; flex: 1; min-height: 0; overflow: auto; padding: 8px 12px; }
+  .view.active { display: block; }
+  .intro { opacity: .7; margin: 0 0 8px; }
+  #store { padding: 0; overflow: hidden; }
+  #store.active { display: grid; grid-template-columns: minmax(280px, 34%) 1fr; grid-template-rows: minmax(0, 1fr); }
   #list { overflow: auto; border-right: 1px solid var(--vscode-panel-border); }
-  #detail, #target, #tools { overflow: auto; padding: 8px 12px; }
+  #detail { overflow: auto; padding: 8px 12px; }
   table { border-collapse: collapse; width: 100%; }
   td, th { text-align: left; padding: 2px 6px; vertical-align: top; border-bottom: 1px solid var(--vscode-panel-border); }
   th { position: sticky; top: 0; background: var(--vscode-editor-background); }
@@ -323,36 +342,46 @@ export class PackDocsPanel {
 </style>
 </head>
 <body>
-<div class="tabs">
-  <button id="tabTarget" class="active">Target</button>
-  <button id="tabStore">Store</button>
-  <button id="tabTools">Tools</button>
-  <span class="muted" id="status" style="margin-left:auto;padding:4px"></span>
-</div>
-<div id="target" class="view active">
+<div class="header">
   <div class="toolbar">
-    <label>Context <select id="ctxSel"><option value="">(loading…)</option></select></label>
+    <label>Target <select id="ctxSel"><option value="">(loading…)</option></select></label>
     <span id="ctxArgs" style="display:none">pack <input id="ctxPack" placeholder="Keil::STM32U5xx_DFP@2.1.0" size="30"> device <input id="ctxDevice" placeholder="STM32U585AIIx" size="18"></span>
     <button class="btn" id="inspectBtn">Inspect</button>
     <a id="ctxRefresh">rescan contexts</a>
     <span class="muted" id="inspectInfo"></span>
+    <span class="muted" id="status" style="margin-left:auto"></span>
   </div>
-  <div id="targetBody"><div class="muted">Pick a cbuild-run context of the workspace (or pack + device) and press Inspect: the resolution, the core, the SVD and every document the tools see, with its cache state.</div></div>
+  <div id="targetSummary" class="muted">Pick a cbuild-run context of the workspace (or pack + device) and press Inspect. The tabs below show what the documentation tools see for it.</div>
+  <div class="tabs">
+    <button id="tabDocuments" title="Every document the tools offer for this target — pack, vendor web, Arm catalogue, user and workspace — with its fetch and index state">Documents<span class="badge" id="nDocuments"></span></button>
+    <button id="tabPeripherals" title="The register maps: the device SVD, the Arm core peripherals and the NPU — groups, instances, registers as bit views">Peripherals<span class="badge" id="nPeripherals"></span></button>
+    <button id="tabStore" title="What is extracted and indexed on disk, across all targets: page text, chapters, index statistics, metadata">Page store<span class="badge" id="nStore"></span></button>
+    <button id="tabTools" title="Run any documentation or build tool in-process with JSON arguments, as an agent would">Tools</button>
+  </div>
+</div>
+<div id="documents" class="view">
+  <div class="intro">The documents the tools see for this target, with their state. Click a row: an indexed document shows its content below; a local one not yet extracted is indexed; a web one is fetched.</div>
+  <div id="documentsBody"><div class="muted">No target inspected yet.</div></div>
+</div>
+<div id="peripherals" class="view">
+  <div class="intro">The register maps <span class="mono">get_peripheral_docs</span> works from. Pick a group, then an instance: its registers open as a bit view.</div>
+  <div id="peripheralsBody"><div class="muted">No target inspected yet.</div></div>
 </div>
 <div id="store" class="view">
   <div id="list"><div class="muted" style="padding:8px">loading…</div></div>
-  <div id="detail"><div class="muted">Select a document. Columns: id, source, pages (or sections), size of the source file, when it was extracted.</div></div>
+  <div id="detail"><div class="muted">Select a document on the left to see its extracted pages, chapters, index and metadata. Columns: id, source, pages (or sections), size of the source file, when it was extracted.</div></div>
 </div>
 <div id="tools" class="view">
+  <div class="intro">Run a tool in-process, as an agent would. Arguments are the tool's JSON input; target, pack and device work as in the MCP tools. Ctrl/⌘+Enter runs.</div>
   <div class="toolbar">
     <label>Tool <select id="toolSel"></select></label>
     <button class="btn" id="runBtn">Run</button>
     <button class="btn" id="resetBtn">Template</button>
-    <label><input type="checkbox" id="addTarget" checked> add the Target tab's context to the arguments</label>
+    <label><input type="checkbox" id="addTarget" checked> add the selected target to the arguments</label>
     <span class="muted" id="runInfo"></span>
   </div>
   <textarea id="args" spellcheck="false">{}</textarea>
-  <pre id="out" class="mono">Results appear here. Arguments are the tool's JSON input; target, pack and device work as in the MCP tools.</pre>
+  <pre id="out" class="mono">Results appear here.</pre>
   <div class="hist" id="hist"></div>
 </div>
 <script nonce="${nonce}">
@@ -381,11 +410,14 @@ export class PackDocsPanel {
   }
   const state = vscode.getState() || {};
   const save = (patch) => vscode.setState({ ...(vscode.getState() || {}), ...patch });
+  const TABS = ['Documents', 'Peripherals', 'Store', 'Tools'];
   function showTab(name) {
-    for (const t of ['Target', 'Store', 'Tools']) { $('tab' + t).classList.toggle('active', t === name); $(t.toLowerCase()).classList.toggle('active', t === name); }
+    if (!TABS.includes(name)) { name = 'Documents'; } // also the saved 'Target' of the earlier three-tab layout
+    for (const t of TABS) { $('tab' + t).classList.toggle('active', t === name); $(t.toLowerCase()).classList.toggle('active', t === name); }
     save({ tab: name });
   }
-  $('tabTarget').onclick = () => showTab('Target'); $('tabStore').onclick = () => showTab('Store'); $('tabTools').onclick = () => showTab('Tools');
+  for (const t of TABS) { $('tab' + t).onclick = () => showTab(t); }
+  const setCount = (id, n) => { $(id).textContent = n ? String(n) : ''; };
 
   // ---------------------------------------------------------------- target
   function currentArgs() {
@@ -415,14 +447,19 @@ export class PackDocsPanel {
   function renderTarget(r) {
     inspection = r; targetIds = new Set((r.docs || []).map(d => d.id));
     $('inspectInfo').textContent = r.ms + ' ms';
-    if (r.error) { $('targetBody').innerHTML = '<pre class="mono">' + esc(r.error) + '</pre>'; return; }
-    let h = '<div class="mono">' + esc(r.resolution) + '</div>';
-    h += '<div>Core: <b>' + esc(r.processors || 'unknown — no <processor Dcore> in the pdsc') + '</b> <span class="muted">— decides the Arm documents offered</span></div>';
-    // SVD and core peripherals: the same chips → instance → bit view, twice.
-    h += '<h3>SVD</h3>';
+    if (r.error) {
+      $('targetSummary').innerHTML = '<pre class="mono warn" style="margin:0">' + esc(r.error) + '</pre>';
+      $('documentsBody').innerHTML = $('peripheralsBody').innerHTML = '<div class="muted">The target did not resolve — see above.</div>';
+      setCount('nDocuments', 0); setCount('nPeripherals', 0);
+      return;
+    }
+    $('targetSummary').innerHTML = '<div class="mono">' + esc(r.resolution) + '</div>' +
+      '<div>Core: <b>' + esc(r.processors || 'unknown — no <processor Dcore> in the pdsc') + '</b> <span class="muted">— decides the Arm documents offered</span></div>';
+    // SVD, core and NPU peripherals: the same chips → instance → bit view, three times.
+    let h = '<h3 style="margin-top:0">SVD</h3>';
     if (!r.svd) { h += '<div class="muted">the pdsc names no &lt;debug svd&gt; for this device — get_peripheral_docs is unavailable</div>'; }
     else {
-      h += '<div><span class="mono">' + esc(r.svd.rel) + '</span>' + (r.svd.pname ? ' <span class="badge">' + esc(r.svd.pname) + '</span>' : '') + (r.svd.exists ? ' <span class="ok">on disk</span> · device ' + esc(r.svd.device || '?') + ' · ' + r.svd.peripherals.length + ' peripherals · <a data-open="' + esc(r.svd.path) + '">open file</a> · <span class="muted">pick a group, then an instance: its registers open as a bit view</span>' : ' <span class="warn">not on disk</span>') + (r.svd.error ? ' <span class="warn">' + esc(r.svd.error) + '</span>' : '') + '</div>';
+      h += '<div><span class="mono">' + esc(r.svd.rel) + '</span>' + (r.svd.pname ? ' <span class="badge">' + esc(r.svd.pname) + '</span>' : '') + (r.svd.exists ? ' <span class="ok">on disk</span> · device ' + esc(r.svd.device || '?') + ' · ' + r.svd.peripherals.length + ' peripherals · <a data-open="' + esc(r.svd.path) + '">open file</a>' : ' <span class="warn">not on disk</span>') + (r.svd.error ? ' <span class="warn">' + esc(r.svd.error) + '</span>' : '') + '</div>';
       h += peripheralSection('svd', r.svd.peripherals);
     }
     h += '<h3>Core peripherals (Arm IP)</h3>';
@@ -436,16 +473,20 @@ export class PackDocsPanel {
       h += '<div><span class="mono">' + esc(r.npu.rel) + '</span> · ' + esc(r.npu.pack || '') + (r.npu.exists ? ' <span class="ok">on disk</span> · ' + esc(r.npu.coreName || '') + ' · <a data-open="' + esc(r.npu.path) + '">open file</a> · <span class="muted">the register map the driver programs; the base address comes from the vendor SVD when it has an NPU peripheral</span>' : ' <span class="warn">not on disk — install the ARM::ethos-u-core-driver pack</span>') + (r.npu.error ? ' <span class="warn">' + esc(r.npu.error) + '</span>' : '') + '</div>';
       h += peripheralSection('npu', r.npu.peripherals);
     }
+    $('peripheralsBody').innerHTML = h;
+    for (const a of document.querySelectorAll('#peripheralsBody a[data-open]')) { a.onclick = () => vscode.postMessage({ type: 'store.open', path: a.dataset.open }); }
+    setCount('nPeripherals', ((r.svd && r.svd.peripherals) || []).length + ((r.core && r.core.peripherals) || []).length + ((r.npu && r.npu.peripherals) || []).length);
     // documents
     const docs = r.docs || [];
+    setCount('nDocuments', docs.length);
     const counts = { pack: 0, web: 0, arm: 0, user: 0, workspace: 0 };
     for (const d of docs) { if (d.scope === 'arm') counts.arm++; else if (d.source === 'user') counts.user++; else if (d.source === 'workspace') counts.workspace++; else if (d.source === 'web') counts.web++; else counts.pack++; }
-    h += '<h3>Documents (' + docs.length + ': ' + counts.pack + ' pack, ' + counts.web + ' web, ' + counts.arm + ' Arm catalogue, ' + counts.user + ' user, ' + counts.workspace + ' workspace' + (r.workspaceDirs && r.workspaceDirs.length ? ' in ' + esc(r.workspaceDirs.join(', ')) : '') + ')</h3>';
+    h = '<div><b>' + docs.length + ' documents</b>: ' + counts.pack + ' pack, ' + counts.web + ' web, ' + counts.arm + ' Arm catalogue, ' + counts.user + ' user, ' + counts.workspace + ' workspace' + (r.workspaceDirs && r.workspaceDirs.length ? ' in ' + esc(r.workspaceDirs.join(', ')) : '') + '</div>';
     h += '<div class="muted">User documents folder: <a data-open="' + esc(r.userDir || '') + '" class="mono">' + esc(r.userDir || '') + '</a>' + (r.userMatched && r.userMatched.length ? ' — matched ' + esc(r.userMatched.join(', ')) : ' — no folder matches this target yet') + ' · <a id="importDoc">Import document…</a> (a PDF the pack does not ship, e.g. under NDA; attributed to this pack, device, board or core, indexed at once)</div>';
     h += '<div class="toolbar"><input id="docFilter" placeholder="filter id / title" value="' + esc(docFilter) + '"> <select id="docSource"><option value="">all</option><option value="pack">pack</option><option value="web">web (vendor)</option><option value="arm">Arm catalogue</option><option value="user">user</option><option value="workspace">workspace</option><option value="readable">searchable now</option><option value="unfetched">not fetched</option></select> <a id="runList">run list_target_docs</a></div>';
     h += '<div id="docTable"></div><div id="targetDetail"></div>';
-    $('targetBody').innerHTML = h;
-    for (const a of document.querySelectorAll('#targetBody a[data-open]')) { a.onclick = () => vscode.postMessage({ type: 'store.open', path: a.dataset.open }); }
+    $('documentsBody').innerHTML = h;
+    for (const a of document.querySelectorAll('#documentsBody a[data-open]')) { a.onclick = () => vscode.postMessage({ type: 'store.open', path: a.dataset.open }); }
     $('docFilter').oninput = () => { docFilter = $('docFilter').value; renderDocTable(); };
     $('docSource').value = docSource; $('docSource').onchange = () => { docSource = $('docSource').value; renderDocTable(); };
     $('runList').onclick = () => runTool('list_target_docs', { ...currentArgs() });
@@ -478,7 +519,7 @@ export class PackDocsPanel {
       const primary = d.readable && d.indexed ? 'show' : d.readable ? 'index' : (d.source === 'web' && !d.cached ? 'fetch' : '');
       h += '<tr class="' + (primary ? 'row' : '') + (d.id === selected ? ' sel' : '') + '" data-id="' + esc(d.id) + '" data-primary="' + primary + '" title="' + (primary === 'show' ? 'click: show the extracted content' : primary === 'index' ? 'click: extract and index (reads page 1)' : primary === 'fetch' ? 'click: fetch_doc' : '') + '"><td class="mono">' + esc(d.id) + (d.revision ? ' <span class="badge">' + esc(d.revision) + '</span>' : '') + '</td><td>' + esc(d.scope) + (d.kind ? ' · ' + esc(d.kind) : '') + (d.category ? ' [' + esc(d.category) + ']' : '') + '</td><td>' + esc(d.title) + '</td><td class="' + stateCls + '">' + esc(d.state) + '</td><td class="act">' + acts.join('') + '</td></tr>';
     }
-    h += '</table>' + (rows.length !== docs.length ? '<div class="muted">' + rows.length + ' of ' + docs.length + ' shown</div>' : '') + '<div class="muted">Click a row: extracted documents show their content below; local documents not yet extracted are indexed; web documents are fetched.</div>';
+    h += '</table>' + (rows.length !== docs.length ? '<div class="muted">' + rows.length + ' of ' + docs.length + ' shown</div>' : '');
     $('docTable').innerHTML = h;
     for (const row of document.querySelectorAll('#docTable tr.row')) {
       row.onclick = (ev) => {
@@ -565,9 +606,15 @@ export class PackDocsPanel {
   // ----------------------------------------------------------------- store
   function renderList(msg) {
     storeMsg = msg; entries = msg.entries;
+    setCount('nStore', entries.length);
     const only = !!(vscode.getState() || {}).onlyTarget && targetIds.size;
     const shown = only ? entries.filter(e => targetIds.has(e.id)) : entries;
-    let h = '<div class="muted" style="padding:6px 8px">' + esc(msg.storageDir) + ' · ' + entries.length + ' extracted' + (msg.fetchedOnly.length ? ', ' + msg.fetchedOnly.length + ' fetch records without extraction' : '') + ' <a id="refresh">refresh</a> · <a id="clearExtracted" title="Remove the extracted text and search indexes of every document; downloads stay. Asks first.">clear extracted text…</a> · <a id="clearDownloads" title="Remove the documents fetch_doc downloaded (arm/, web/): PDFs, fetch records and their extraction. Asks first.">delete downloaded PDFs…</a><br><label><input type="checkbox" id="onlyTarget"' + (only ? ' checked' : '') + '> only the Target tab\\'s documents (' + targetIds.size + ')</label></div>';
+    const parts = String(msg.storageDir).split('/');
+    const shortDir = parts.length > 3 ? '…/' + parts.slice(-2).join('/') : msg.storageDir;
+    let h = '<div style="padding:6px 8px">' +
+      '<div><b>' + entries.length + ' extracted</b>' + (msg.fetchedOnly.length ? ', ' + msg.fetchedOnly.length + ' fetched but not extracted' : '') + ' <span class="muted">in</span> <a data-open="' + esc(msg.storageDir) + '" class="mono" title="' + esc(msg.storageDir) + '">' + esc(shortDir) + '</a></div>' +
+      '<div class="toolbar" style="margin:4px 0 0"><a id="refresh">refresh</a> · <a id="clearExtracted" title="Remove the extracted text and search indexes of every document; downloads stay. Asks first.">clear extracted text…</a> · <a id="clearDownloads" title="Remove the documents fetch_doc downloaded (arm/, web/): PDFs, fetch records and their extraction. Asks first.">delete downloaded PDFs…</a></div>' +
+      '<label><input type="checkbox" id="onlyTarget"' + (only ? ' checked' : '') + '> only this target\\'s documents (' + targetIds.size + ')</label></div>';
     h += '<table><tr><th>id</th><th>src</th><th>pages</th><th>size</th><th>extracted</th></tr>';
     for (const e of shown) {
       h += '<tr class="row' + (e.id === selected ? ' sel' : '') + '" data-id="' + esc(e.id) + '"><td class="mono">' + esc(e.id) + (e.revision ? ' <span class="badge">' + esc(e.revision) + '</span>' : '') + (e.fileExists ? '' : ' <span class="badge">source missing</span>') + '</td><td>' + esc(e.source) + '</td><td>' + e.pageCount + (e.unit === 'section' ? ' §' : '') + '</td><td>' + kb(e.sizeBytes) + '</td><td class="muted">' + esc((e.createdAt || '').slice(0, 16).replace('T', ' ')) + '</td></tr>';
@@ -577,9 +624,10 @@ export class PackDocsPanel {
       h += '<tr><td class="mono">' + esc(f.id) + ' <span class="badge">' + esc(f.format || 'not extracted') + '</span></td><td>web</td><td>–</td><td></td><td class="muted">' + esc(f.title || '') + '</td></tr>';
     }
     h += '</table>';
-    if (!shown.length) { h += '<div class="muted" style="padding:8px">Nothing extracted yet' + (only ? ' for this target' : '') + '. The Target tab\\'s index / fetch actions, or any search, fill the store.</div>'; }
+    if (!shown.length) { h += '<div class="muted" style="padding:8px">Nothing extracted yet' + (only ? ' for this target' : '') + '. The Documents tab\\'s index / fetch actions, or any search, fill the store.</div>'; }
     $('list').innerHTML = h;
     $('refresh').onclick = () => vscode.postMessage({ type: 'store.list' });
+    for (const a of $('list').querySelectorAll('a[data-open]')) { a.onclick = () => vscode.postMessage({ type: 'store.open', path: a.dataset.open }); }
     $('clearExtracted').onclick = () => { $('status').textContent = 'confirm in the dialog…'; vscode.postMessage({ type: 'store.clear', what: 'extracted' }); };
     $('clearDownloads').onclick = () => { $('status').textContent = 'confirm in the dialog…'; vscode.postMessage({ type: 'store.clear', what: 'downloads' }); };
     $('onlyTarget').onchange = () => { save({ onlyTarget: $('onlyTarget').checked }); renderList(storeMsg); };
@@ -653,7 +701,7 @@ export class PackDocsPanel {
     else if (m.type === 'refresh') { vscode.postMessage({ type: 'store.list' }); if (inspection) vscode.postMessage({ type: 'target.inspect', args: currentArgs() }); }
     else if (m.type === 'error') { $('status').textContent = m.text; $('runBtn').disabled = false; $('runInfo').textContent = 'failed'; $('out').textContent = m.text; $('inspectInfo').textContent = 'failed'; for (const id of ['detail', 'targetDetail']) { const b = $(id); if (b && /loading/.test(b.textContent)) b.innerHTML = '<pre class="mono warn">' + esc(m.text) + '</pre>'; } }
   }
-  showTab(state.tab || 'Target');
+  showTab(state.tab || 'Documents');
   vscode.postMessage({ type: 'target.contexts' });
   vscode.postMessage({ type: 'store.list' });
   vscode.postMessage({ type: 'tools.list' });

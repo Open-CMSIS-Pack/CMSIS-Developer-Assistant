@@ -225,4 +225,42 @@ export class DebugState {
 
         return JSON.stringify(stateObject, null, 2);
     }
+
+    /**
+     * The form motion tools return after every step, continue, pause and
+     * wait_for_stop — paid on every move, so it keeps what the next step
+     * needs and collapses the rest: the top frames with the remainder counted
+     * (get_call_stack has the whole stack), the breakpoint list only when the
+     * caller says it changed (a count otherwise), and no fields the full
+     * form already reported when the session came up (configurationName,
+     * fileName — the full path stays, add_breakpoint needs it).
+     */
+    public toCompactString(options: { includeBreakpoints: boolean; maxFrames?: number }): string {
+        if (!this.sessionActive) {
+            return JSON.stringify({ sessionActive: false }, null, 2);
+        }
+        const maxFrames = options.maxFrames ?? 5;
+        const frames = this.stackTrace.map(frame => `${frame.name}:${frame.line || '?'}`);
+        const stackTrace = frames.length > maxFrames
+            ? [...frames.slice(0, maxFrames), `… ${frames.length - maxFrames} more — get_call_stack`]
+            : frames;
+
+        const compact: Record<string, unknown> = {
+            sessionActive: true,
+            frameName: this.frameName,
+            fileFullPath: this.fileFullPath,
+            currentLine: this.currentLine,
+            currentLineContent: this.currentLineContent,
+            nextLines: this.nextLines,
+            frameId: this.frameId,
+            threadId: this.threadId,
+            stackTrace,
+        };
+        if (options.includeBreakpoints) {
+            compact.breakpoints = this.breakpoints;
+        } else {
+            compact.breakpointsUnchanged = this.breakpoints.length;
+        }
+        return JSON.stringify(compact, null, 2);
+    }
 }

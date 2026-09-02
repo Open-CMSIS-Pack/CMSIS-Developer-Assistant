@@ -2,10 +2,15 @@
 // Copyright 2026 Arm Limited and contributors
 
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as jsonc from 'jsonc-parser';
+import {
+    TargetRef, TargetTypeInfo, applyTargetSelection, formatTargetChoices, listTargetTypes, parseTargetRef,
+    resolveTargetSelection, solutionDisplayName, targetMatches,
+} from './core/cmsisTarget';
 import { IDebugConfigurationManager } from './utils/debugConfigurationManager';
-import { DebugState, formatBreakpointModifiers } from './debugState';
+import { DebugState, formatBreakpointModifiers, StackFrame } from './debugState';
 import { IDebuggingExecutor } from './debuggingExecutor';
 import { HardwareTimeoutError, withTimeout } from './utils/timeout';
 import { fileExists, flashWithPyocd, probePyocd } from './core/flashController';
@@ -15,9 +20,18 @@ import {
     formatMissingNames,
     renderScopes,
     renderVariableNames,
+    DEFAULT_LISTING_LIMITS,
+    DEFAULT_NAME_LISTING_LIMIT,
     selectVariables,
 } from './core/variableView';
-import { getRecentDiagnostics } from './utils/sessionStateTracker';
+import { shortenPath, truncateList } from './core/textBudget';
+import { SvdDevice, findPeripheral, findRegister, listPeripheralNames, loadSvdForLookup } from './core/svdParser';
+import { lookupAddress, matchName, parseAddress, renderAddressHit, renderPeripheral, renderPeripheralList, renderRegister } from './core/svdLookup';
+import { getRecentDiagnostics, getStoppedReason, resolveActiveSession } from './utils/sessionStateTracker';
+import { decodeFault } from './core/faultDecoder';
+import {
+    classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, AddressInfo, DiagnosisInput,
+} from './core/faultTriage';
 import { logger } from './utils/logger';
 
 const HARD_HANDLER_CAP_MS = 60_000;
@@ -87,13 +101,16 @@ export interface IDebuggingHandler {
     handleReadCycleCounter(args?: { timeoutMs?: number }): Promise<string>;
     handleReadPeripheralRegister(args: { peripheral: string; register?: string; timeoutMs?: number }): Promise<string>;
     handleGetFaultInfo(args?: { timeoutMs?: number }): Promise<string>;
+    handleDiagnoseFault(args?: { levels?: number; timeoutMs?: number }): Promise<string>;
+    handleLookupPeripheral(args?: { name?: string; address?: string; filter?: string; svdFile?: string; pname?: string; timeoutMs?: number }): Promise<string>;
+    handleLookupRegister(args: { peripheral: string; register: string; svdFile?: string; pname?: string; timeoutMs?: number }): Promise<string>;
     handleGetDeviceInfo(): Promise<string>;
     handleCheckTargetConnection(): Promise<string>;
     handleGetSessionStatus(): Promise<string>;
     handleGetCallStack(args: { threadId?: number; levels?: number; timeoutMs?: number }): Promise<string>;
     handleGetThreads(args?: { timeoutMs?: number }): Promise<string>;
     handleGetFrameVariables(args: { frameId: number; scope?: 'local' | 'global' | 'all'; variableNames?: string[]; timeoutMs?: number }): Promise<string>;
-    handleCmsisCommand(args: { action: CmsisAction; timeoutMs?: number }): Promise<string>;
+    handleCmsisCommand(args: { action: CmsisAction; target?: string; timeoutMs?: number }): Promise<string>;
     handleFlash(args: { cbuildRunFile?: string; timeoutMs?: number }): Promise<string>;
 }
 
@@ -112,6 +129,39 @@ export type CmsisAction =
  */
 export class DebuggingHandler implements IDebuggingHandler {
     private readonly numNextLines: number = 3;
+
+    /**
+     * The breakpoint list as last reported in a state snapshot. Motion tools
+     * repeat it only when it changed; otherwise the compact state carries a
+     * count. One per handler, i.e. per window — two agents on one window see
+     * each other's "unchanged", which is harmless (the list is a call away).
+     */
+    private lastEmittedBreakpoints: string | null = null;
+
+    /** Frames shown inline by get_call_stack when the caller did not ask for a depth. */
+    private static readonly CALL_STACK_INLINE_FRAMES = 20;
+
+    /** Threads shown inline by get_threads. */
+    private static readonly THREADS_INLINE = 32;
+
+    /** Full state, as when a session comes up; also seeds the breakpoint diff. */
+    private fullState(state: DebugState): string {
+        this.lastEmittedBreakpoints = state.breakpoints.join('\n');
+        return state.toString();
+    }
+
+    /** Compact state for motion tools; the breakpoint list only when it changed. */
+    private compactState(state: DebugState): string {
+        const key = state.breakpoints.join('\n');
+        const changed = key !== this.lastEmittedBreakpoints;
+        this.lastEmittedBreakpoints = key;
+        return state.toCompactString({ includeBreakpoints: changed });
+    }
+
+    /** Workspace roots, for shortening source paths in listings. */
+    private workspaceRoots(): string[] {
+        return vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [];
+    }
     private readonly executionDelay: number = 300; // ms to wait for debugger updates
     private readonly timeoutInSeconds: number;
 
@@ -193,7 +243,7 @@ export class DebuggingHandler implements IDebuggingHandler {
                     }
                     const currentState = await this.executor.getCurrentDebugState(this.numNextLines);
                     const target = fileFullPath || selectedConfigName;
-                    return `Debug session started successfully for: ${target} using configuration '${selectedConfigName}'. Current state: ${currentState.toString()}`;
+                    return `Debug session started successfully for: ${target} using configuration '${selectedConfigName}'. Current state: ${this.fullState(currentState)}`;
                 } else {
                     throw new Error(`Failed to start debug session with configuration '${selectedConfigName}'.`);
                 }
@@ -224,7 +274,7 @@ export class DebuggingHandler implements IDebuggingHandler {
                 const configInfo = selectedConfigName ? ` using configuration '${selectedConfigName}'` : ' with default configuration';
                 const testInfo = testName ? ` (test: ${testName})` : '';
                 const currentState = await this.executor.getCurrentDebugState(this.numNextLines);
-                return `Debug session started successfully for: ${fileFullPath}${configInfo}${testInfo}. Current state: ${currentState.toString()}`;
+                return `Debug session started successfully for: ${fileFullPath}${configInfo}${testInfo}. Current state: ${this.fullState(currentState)}`;
             } else {
                 throw new Error('Failed to start debug session. Make sure the appropriate language extension is installed.');
             }
@@ -430,7 +480,7 @@ export class DebuggingHandler implements IDebuggingHandler {
         if (result.sessionEnded) {
             return `Pause requested but the debug session ended. The target may have crashed.`;
         }
-        return `Target paused. ${result.state.toString()}`;
+        return `Target paused. ${this.compactState(result.state)}`;
     }
 
     /**
@@ -469,7 +519,7 @@ export class DebuggingHandler implements IDebuggingHandler {
             const head = result.kind === 'already-stopped'
                 ? `Target was already stopped (reason: ${result.reason ?? 'unknown'}).`
                 : `Target stopped (reason: ${result.reason ?? 'unknown'}${threadInfo}).`;
-            return `${head}\n\n${state.toString()}`;
+            return `${head}\n\n${this.compactState(state)}`;
         });
     }
 
@@ -939,7 +989,7 @@ export class DebuggingHandler implements IDebuggingHandler {
             if (scopes.length === 0) {
                 return 'No variable scopes available at current execution point.';
             }
-            return renderVariableNames(scopes);
+            return renderVariableNames(scopes, { maxVariables: DEFAULT_NAME_LISTING_LIMIT });
         });
     }
 
@@ -972,7 +1022,11 @@ export class DebuggingHandler implements IDebuggingHandler {
                     'Call list_variable_names to see what is available here.';
             }
 
-            out += renderScopes(selected, { header: 'Variables', redact: this.redactor() });
+            out += renderScopes(selected, {
+                header: 'Variables',
+                redact: this.redactor(),
+                limits: variableNames?.length ? undefined : DEFAULT_LISTING_LIMITS,
+            });
             out += formatMissingNames(missing);
             return out;
         });
@@ -1134,7 +1188,7 @@ export class DebuggingHandler implements IDebuggingHandler {
      * session termination so the MCP client sees an unambiguous outcome.
      */
     private formatAfterExecution(result: { state: DebugState; timedOut: boolean; sessionEnded: boolean }, op: string): string {
-        const body = result.state.toString();
+        const body = this.compactState(result.state);
         if (result.sessionEnded) {
             return `${body}\n\n⚠️ Debug session ended during '${op}'. The target may have run to completion, crashed, or lost its connection.`;
         }
@@ -1173,11 +1227,14 @@ export class DebuggingHandler implements IDebuggingHandler {
                 return lines.join('\n');
             }
 
-            // Read PC and current frame to localise the firmware.
+            // Read PC and LR to localise the firmware — two registers, not
+            // the full set; read_core_registers is a call away if needed.
             let pcText = '<unavailable>';
+            let lrText = '';
             try {
-                const regs = await this.executor.readCoreRegisters(5_000);
+                const regs = await this.executor.readCoreRegisters(5_000, ['pc', 'lr']);
                 if (regs.pc) { pcText = this.normalizeRegToHex(regs.pc); }
+                if (regs.lr) { lrText = `, LR = ${this.normalizeRegToHex(regs.lr)}`; }
             } catch (err) {
                 pcText = `<read failed: ${err instanceof Error ? err.message : String(err)}>`;
             }
@@ -1187,7 +1244,7 @@ export class DebuggingHandler implements IDebuggingHandler {
             const loc = state.fileName && state.currentLine !== null
                 ? ` at ${state.fileName}:${state.currentLine}`
                 : '';
-            lines.push(`Paused successfully. PC = ${pcText}${frame}${loc}.`);
+            lines.push(`Paused successfully. PC = ${pcText}${lrText}${frame}${loc}.`);
             if (state.currentLineContent) {
                 lines.push(`  Current line: ${state.currentLineContent}`);
             }
@@ -1239,7 +1296,7 @@ REQUIRED NEXT STEPS:
      * Read target memory
      */
     public async handleReadMemory(args: { address: string; length: number; format?: 'hex' | 'ascii' | 'both'; timeoutMs?: number }): Promise<string> {
-        const { address, length, format = 'both', timeoutMs } = args;
+        const { address, length, format = 'hex', timeoutMs } = args;
 
         return withHandlerTimeout('read_memory', timeoutMs, async () => {
             await this.ensureStoppedSession('read memory');
@@ -1383,6 +1440,167 @@ REQUIRED NEXT STEPS:
         });
     }
 
+    /** A GDB register string as a number, or undefined when it is not one. */
+    private regNumber(raw: string | undefined): number | undefined {
+        if (!raw || raw.startsWith('<')) { return undefined; }
+        const normalized = this.normalizeRegToHex(raw);
+        if (!/^0x[0-9a-fA-F]+$/.test(normalized)) { return undefined; }
+        return Number.parseInt(normalized, 16) >>> 0;
+    }
+
+    /**
+     * One-call fault triage: fault registers, the stacked exception frame,
+     * the top frames and the faulting address resolved against the SVD, with
+     * ranked hypotheses. Every section after the fault registers degrades to
+     * a note instead of failing the call.
+     */
+    public async handleDiagnoseFault(args: { levels?: number; timeoutMs?: number } = {}): Promise<string> {
+        return withHandlerTimeout('diagnose_fault', args.timeoutMs, async () => {
+            await this.ensureStoppedSession('diagnose the fault');
+            const skipped: string[] = [];
+            const decoded = decodeFault(await this.executor.readFaultRegisters(args.timeoutMs));
+
+            let core: Record<string, string> = {};
+            try {
+                core = await this.executor.readCoreRegisters(args.timeoutMs,
+                    ['sp', 'lr', 'pc', 'xpsr', 'msp', 'psp', 'control', 'msplim', 'psplim']);
+            } catch {
+                skipped.push('core registers');
+            }
+            const regs: DiagnosisInput['regs'] = {
+                sp: this.regNumber(core.sp), lr: this.regNumber(core.lr), pc: this.regNumber(core.pc),
+                xpsr: this.regNumber(core.xpsr), msp: this.regNumber(core.msp), psp: this.regNumber(core.psp),
+                msplim: this.regNumber(core.msplim), psplim: this.regNumber(core.psplim),
+            };
+
+            const selection = selectExceptionFrame(regs.lr, regs.msp, regs.psp);
+            let frame = null;
+            let frameNote: string | undefined;
+            if (!selection.isExcReturn) {
+                frameNote = regs.lr === undefined
+                    ? 'LR unavailable — read_core_registers, then read_memory at PSP/MSP'
+                    : 'LR is not an EXC_RETURN value — halted deeper inside the handler; get_call_stack has the frames';
+            } else if (selection.sp === null) {
+                frameNote = `${selection.source} unavailable — read_core_registers`;
+            } else {
+                try {
+                    frame = parseStackedFrame(await this.executor.readExceptionFrame(selection.sp, args.timeoutMs));
+                    if (!frame) { frameNote = `short read at ${selection.source}`; }
+                } catch {
+                    skipped.push('exception frame');
+                }
+            }
+
+            let frames: StackFrame[] = [];
+            try {
+                frames = await this.executor.getCallStack(undefined, args.levels ?? 3, args.timeoutMs);
+            } catch {
+                skipped.push('call stack');
+            }
+
+            let device = null;
+            let svdNote: string | undefined;
+            try {
+                const loaded = await loadSvdForLookup({});
+                device = loaded.device;
+                if (!device) { svdNote = 'no SVD found — addresses are classified by the Cortex-M system map only; pass svdFile to lookup_peripheral to resolve them'; }
+            } catch {
+                svdNote = 'SVD could not be loaded';
+            }
+
+            const faultAddress: AddressInfo | undefined = decoded.faultAddress
+                ? classifyAddress(decoded.faultAddress.value, device) : undefined;
+            const pcValue = frame?.pc ?? regs.pc;
+            const pcInfo = pcValue !== undefined ? classifyAddress(pcValue, device) : undefined;
+
+            const session = resolveActiveSession();
+            const stopReason = session ? getStoppedReason(session) : null;
+
+            return renderDiagnosis({
+                decoded, frame, selection, regs, faultAddress, pcInfo, stopReason,
+                frames: frames.map(f => ({ ...f, source: f.source ? shortenPath(f.source, this.workspaceRoots()) : f.source })),
+                frameNote, skipped, svdNote, maxFrames: args.levels ?? 3,
+            });
+        });
+    }
+
+    /**
+     * The device description for the lookup tools, or the text explaining
+     * where an SVD was looked for. No session is required: with one, its SVD
+     * is used (the same file read_peripheral_register reads).
+     */
+    private async svdForLookup(opts: { svdFile?: string; pname?: string }): Promise<{ device: SvdDevice; path: string } | { error: string }> {
+        const loaded = await loadSvdForLookup(opts);
+        if (loaded.device) {
+            return { device: loaded.device, path: loaded.path };
+        }
+        const tried = loaded.tried.length ? `\nTried:\n  - ${loaded.tried.join('\n  - ')}` : '';
+        return {
+            error: `No SVD file found for a lookup.${tried}\n` +
+                'Pass svdFile (the device .svd from the DFP; ${CMSIS_PACK_ROOT} is expanded), or build the solution so ' +
+                'out/<context>.cbuild-run.yml names it, or add "svdFile" to the launch configuration. ' +
+                'For a multi-core device pass pname to pick the core.',
+        };
+    }
+
+    /**
+     * Answer "what is this peripheral / what is at this address" from the SVD
+     * without touching the target.
+     */
+    public async handleLookupPeripheral(args: { name?: string; address?: string; filter?: string; svdFile?: string; pname?: string; timeoutMs?: number } = {}): Promise<string> {
+        return withHandlerTimeout('lookup_peripheral', args.timeoutMs, async () => {
+            const svd = await this.svdForLookup(args);
+            if ('error' in svd) { return svd.error; }
+            const { device } = svd;
+
+            if (args.address !== undefined && args.address !== '') {
+                const addr = parseAddress(args.address);
+                if (addr === null) {
+                    return `'${args.address}' is not an address — pass hex like 0x40005400 or a decimal number.`;
+                }
+                return renderAddressHit(addr, lookupAddress(device, addr), device.name);
+            }
+
+            if (args.name) {
+                const { exact, suggestions } = matchName(listPeripheralNames(device), args.name);
+                const peripheral = exact ? findPeripheral(device, exact) : undefined;
+                if (!peripheral) {
+                    return `Peripheral '${args.name}' is not in the SVD of ${device.name}.` +
+                        (suggestions.length ? ` Did you mean: ${suggestions.join(', ')}?` : '') +
+                        '\nCall lookup_peripheral without name for the full list.';
+                }
+                return renderPeripheral(peripheral, { filter: args.filter });
+            }
+
+            return renderPeripheralList(device, { filter: args.filter });
+        });
+    }
+
+    /** Describe one register — offset, access, reset value, bit fields — from the SVD, without reading it. */
+    public async handleLookupRegister(args: { peripheral: string; register: string; svdFile?: string; pname?: string; timeoutMs?: number }): Promise<string> {
+        return withHandlerTimeout('lookup_register', args.timeoutMs, async () => {
+            const svd = await this.svdForLookup(args);
+            if ('error' in svd) { return svd.error; }
+            const { device } = svd;
+
+            const pMatch = matchName(listPeripheralNames(device), args.peripheral ?? '');
+            const peripheral = pMatch.exact ? findPeripheral(device, pMatch.exact) : undefined;
+            if (!peripheral) {
+                return `Peripheral '${args.peripheral}' is not in the SVD of ${device.name}.` +
+                    (pMatch.suggestions.length ? ` Did you mean: ${pMatch.suggestions.join(', ')}?` : '') +
+                    '\nCall lookup_peripheral without name for the full list.';
+            }
+            const rMatch = matchName(peripheral.registers.map(r => r.name), args.register ?? '');
+            const register = rMatch.exact ? findRegister(peripheral, rMatch.exact) : undefined;
+            if (!register) {
+                return `Register '${args.register}' is not in ${peripheral.name}.` +
+                    (rMatch.suggestions.length ? ` Did you mean: ${rMatch.suggestions.join(', ')}?` : '') +
+                    `\nCall lookup_peripheral { name: '${peripheral.name}' } for its register map.`;
+            }
+            return renderRegister(peripheral, register);
+        });
+    }
+
     /**
      * Get debug target / session information.
      * Does NOT require the target to be stopped — only reads the launch
@@ -1393,7 +1611,11 @@ REQUIRED NEXT STEPS:
             if (!this.executor.hasDebugSession()) {
                 throw new Error('No active debug session. Start debugging first.');
             }
-            return await this.executor.getDeviceInfo();
+            const info = await this.executor.getDeviceInfo();
+            // Which csolution target the panel is on — the cross-check the
+            // build topic asks for after load_and_debug. Best-effort.
+            const target = await this.queryActiveTargetSet();
+            return target.name ? `${info.trimEnd()}\n  CMSIS target: ${target.name}` : info;
         } catch (error) {
             throw new Error(`Error getting device info: ${error}`);
         }
@@ -1430,13 +1652,23 @@ REQUIRED NEXT STEPS:
             if (frames.length === 0) {
                 return 'No stack frames available.';
             }
+            // Paths workspace-relative; a deep stack collapsed unless the
+            // caller asked for a depth — 50 frames of absolute paths is the
+            // kind of result that compacts an agent's context for nothing.
+            const roots = this.workspaceRoots();
+            const { shown, hidden } = args.levels !== undefined
+                ? { shown: frames, hidden: 0 }
+                : truncateList(frames, DebuggingHandler.CALL_STACK_INLINE_FRAMES);
             const lines: string[] = [];
             lines.push(`Call stack (${frames.length} frame${frames.length === 1 ? '' : 's'}):`);
-            frames.forEach((f, i) => {
-                const loc = f.source ? `${f.source}:${f.line ?? '?'}` : `<no source>:${f.line ?? '?'}`;
+            shown.forEach((f, i) => {
+                const loc = f.source ? `${shortenPath(f.source, roots)}:${f.line ?? '?'}` : `<no source>:${f.line ?? '?'}`;
                 const fid = f.frameId !== undefined ? ` [frameId=${f.frameId}]` : '';
                 lines.push(`  #${i.toString().padStart(2, ' ')}  ${f.name}  @ ${loc}${fid}`);
             });
+            if (hidden > 0) {
+                lines.push(`  … ${hidden} more frames — pass levels to see all`);
+            }
             lines.push('');
             lines.push('Tip: use get_frame_variables with a frameId to inspect variables of a specific frame.');
             return lines.join('\n');
@@ -1454,13 +1686,18 @@ REQUIRED NEXT STEPS:
             if (threads.length === 0) {
                 return 'No threads reported by the debug adapter.';
             }
+            const roots = this.workspaceRoots();
+            const { shown, hidden } = truncateList(threads, DebuggingHandler.THREADS_INLINE);
             const lines: string[] = [];
             lines.push(`Threads / RTOS tasks (${threads.length}):`);
-            for (const t of threads) {
+            for (const t of shown) {
                 const top = t.topFrame
-                    ? `  → ${t.topFrame.name} @ ${t.topFrame.source ?? '<no source>'}:${t.topFrame.line ?? '?'}`
+                    ? `  → ${t.topFrame.name} @ ${t.topFrame.source ? shortenPath(t.topFrame.source, roots) : '<no source>'}:${t.topFrame.line ?? '?'}`
                     : '';
                 lines.push(`  [${t.id}] ${t.name}${top}`);
+            }
+            if (hidden > 0) {
+                lines.push(`  … ${hidden} more threads`);
             }
             lines.push('');
             lines.push('Tip: pass a threadId to get_call_stack to inspect a specific task.');
@@ -1494,8 +1731,11 @@ REQUIRED NEXT STEPS:
                 return `None of the requested variables are in scope at frameId=${frameId}: ${variableNames.join(', ')}.`;
             }
 
-            return renderScopes(selected, { header: `Variables for frameId=${frameId}`, redact: this.redactor() })
-                + formatMissingNames(missing);
+            return renderScopes(selected, {
+                header: `Variables for frameId=${frameId}`,
+                redact: this.redactor(),
+                limits: variableNames?.length ? undefined : DEFAULT_LISTING_LIMITS,
+            }) + formatMissingNames(missing);
         });
     }
 
@@ -1507,7 +1747,7 @@ REQUIRED NEXT STEPS:
      * check; do not infer it from the presence of `.vscode/cmsis.json`, which
      * is legitimately empty/absent for single-target solutions.
      */
-    private async queryActiveCmsisSolution(): Promise<{ active: boolean; describe: string }> {
+    private async queryActiveCmsisSolution(): Promise<{ active: boolean; path?: string; describe: string }> {
         try {
             const result = await withTimeout(
                 'cmsis getSolutionFile',
@@ -1525,11 +1765,104 @@ REQUIRED NEXT STEPS:
                 const r = result as Record<string, any>;
                 path = r.solutionFile ?? r.fsPath ?? r.path ?? r.uri?.fsPath ?? r.uri?.path;
             }
-            return { active: true, describe: path ?? '<active, path unknown>' };
+            return { active: true, path, describe: path ?? '<active, path unknown>' };
         } catch (err) {
             // Command missing → CMSIS Solution extension not installed/active.
             return { active: false, describe: `query failed: ${err instanceof Error ? err.message : String(err)}` };
         }
+    }
+
+    /**
+     * Ask the CMSIS Solution extension which target-type / target-set is
+     * active. `cmsis-csolution.getActiveTargetSet` returns `type`, `type@set`
+     * (the panel's Run and Debug configuration), or '' when nothing is
+     * active. Never throws.
+     */
+    private async queryActiveTargetSet(): Promise<{ name: string | undefined; describe: string }> {
+        try {
+            const result = await withTimeout(
+                'cmsis getActiveTargetSet',
+                5_000,
+                Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.getActiveTargetSet')),
+            );
+            const name = typeof result === 'string' ? result.trim() : '';
+            return { name: name || undefined, describe: name || 'none' };
+        } catch (err) {
+            return { name: undefined, describe: `query failed: ${err instanceof Error ? err.message : String(err)}` };
+        }
+    }
+
+    /**
+     * Make `wanted` the active target of the solution. The CMSIS Solution
+     * extension (1.70) has no command for this: the selection lives in
+     * `.vscode/cmsis.json`, which it re-reads when the solution is
+     * (re)activated. So: validate the request against the csolution's
+     * target-types, write the selection, deactivate and re-activate the
+     * solution by path (no picker), then poll getActiveTargetSet until it
+     * agrees. Nothing proceeds on an unverified switch — the reason says what
+     * was done and what the extension still reports.
+     */
+    private async switchActiveTarget(
+        solutionPath: string | undefined,
+        wanted: TargetRef,
+        active: string | undefined,
+    ): Promise<{ ok: true; active: string } | { ok: false; reason: string }> {
+        const manual = 'Switch it by hand in the CMSIS Solution panel (Manage Solution → Target) and repeat the call.';
+        const was = active || '(none)';
+        const errText = (err: unknown) => err instanceof Error ? err.message : String(err);
+
+        if (!solutionPath || !fs.existsSync(solutionPath)) {
+            return { ok: false, reason: `the active target is '${was}' and the csolution path could not be resolved ` +
+                `from the CMSIS Solution extension, so the target cannot be switched. ${manual}` };
+        }
+        let types: TargetTypeInfo[];
+        try {
+            types = listTargetTypes(await fs.promises.readFile(solutionPath, 'utf8'));
+        } catch (err) {
+            return { ok: false, reason: `the active target is '${was}' and ${solutionPath} could not be read ` +
+                `(${errText(err)}). ${manual}` };
+        }
+        const resolved = resolveTargetSelection(types, wanted);
+        if (!resolved.ok) {
+            return { ok: false, reason: `${resolved.reason}. Active target: '${was}'. Declared targets: ` +
+                `${formatTargetChoices(types) || '(none found)'}.` };
+        }
+
+        const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(solutionPath))?.uri.fsPath
+            ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+            ?? path.dirname(solutionPath);
+        const cmsisJson = path.join(folder, '.vscode', 'cmsis.json');
+        try {
+            await fs.promises.mkdir(path.dirname(cmsisJson), { recursive: true });
+            const before = fs.existsSync(cmsisJson) ? await fs.promises.readFile(cmsisJson, 'utf8') : '';
+            const after = applyTargetSelection(before, solutionDisplayName(folder, solutionPath), resolved.type, resolved.setIndex);
+            await fs.promises.writeFile(cmsisJson, after, 'utf8');
+        } catch (err) {
+            return { ok: false, reason: `could not write ${cmsisJson} to select '${resolved.name}' (${errText(err)}). ${manual}` };
+        }
+
+        try {
+            await withTimeout('cmsis deactivateSolution', 10_000,
+                Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.deactivateSolution')));
+            await withTimeout('cmsis activateSolution', 10_000,
+                Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.activateSolution', solutionPath)));
+        } catch (err) {
+            return { ok: false, reason: `wrote '${resolved.name}' to ${cmsisJson} but re-activating the solution ` +
+                `so the extension picks it up failed (${errText(err)}). ${manual}` };
+        }
+
+        const deadline = Date.now() + 15_000;
+        let seen: string | undefined;
+        for (;;) {
+            seen = (await this.queryActiveTargetSet()).name;
+            if (seen && targetMatches(seen, wanted)) {
+                return { ok: true, active: seen };
+            }
+            if (Date.now() >= deadline) { break; }
+            await new Promise<void>((resolve) => setTimeout(resolve, 500));
+        }
+        return { ok: false, reason: `wrote '${resolved.name}' to ${cmsisJson} and re-activated the solution, but the ` +
+            `CMSIS Solution extension still reports '${seen || '(none)'}' as the active target after 15 s. ${manual}` };
     }
 
     /**
@@ -1681,7 +2014,7 @@ REQUIRED NEXT STEPS:
      * actions the buttons in the CMSIS Solution panel invoke. They operate on
      * the currently active csolution context (no arguments).
      */
-    public async handleCmsisCommand(args: { action: CmsisAction; timeoutMs?: number }): Promise<string> {
+    public async handleCmsisCommand(args: { action: CmsisAction; target?: string; timeoutMs?: number }): Promise<string> {
         // build / load / erase / load_and_run run a cbuild/flash task that can
         // take tens of seconds. Give them the full handler budget by default
         // so the tool can wait for the task's real exit code and return a
@@ -1713,6 +2046,35 @@ REQUIRED NEXT STEPS:
                     `confirm a solution + active context is selected; (3) if the solution is open in a different ` +
                     `window, drive cmsis_action from that window's MCP server.`;
             }
+
+            // Which target-type / target-set the panel will act on. A `target`
+            // that differs from it is switched (cmsis.json + solution
+            // re-activation) and verified before anything runs; every result
+            // line names the target it ran on so the agent can never be blind
+            // to a wrong-target build or flash.
+            let activeTarget = (await this.queryActiveTargetSet()).name;
+            let switchedFrom: string | undefined;
+            const wanted = parseTargetRef(args.target);
+            if (args.target !== undefined && !wanted) {
+                return `CMSIS '${args.action}' not attempted: target '${args.target}' is not a valid reference — ` +
+                    `pass a target-type name or type@set as declared in the csolution, e.g. 'MPS3' or 'HP@debug'.`;
+            }
+            if (wanted && !targetMatches(activeTarget, wanted)) {
+                if (this.executor.hasDebugSession()) {
+                    return `CMSIS '${args.action}' not attempted: the active target is '${activeTarget || '(none)'}' and ` +
+                        `switching to '${args.target}' re-activates the solution, which is not done under a live debug ` +
+                        `session. Call stop_debugging first, then repeat this call.`;
+                }
+                const switched = await this.switchActiveTarget(solution.path, wanted, activeTarget);
+                if (!switched.ok) {
+                    return `CMSIS '${args.action}' not attempted: ${switched.reason}`;
+                }
+                switchedFrom = activeTarget || '(none)';
+                activeTarget = switched.active;
+            }
+            const targetTag = activeTarget
+                ? ` on ${activeTarget}${switchedFrom ? `, switched from ${switchedFrom}` : ''}`
+                : '';
 
             const map: Record<CmsisAction, string> = {
                 build:           'cmsis-csolution.build',
@@ -1798,17 +2160,17 @@ REQUIRED NEXT STEPS:
                     const survived = await this.confirmSessionSurvives();
                     if (survived.stable) {
                         const state = await this.executor.getCurrentDebugState(this.numNextLines);
-                        return `CMSIS '${args.action}' completed — debug session survived the connect ` +
-                            `(${survived.detail}). State: ${state.toString()}`;
+                        return `CMSIS '${args.action}' completed${targetTag} — debug session survived the connect ` +
+                            `(${survived.detail}). State: ${this.fullState(state)}`;
                     }
-                    return `CMSIS '${args.action}' started a debug session but it did NOT survive the initial ` +
+                    return `CMSIS '${args.action}'${targetTag} started a debug session but it did NOT survive the initial ` +
                         `connect — ${survived.detail}. ` +
                         `For 'attach' this almost always means no GDB server is listening on the configured port: ` +
                         `start the GDB server first, or use 'load_and_debug' (which launches one). ` +
                         `Confirm with get_session_status / check_target_connection.` +
                         this.diagnosticsSuffix();
                 }
-                return `CMSIS '${args.action}' issued via '${cmd}'. The flash/connect pipeline is running in the ` +
+                return `CMSIS '${args.action}'${targetTag} issued via '${cmd}'. The flash/connect pipeline is running in the ` +
                     `CMSIS extension (a multi-core flash + attach typically takes 20-40 s). This tool does not ` +
                     `block for the whole pipeline — poll get_session_status until it reports 'running' or ` +
                     `'stopped'. If get_session_status keeps reporting 'no-session' with liveSessionsInThisWindow=0, ` +
@@ -1832,11 +2194,11 @@ REQUIRED NEXT STEPS:
                 const outcome = await taskWaiter;
 
                 if (outcome.done && outcome.exitCode === 0) {
-                    return `✅ CMSIS '${args.action}' succeeded (task '${outcome.taskName}' exited 0).` +
+                    return `✅ CMSIS '${args.action}' succeeded${targetTag} (task '${outcome.taskName}' exited 0).` +
                         (nextStep[args.action] ?? '');
                 }
                 if (outcome.done && typeof outcome.exitCode === 'number') {
-                    return `❌ CMSIS '${args.action}' FAILED — task '${outcome.taskName}' exited with code ` +
+                    return `❌ CMSIS '${args.action}' FAILED${targetTag} — task '${outcome.taskName}' exited with code ` +
                         `${outcome.exitCode}. Open the CMSIS/cbuild terminal or the Problems panel to read the ` +
                         `compiler/linker errors, fix them in the source, then re-run cmsis_action ${args.action}. ` +
                         `This is a terminal result — do not wait for an output file.`;
@@ -1844,14 +2206,14 @@ REQUIRED NEXT STEPS:
                 if (outcome.done) {
                     // Task ended but the platform reported no exit code (e.g. it
                     // was cancelled) — don't claim success.
-                    return `CMSIS '${args.action}' task '${outcome.taskName}' ended without an exit code ` +
+                    return `CMSIS '${args.action}'${targetTag} — task '${outcome.taskName}' ended without an exit code ` +
                         `(it may have been cancelled). Re-run cmsis_action ${args.action} to get a definite result.`;
                 }
                 if (!outcome.started) {
                     // No cbuild/flash task ever started. Usually means the
                     // active context is already up to date (nothing to build),
                     // or the CMSIS panel is waiting on a manual picker.
-                    return `CMSIS '${args.action}' issued via '${cmd}', but no cbuild/flash task ran within the ` +
+                    return `CMSIS '${args.action}'${targetTag} issued via '${cmd}', but no cbuild/flash task ran within the ` +
                         `wait window. This usually means the active context is already up to date (nothing to ` +
                         `${args.action}), or the CMSIS Solution panel is showing a picker that needs manual ` +
                         `selection. This is a terminal result — do not wait for an output file. Re-run the ` +
@@ -1859,14 +2221,14 @@ REQUIRED NEXT STEPS:
                 }
                 // Task started but is still running at the deadline.
                 const waitedS = Math.round((Math.max(5_000, effectiveTimeoutMs - 3_000)) / 1000);
-                return `CMSIS '${args.action}' is still running after ${waitedS}s (task '${outcome.taskName ?? cmd}' ` +
+                return `CMSIS '${args.action}'${targetTag} is still running after ${waitedS}s (task '${outcome.taskName ?? cmd}' ` +
                     `has not finished). Large clean builds can take longer than this. The tool returned so you are ` +
                     `not blocked — re-run cmsis_action ${args.action} to get the final exit status, or watch the ` +
                     `CMSIS terminal. Do NOT poll for an output file.`;
             }
 
             // detach / stop_run — instant control ops, nothing to wait on.
-            return `CMSIS '${args.action}' command '${cmd}' issued. It runs in the CMSIS extension — ` +
+            return `CMSIS '${args.action}'${targetTag} issued via '${cmd}'. It runs in the CMSIS extension — ` +
                 `check the CMSIS output channel if you need to confirm.`;
         });
     }

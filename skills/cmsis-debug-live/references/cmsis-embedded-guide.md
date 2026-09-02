@@ -4,10 +4,11 @@
 
 ### Starting a Debug Session
 
-**For CMSIS projects (preferred):** call `cmsis_action` with `action="load_and_debug"`. This is the same flow as the **Debug** button in the CMSIS Solution panel — it builds (if needed), flashes the target, and attaches in one step, using the configuration the user selected via *Manage Solution → Debugger*.
+**For CMSIS projects (preferred):** call `cmsis_action` with `action="load_and_debug"`. This is the same flow as the **Debug** button in the CMSIS Solution panel — it builds (if needed), flashes the target, and attaches in one step, on the target-type / target-set the panel has selected. The reply names that target (`… on HP@debug`); on a multi-target solution pass `target` to select it — a differing target is switched and verified first, an undeclared one is refused with the declared list.
 
 ```text
 cmsis_action {"action": "load_and_debug", "timeoutMs": 45000}
+cmsis_action {"action": "load_and_debug", "target": "HP@debug"}
 ```
 
 **Pre-check first**: call `get_session_status`. If a session is already active, `cmsis_action load_and_debug` will refuse — use `restart_debugging` or `cmsis_action attach` instead.
@@ -27,7 +28,7 @@ If the firmware is in a free run and you need to know where it is:
 
 ### When the Target Hits a HardFault
 
-1. Call `get_fault_info` to read and decode CFSR/HFSR/BFAR/MMFAR/DFSR/AFSR.
+1. Call `diagnose_fault` for the whole first pass (or `get_fault_info` for the decoded registers alone).
 2. Check the call stack with `get_call_stack` to find where the fault occurred. Capture a `frameId` of interest.
 3. `get_frame_variables` at that `frameId` to see locals at the fault site.
 4. Common causes:
@@ -93,6 +94,8 @@ When `continue_execution` or `step_*` times out, the server **auto-heals**: it p
 | `read_core_registers` | Read all Cortex-M core registers (R0–R15, xPSR, MSP, PSP, CONTROL, FAULTMASK, BASEPRI, PRIMASK) |
 | `read_peripheral_register` | Read peripheral registers via SVD data or memory fallback |
 | `get_fault_info` | Decode CFSR/HFSR/BFAR/MMFAR/DFSR/AFSR |
+| `diagnose_fault` | One-call triage: fault registers, stacked frame, top frames, resolved address, hypotheses |
+| `lookup_peripheral` / `lookup_register` | SVD queries without a session or target access: register map, address → register, bit fields |
 | `get_device_info` | Debug session info (target, GDB server, program, cbuild-run reference) |
 | `get_call_stack` | Full DAP stackTrace with frame IDs |
 | `get_threads` | DAP threads / RTOS tasks |

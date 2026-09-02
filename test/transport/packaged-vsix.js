@@ -112,6 +112,35 @@ check('the bundle keeps serialport external',
 //    picker, the upstream lock, and every SKILL.md the catalog points at.
 check('the agent skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-debug-live', 'SKILL.md')));
 check('the help skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-help', 'SKILL.md')));
+check('the pack-docs skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-pack-docs', 'SKILL.md')));
+check('the pdf.js worker thread entry ships beside the extension', fs.existsSync(path.join(root, 'dist', 'pdfWorker.js')));
+check('the pdf.js fake worker ships for that thread', fs.existsSync(path.join(root, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs'))
+    && fs.existsSync(path.join(root, 'node_modules', 'pdfjs-dist', 'package.json')));
+
+// 5. The packaged worker thread extracts a PDF. Where pdf.js detects Node it
+//    presets its fake-worker path to "./pdf.worker.mjs" beside pdf.mjs — which
+//    in node_modules, as the tests run it, exists, and beside the bundle does
+//    not. Only the bundle shows whether the worker overrides that.
+let pdfOk = false;
+let pdfDetail = '';
+try {
+    const fixture = path.resolve(__dirname, '..', '..', 'src', 'test', 'fixtures', 'packdocs', 'test-rm.pdf');
+    const out = execFileSync(process.execPath, ['-e',
+        `const { Worker } = require('worker_threads');` +
+        `const w = new Worker(${JSON.stringify(path.join(root, 'dist', 'pdfWorker.js'))});` +
+        `w.on('message', (m) => { console.log(m.ok ? 'pages ' + m.pages.length : 'error ' + m.error); w.terminate(); });` +
+        `w.on('error', (e) => { console.log('error ' + e.message); process.exit(1); });` +
+        `w.postMessage({ id: 1, kind: 'extract', file: ${JSON.stringify(fixture)} });`,
+    ], { encoding: 'utf8', timeout: 60_000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    pdfOk = out === 'pages 2';
+    pdfDetail = pdfOk ? 'the fixture PDF gave 2 pages' : out;
+} catch (err) {
+    pdfDetail = String(err.stderr || err.message).split('\n').find(l => /Error|Cannot/.test(l))
+        || String(err.message).split('\n')[0];
+}
+check('the packaged pdf.js worker thread extracts a PDF', pdfOk, pdfDetail);
+check('the core-peripheral SVDs ship', fs.existsSync(path.join(root, 'assets', 'svd', 'core', 'index.json'))
+    && fs.existsSync(path.join(root, 'assets', 'svd', 'core', 'Cortex_M33.svd')));
 check('the skill catalog ships', fs.existsSync(path.join(root, 'skills', 'catalog.json')));
 check('the upstream skill lock ships', fs.existsSync(path.join(root, 'skills', 'cmsis-skills.lock.json')));
 let catalogOk = false;

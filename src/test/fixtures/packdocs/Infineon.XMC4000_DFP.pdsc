@@ -1,0 +1,699 @@
+<?xml version='1.0' encoding='utf-8'?>
+<package xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" schemaVersion="1.2" xsi:noNamespaceSchemaLocation="PACK.xsd">
+  <license>License/CMSIS_END_USER_LICENSE_AGREEMENT.txt</license> 
+  <vendor>Infineon</vendor>
+  <url>https://www.infineon.com/cmsis_packs/XMC4000/</url>
+  <name>XMC4000_DFP</name>
+  <description>
+      Infineon XMC4000 Series Device Support, Drivers and Examples
+  </description>
+  <supportContact>http://www.infineon.com/cms/en/corporate/company/contact/support/index.html</supportContact> 
+  
+  <releases>
+    <release version="2.14.0" date="2021-06-18">
+      Update of XMCLib to v2.2.0
+      Added XMCLib examples
+      Added scatter files and modified startup files for ARM compilers. The stack and heap size is now configured in the scatter file
+      ACTION required: Use provided scatter file overriding default generated one in project linker options by unselecting "Use Memory Layout from Target Dialog"
+                       Then select the scatter file in the dropbox menu
+      Removed --cpreproc due compilation isues with ARM6 compiler
+      ACTION required: If compiling projects imported from DAVE using ARM5 use --cpreproc in Asm tab of project properties, Misc Controls.
+      Added new boards XMC4400 Platform2Go kit, XMC4200 Platform2Go kit
+      CMSIS-Driver
+      - Removed KSZ8081 and KSZ8031 drivers. Provided by ARM CMSIS Driver implementation
+      - All: corrected compiler warnings, added interrupt priority setting in RTE
+      - CAN:
+      -- Added clock source selection
+      - I2C:
+      -- Added HDEL settings in RTE
+      -- Fix BUS_CLEAR
+      -- Enable digital filters on inputs
+      -- Fix I2C_GetDataCount()
+      -- I2C_MasterTransmit(), I2C_MasterReceive() added busy bus check
+      - SPI:
+      -- Fixed current mode identification
+      - UART:
+      -- Fix Receive functionality if FIFO enabled
+      - USBD:
+      -- Fix enumeration issue
+    </release>  
+    <release version="2.13.0" date="2019-07-31">
+      Updated CMSIS driver modules conditional compilation
+      CAN driver remove lower baudrate restrictions
+      CAN driver fix IRQ handler when more than one message object allocated per CAN node
+      Update of XMC Lib to v2.1.24
+      Added XMCLib examples
+    </release>  
+    <release version="2.12.1" date="2019-07-17">
+      Changed URL
+      Note: The new PACK download address is https://www.infineon.com/cmsis_packs/  
+    </release>      
+    <release version="2.12.0" date="2019-06-04">
+      Update of XMC Lib to v2.1.22
+      Updated documentation
+      Fix variable location of SystemCoreClock, g_hrpwm_char_data and g_chipid for ARMCC compiler
+      Added XMC4800 IoT Connectivity Kit
+      Fixed flash programming algorithms to avoid last page garbage from last programming
+      Upgraded CMSIS-RTOS RTX IFX implementation to v4.82
+      Note: The new PACK download address is https://github.com/Infineon/cmsis_packs/  
+    </release>      
+    <release version="2.11.0" date="2018-10-22">
+      Update of XMC Lib to v2.1.20
+      Remove CMSIS RTOS dependency of CMSIS ETH_MAC Driver
+      Fixes issues in SPI and UART drivers 
+    </release>      
+    <release version="2.10.0" date="2017-12-20">
+      Updated XMCLib to v2.1.18
+      Improved CMSIS drivers compatibility with ARM v6 compiler
+      Update system_4xxx.c to disable the FPU if not used
+      Fixes for SPI and I2C CMSIS drivers      
+    </release>
+    <release version="2.9.1" date="2017-09-07">
+      Fix POSIF compilation issue
+    </release>
+    <release version="2.9.0" date="2017-08-07">
+      Updated XMCLib to v2.1.16
+    </release>
+    <release version="2.8.0" date="2017-06-30">
+      Updated Infineon CMSIS-CORE files
+      Updated XMCLib to v2.1.16
+      Changed ETH_MAC_PowerControl to improve bus accesss and mask off IPC_RECEIVE_INTERRUPT
+      Fixed ETH_MAC_SendFrame allowing the parameter combination (frame = NULL, len = 0) used to discard the ethernet frame.
+      Added ETH_PHY component
+      Added XMC4800 Automation Board
+      Added support for ARM Compiler 6 (armclang) 
+    </release>
+    <release version="2.7.1" date="2016-10-21">
+      Fix: Remove spaces in Dnames
+      Fix: Description of MCI, CAN and SAI drivers
+      Fix: UART driver when sending a single byte and FIFO enabled
+      Fix: Board support LED and BUTTON interface implementation
+    </release>
+    <release version="2.7.0" date="2016-09-09">    
+      Update Infineon CMSIS-CORE files
+      Update of XMC Lib to v2.1.8   
+      Added MCI, CAN and I2S driver
+    </release>
+    <release version="2.6.0" date="2016-05-13">    
+      Infineon CMSIS-Core files
+      Added conditions of selecting startup file for following devices:
+            XMC4100, XMC4104, XMC4108, XMC4400, XMC4402, XMC4500, XMC4502, XMC4504,
+       Update of XMC Lib to v2.1.6    
+       Add support for GCC and IAR
+       Add Quick Start Guide from Keil
+       Add USB Host driver and example project  
+     Update of RTE drivers
+       Update of documents
+    </release>
+    <release version="2.5.0" date="2016-02-19">    
+      Infineon CMSIS-Core files released 19. February 2016
+      Added Devices: XMC4300-F100x256
+      Update of XMC Lib to v2.1.4
+      Fixed IRQ handler names for SPI, I2c and UART      
+      Added Network component examples for XMC4500 Relax Kit
+      Added Graphics component example for XMC4500 Application kit
+    Added Board Support Pack (BSP) for XMC4500 Application Kit
+    Changed "\" to "/" in path    
+      Changed the server location to http://dave.infineon.com/Libraries/CMSIS_PACK
+    </release> 
+    <release version="2.4.0">
+      Infineon CMSIS-Core files released 30. October 2015 
+      Added Devices: XMC4700-E196x2048, XMC4700-F144x2048, XMC4700-F100x2048,
+                     XMC4700-E196x1536, XMC4700-F144x1536, XMC4700-F100x1536
+                     XMC4800-E196x2048, XMC4800-F144x2048, XMC4800-F100x2048,
+                     XMC4800-E196x1536, XMC4800-F144x1536, XMC4800-F100x1536,
+                     XMC4800-E196x1024, XMC4800-F144x1024, XMC4800-F100x1024,
+      Update of XMC Lib to v2.1.2
+      Updated of CMSIS files
+    </release>  
+    <release version="2.3.0">
+      Infineon CMSIS-Core files released 24. July 2015
+      Update of XMC Lib to v2.0
+      Update of RTE driver            
+      Added device: XMC4108-F64x64
+      Add new conditions for RTE driver
+      Add CMSIS driver example (I2C) and Middleware example (Virtual COM) 
+    </release> 
+    <release version="2.2.0">
+      Infineon CMSIS-Core files released 18. February 2015
+      Update of Infineon CMSIS files (header, SVD, startup)
+      Add new CMSIS drivers (UART, SPI and I2C)
+      Add low level driver (LLD) package and example projects
+      Add Board Support Pack (BSP)for XMC4500 Relax Lite Kit      
+    </release> 
+    <release version="2.1.1">
+      Infineon CMSIS-Core files released 11. December 2014
+      Update of system_XMC4xxx.c files 
+    </release> 
+    <release version="2.1.0">
+      Infineon CMSIS-Core files released 08. December 2014
+      Update of Infineon CMSIS files (header, SVD, startup)
+      Update of documents
+      Update of family name from XMC4000 Series to XMC4000
+      Update of applicatiob board naming.
+      Added device: XMC4108-F64x64
+    </release>
+    <release version="2.0.1">
+      Infineon CMSIS-Core files released 27. June 2014
+      Update the value of Dfpu for Floating Point Unit (FPU) from 1 to FPU 
+      Update the value of Dmpu for Memory Protection Unit (MPU) from 1 to MPU 
+    </release>
+     <release version="2.0.0">
+      Infineon CMSIS-Core files released 16. June 2014
+      Add the XMC4500 Relax Lite Kit
+      Add USB driver and examples for XMC4500 Application Kit and Relax Lite kit 
+      update the SVD files     
+    </release>
+     <release version="1.5.0">
+      Infineon CMSIS-Core files released 25. April 2014
+      Adjust the version number to Keil pack release
+      Add the assembler preprocessor --cpreproc  
+      Add compiler conditions for IAR and GCC      
+    </release>
+    <release version="1.0.2">
+      Infineon CMSIS-Core files released 28. January 2014
+      Changes: Complete names of derivative devices are listed to be consistent with DAVE3.
+    </release>
+    <release version="1.0.1">
+      Infineon CMSIS-Core files released 19. July 2013
+    </release>
+    <release version="1.0.0">
+      First Release version of XMC4000 Device Family Pack.
+    </release>
+  </releases>
+
+  <keywords>
+    
+    <keyword>Infineon</keyword>
+    <keyword>Device Support</keyword>
+    <keyword>Device Family Package Infineon</keyword>
+    <keyword>XMC4000</keyword>
+  </keywords>
+
+  <devices>
+    
+
+    <family Dfamily="XMC4000" Dvendor="Infineon:7">
+      <processor Dcore="Cortex-M4" DcoreVersion="r0p1" Dfpu="FPU" Dmpu="MPU" Dendian="Little-endian" />      
+      <book name="Documents/ddi0439c_cortex_m4_r0p1_trm.pdf" title="Cortex-M4 Technical Reference Manual" />
+      <book name="Documents/dui0553a_cortex_m4_dgug.pdf" title="Cortex-M4 Generic User Guide" />
+      <description>
+      The XMC4000 family marks a cornerstone in microcontroller design for 
+      real-time critical systems. With XMC4000 Infineon combines its leading-edge 
+      peripheral set with an industry-standard ARM® Cortex™-M4 core. Featuring 
+      Infineon’s powerful peripheral set, configurable to specific application 
+      requirements, XMC4000 is the ultimate choice for today’s industrial control 
+      solutions. This family is designed to tackle the imminent challenges of 
+      improving energy efficiency, supporting advanced communication protocols, 
+      and reducing time-to-market. Family members operate even in high-temperature 
+      environments of up to 125 °C, granting you access to their exceptional performance 
+      in all corners of your system.
+      </description>
+      
+      <environment name="uv">
+        <CMisc>--C99</CMisc>
+      </environment>
+
+      <feature type="RTC" n="1" />
+      <feature type="WDT" n="1" />
+      <feature type="DAC" n="2" m="12" />
+      <feature type="NVIC" n="112" name="NVIC" />
+
+      
+      <subFamily DsubFamily="XMC4700 Series">
+        <feature type="DMA" n="12" />
+        <feature type="CAN" n="6" />
+        <feature type="ETH" n="1" m="100000000" name="Integrated Ethernet MAC" />
+        <feature type="ComOther" n="6" name="Universal Serial Interface" />
+        <feature type="USBD" n="1" />          
+      
+      
+      <device Dname="XMC4700-E196x2048">
+        <processor Dclock="144000000" />
+        <compile header="Device/XMC4700_series/Include/XMC4700.h" define="XMC4700_E196x2048" />
+        <debug svd="SVD/XMC4700.svd" />
+        <memory id="IROM1" start="0x08000000" size="0x200000" startup="1" default="1" />
+        <memory id="IROM2" start="0x0C000000" size="0x200000" startup="0" default="0" />  
+        <memory id="IRAM1" start="0x20000000" size="0x3FFC0" init="0" default="1" />           
+        <memory id="IRAM2" start="0x1FFE8000" size="0x18000" init="0" default="1" />       
+        <algorithm name="Flash/XMC4800_2048.FLM" start="0x0C000000" size="0x100000" default="1" />
+        <algorithm name="Flash/XMC4800c_2048.FLM" start="0x08000000" size="0x100000" default="1" />      
+        <book name="Documents/Infineon-ReferenceManual_XMC4700_XMC4800-UM-v01_03-EN.pdf" title="XMC4700 Series Reference Manual" />
+        <book name="Documents/xmc4700_xmc4800_ds_v1.1_2018_09.pdf" title="XMC4700 Series Data Sheet" />       
+        <book name="Documents/Infineon-ErrataSheet_XMC4700_XMC4800_AA-ES-v01_04-EN.pdf" title="XMC4700 AB Errata Sheet" />
+        <book name="Device/XMClib/doc/XMC4_Peripheral_Library.chm" title="XMC4 Peripheral Library" />    
+        <feature type="ADC" n="32" m="12" />
+        <feature type="BGA" n="196" />                     
+      </device>   
+
+      
+      <device Dname="XMC4700-F144x2048">
+        <processor Dclock="144000000" />
+        <compile header="Device/XMC4700_series/Include/XMC4700.h" define="XMC4700_F144x2048" />
+        <debug svd="SVD/XMC4700.svd" />
+        <memory id="IROM1" start="0x08000000" size="0x200000" startup="1" default="1" />
+        <memory id="IROM2" start="0x0C000000" size="0x200000" startup="0" default="0" />  
+        <memory id="IRAM1" start="0x20000000" size="0x3FFC0" init="0" default="1" />       
+        <memory id="IRAM2" start="0x1FFE8000" size="0x18000" init="0" default="1" />            
+        <algorithm name="Flash/XMC4800_2048.FLM" start="0x0C000000" size="0x100000" default="1" />
+        <algorithm name="Flash/XMC4800c_2048.FLM" start="0x08000000" size="0x100000" default="1" />      
+        <book name="Documents/Infineon-ReferenceManual_XMC4700_XMC4800-UM-v01_03-EN.pdf" title="XMC4700 Series Reference Manual" />
+        <book name="Documents/xmc4700_xmc4800_ds_v1.1_2018_09.pdf" title="XMC4700 Series Data Sheet" />  
+        <book name="Documents/Infineon-ErrataSheet_XMC4700_XMC4800_AA-ES-v01_04-EN.pdf" title="XMC4700 AB Errata Sheet" />    
+        <book name="Device/XMClib/doc/XMC4_Peripheral_Library.chm" title="XMC4 Peripheral Library" />    
+        <feature type="ADC" n="32" m="12" />
+        <feature type="QFP" n="144" />         
+      </device> 
+
+      
+      <device Dname="XMC4700-F100x2048">
+        <processor Dclock="144000000" />
+        <compile header="Device/XMC4700_series/Include/XMC4700.h" define="XMC4700_F100x2048" />
+        <debug svd="SVD/XMC4700.svd" />
+        <memory id="IROM1" start="0x08000000" size="0x200000" startup="1" default="1" />
+        <memory id="IROM2" start="0x0C000000" size="0x200000" startup="0" default="0" />  
+        <memory id="IRAM1" start="0x20000000" size="0x3FFC0" init="0" default="1" />           
+        <memory id="IRAM2" start="0x1FFE8000" size="0x18000" init="0" default="1" />         
+        <algorithm name="Flash/XMC4800_2048.FLM" start="0x0C000000" size="0x100000" default="1" />
+        <algorithm name="Flash/XMC4800c_2048.FLM" start="0x08000000" size="0x100000" default="1" />      
+        <book name="Documents/Infineon-ReferenceManual_XMC4700_XMC4800-UM-v01_03-EN.pdf" title="XMC4700 Series Reference Manual" />
+        <book name="Documents/xmc4700_xmc4800_ds_v1.1_2018_09.pdf" title="XMC4700 Series Data Sheet" />  
+        <book name="Documents/Infineon-ErrataSheet_XMC4700_XMC4800_AA-ES-v01_04-EN.pdf" title="XMC4700 AB Errata Sheet" />    
+        <book name="Device/XMClib/doc/XMC4_Peripheral_Library.chm" title="XMC4 Peripheral Library" />    
+        <feature type="ADC" n="24" m="12" />
+        <feature type="QFP" n="100" />         
+      </device> 
+
+      
+      <device Dname="XMC4700-E196x1536">
+        <processor Dclock="144000000" />
+        <compile header="Device/XMC4700_series/Include/XMC4700.h" define="XMC4700_E196x1536" />
+        <debug svd="SVD/XMC4700.svd" />
+        <memory id="IROM1" start="0x08000000" size="0x180000" startup="1" default="1" />
+        <memory id="IROM2" start="0x0C000000" size="0x180000" startup="0" default="0" />   
+        <memory id="IRAM1" start="0x20000000" size="0x2CFC0" init="0" default="1" />           
+        <memory id="IRAM2" start="0x1FFE8000" size="0x18000" init="0" default="1" />         
+        <algorithm name="Flash/XMC4800_1536.FLM" start="0x0C000000" size="0x100000" default="1" />
+        <algorithm name="Flash/XMC4800c_1536.FLM" start="0x08000000" size="0x100000" default="1" />      
+        <book name="Documents/Infineon-ReferenceManual_XMC4700_XMC4800-UM-v01_03-EN.pdf" title="XMC4700 Series Reference Manual" />
+        <book name="Documents/xmc4700_xmc4800_ds_v1.1_2018_09.pdf" title="XMC4700 Series Data Sheet" />      
+        <book name="Documents/Infineon-ErrataSheet_XMC4700_XMC4800_AA-ES-v01_04-EN.pdf" title="XMC4700 AB Errata Sheet" />    
+        <book name="Device/XMClib/doc/XMC4_Peripheral_Library.chm" title="XMC4 Peripheral Library" />    
+        <feature type="ADC" n="32" m="12" />
+        <feature type="BGA" n="196" />                     
+      </device>
+
+      
+      <device Dname="XMC4700-F144x1536">
+        <processor Dclock="144000000" />
+        <compile header="Device/XMC4700_series/Include/XMC4700.h" define="XMC4700_F144x1536" />
+        <debug svd="SVD/XMC4700.svd" />
+        <memory id="IROM1" start="0x08000000" size="0x180000" startup="1" default="1" />
+        <memory id="IROM2" start="0x0C000000" size="0x180000" startup="0" default="0" />   
+        <memory id="IRAM1" start="0x20000000" size="0x2CFC0" init="0" default="1" />       
+        <memory id="IRAM2" start="0x1FFE8000" size="0x18000" init="0" default="1" />         
+        <algorithm name="Flash/XMC4800_1536.FLM" start="0x0C000000" size="0x100000" default="1" />
+        <algorithm name="Flash/XMC4800c_1536.FLM" start="0x08000000" size="0x100000" default="1" />      
+        <book name="Documents/Infineon-ReferenceManual_XMC4700_XMC4800-UM-v01_03-EN.pdf" title="XMC4700 Series Reference Manual" />
+        <book name="Documents/xmc4700_xmc4800_ds_v1.1_2018_09.pdf" title="XMC4700 Series Data Sheet" />   
+        <book name="Documents/Infineon-ErrataSheet_XMC4700_XMC4800_AA-ES-v01_04-EN.pdf" title="XMC4700 AB Errata Sheet" />    
+        <book name="Device/XMClib/doc/XMC4_Peripheral_Library.chm" title="XMC4 Peripheral Library" />    
+        <feature type="ADC" n="32" m="12" />
+        <feature type="QFP" n="144" />         
+      </device>
+
+      
+      <device Dname="XMC4700-F100x1536">
+        <processor Dclock="144000000" />
+        <compile header="Device/XMC4700_series/Include/XMC4700.h" define="XMC4700_F100x1536" />
+        <debug svd="SVD/XMC4700.svd" />
+        <memory id="IROM1" start="0x08000000" size="0x180000" startup="1" default="1" />
+        <memory id="IROM2" start="0x0C000000" size="0x180000" startup="0" default="0" />    
+        <memory id="IRAM1" start="0x20000000" size="0x2CFC0" init="0" default="1" />       
+        <memory id="IRAM2" start="0x1FFE8000" size="0x18000" init="0" default="1" />    
+        <algorithm name="Flash/XMC4800_1536.FLM" start="0x0C000000" size="0x100000" default="1" />
+        <algorithm name="Flash/XMC4800c_1536.FLM" start="0x08000000" size="0x100000" default="1" />      
+        <book name="Documents/Infineon-ReferenceManual_XMC4700_XMC4800-UM-v01_03-EN.pdf" title="XMC4700 Series Reference Manual" />
+        <book name="Documents/xmc4700_xmc4800_ds_v1.1_2018_09.pdf" title="XMC4700 Series Data Sheet" />  
+        <book name="Documents/Infineon-ErrataSheet_XMC4700_XMC4800_AA-ES-v01_04-EN.pdf" title="XMC4700 AB Errata Sheet" />    
+        <book name="Device/XMClib/doc/XMC4_Peripheral_Library.chm" title="XMC4 Peripheral Library" />    
+        <feature type="ADC" n="24" m="12" />
+        <feature type="QFP" n="100" />         
+      </device>
+      </subFamily>
+      
+      
+      </family>
+  </devices>
+
+  <boards>
+    <board vendor="Infineon" name="XMC4200 CPU Board - Actuator  (CPU_42A)" revision="V2" salesContact="sales@infineon.com" orderForm="https://www.infineon.com/cms/de/product/evaluation-boards/kit_xmc42_ee1_001/#!order">
+      <description>XMC4200 Application Kit Board Support and Examples</description>
+      <image small="Images/Hexagon-XMC4200-small.jpg" />
+      <book category="overview" name="https://www.infineon.com/cms/de/product/evaluation-boards/kit_xmc42_ee1_001/" title="XMC4200 CPU Board - Actuator  (CPU_42A)" />
+      <book category="schematic" name="Documents/PCB_Sources_Eagle_CPU_42A-V1-4.zip" title="Schematics" />
+      <book category="manual" name="Documents/Board_Users_Manual_CPU_Board_XMC4400_General_Purpose_R1 0.pdf" title="User Manual" />
+      <mountedDevice deviceIndex="0" Dvendor="Infineon:7" Dname="XMC4200-F64x256" />
+      <compatibleDevice deviceIndex="0" Dvendor="Infineon:7" DsubFamily="XMC4200 Series" />
+        <feature type="ODbg" n="1" name="On-board J-LINK Lite" />
+        <feature type="XTAL" n="12000000" />
+        <feature type="XTAL" n="32768" name="32k on-board crystal" />
+        <feature type="PWR" n="5" name="USB Powered" />
+        <feature type="USB" n="1" name="USB OTG (Micro-AB)" />
+        <feature type="ConnOther" n="1" name="ACT Satellite Connector (80-pin edge card)" />
+        <feature type="ConnOther" n="1" name="Power Scale Connector (for power measurement)" />
+        <feature type="ContOther" n="1" name="2-Pin DIP Switch (Hardware boot mode selection)" />
+        <feature type="Batt" n="1" name="CR2032 Battery for RTC" />        
+        <feature type="CAN" n="1" name="DB9 Male Connector" />        
+        <feature type="Button" n="2" name="Reset, User button" />
+        <feature type="Poti" n="1" name="Potentiometer for ADC" />
+        <feature type="LED" n="1" name="User LED" />
+        <feature type="CustomFF" n="95" m="95" name="Hexagon Application Kit Form Factor" />
+      <debugInterface adapter="J-Link Lite" connector="Micro-USB" />
+      <debugInterface adapter="JTAG/SW" connector="10 pin Cortex debug (0.05 inch connector)" />
+      <debugInterface adapter="JTAG/SW" connector="20-pin Cortex debug + ETM Trace (0.05 inch connector)" />
+    </board>
+
+    <board vendor="Infineon" name="XMC4200 Platform2Go" revision="V1" salesContact="sales@infineon.com" orderForm="https://www.infineon.com/cms/en/product/evaluation-boards/kit_xmc_plt2go_xmc4200/#!order">
+      <description>XMC4200 Application Kit Board Support and Examples</description>
+      <image small="Images/XMC4200-Platform2GO-Kit.jpg" />
+      <book category="overview" name="https://www.infineon.com/cms/en/product/evaluation-boards/kit_xmc_plt2go_xmc4200/" title="XMC4200 Platform2Go Overview" />
+      <book category="manual" name="Documents/Infineon-XMC4200_Platform2Go-UserManual-v01_00-EN.pdf" title="User Manual" />
+      <mountedDevice deviceIndex="0" Dvendor="Infineon:7" Dname="XMC4200-F64x256" />
+      <compatibleDevice deviceIndex="0" Dvendor="Infineon:7" DsubFamily="XMC4200 Series" />
+        <feature type="ODbg" n="1" name="On-board J-LINK Lite" />
+        <feature type="XTAL" n="12000000" />
+        <feature type="XTAL" n="32768" name="32k on-board crystal" />
+        <feature type="PWR" n="5" name="USB Powered" />
+        <feature type="USB" n="1" name="USB OTG (Micro-AB)" />
+        <feature type="ConnOther" n="1" name="mikroBUS" />
+        <feature type="ConnOther" n="2" name="Infineon Shield2Go" />
+        <feature type="Button" n="3" name="Reset, 2xUser buttons" />
+        <feature type="Poti" n="1" name="Potentiometer for ADC (connected to P14.1)" />
+        <feature type="LED" n="2" name="User LEDs" />
+        <feature type="CAN" n="1" name="DB9 Male Connector" />        
+      <debugInterface adapter="J-Link Lite" connector="Micro-USB" />
+      <debugInterface adapter="JTAG/SW" connector="10 pin Cortex debug (0.05 inch connector)" />
+    </board>
+
+    <board vendor="Infineon" name="XMC4400 CPU Board - General Purpose  (CPU_44A)" revision="V2" salesContact="sales@infineon.com">
+      <description>XMC4400 Application Kit Board Support and Examples</description>
+      <image small="Images/Hexagon-XMC4400-small.jpg" />
+      <book category="schematic" name="Documents/Public_PCB_Sources_CPU_44A-V2-1.zip" title="Schematics" />
+      <book category="manual" name="Documents/Board_Users_Manual_CPU_Board_XMC4400_General_Purpose_R1 0.pdf" title="User Manual" />
+      <book category="manual" name="Documents/Board_Users_Manual_General Purpose Drive Card_R1 0.pdf" title="User Manual" />
+      <mountedDevice deviceIndex="0" Dvendor="Infineon:7" Dname="XMC4400-F100x512" />
+      <compatibleDevice deviceIndex="0" Dvendor="Infineon:7" DsubFamily="XMC4400 Series" />
+        <feature type="ODbg" n="1" name="On-board J-LINK Lite" />
+        <feature type="XTAL" n="12000000" />
+        <feature type="XTAL" n="32768" name="32k on-board crystal" />
+        <feature type="ROM" n="1" name="32 MBit Quad-SPI Flash" />
+        <feature type="PWR" n="5" name="USB Powered" />
+        <feature type="USB" n="1" name="USB OTG (Micro-AB)" />
+        <feature type="ConnOther" n="1" name="DriveMonitor2 Connector (10-pin + 6-pin)" />
+        <feature type="ConnOther" n="1" name="HMI Satellite Connector (80-pin edge card)" />
+        <feature type="ConnOther" n="1" name="COM Satellite Connector (80-pin edge card)" />
+        <feature type="ConnOther" n="1" name="ACT Satellite Connector (80-pin edge card)" />
+        <feature type="ConnOther" n="1" name="Power Scale Connector (for power measurement)" />
+        <feature type="Batt" n="1" name="CR2032 Battery for RTC" />        
+        <feature type="Button" n="1" name="Reset" />
+        <feature type="ContOther" n="1" name="2-Pin DIP Switch (Hardware boot mode selection)" />
+        <feature type="Poti" n="1" name="Potentiometer for ADC (connected to P14.1)" />
+        <feature type="LED" n="5" name="LEDs: 1 x User (P3.9), 3.3 Volt, 5 Volt, 5 Volt USB, PORST" />
+        <feature type="CustomFF" n="95" m="95" name="Hexagon Application Kit Form Factor" />
+      <debugInterface adapter="J-Link Lite" connector="Micro-USB" />
+      <debugInterface adapter="JTAG/SW" connector="10 pin Cortex debug (0.05 inch connector)" />
+      <debugInterface adapter="JTAG/SW" connector="20-pin Cortex debug + ETM Trace (0.05 inch connector)" />
+    </board>
+
+    <board vendor="Infineon" name="XMC4400 Platform2Go" revision="V1" salesContact="sales@infineon.com" orderForm="https://www.infineon.com/cms/en/product/evaluation-boards/kit_xmc_plt2go_xmc4400/#!order">
+      <description>XMC4400 Application Kit Board Support and Examples</description>
+      <image small="Images/XMC4400-Platform2GO-Kit.jpg" />
+      <book category="overview" name="https://www.infineon.com/cms/en/product/evaluation-boards/kit_xmc_plt2go_xmc4400/" title="XMC4400 Platform2Go Overview" />
+      <book category="manual" name="Documents/Infineon-XMC4400_Platform2Go-UserManual-v01_00-EN.pdf" title="User Manual" />
+      <mountedDevice deviceIndex="0" Dvendor="Infineon:7" Dname="XMC4400-F100x512" />
+      <compatibleDevice deviceIndex="0" Dvendor="Infineon:7" DsubFamily="XMC4400 Series" />
+        <feature type="ODbg" n="1" name="On-board J-LINK Lite" />
+        <feature type="XTAL" n="12000000" />
+        <feature type="XTAL" n="32768" name="32k on-board crystal" />
+        <feature type="PWR" n="5" name="USB Powered" />
+        <feature type="USB" n="1" name="USB OTG (Micro-AB)" />
+        <feature type="ConnOther" n="1" name="mikroBUS" />
+        <feature type="ConnOther" n="2" name="Infineon Shield2Go" />
+        <feature type="ETH" n="1" m="100000000" name="RJ45 Receptacle" />        
+        <feature type="Button" n="3" name="Reset, 2xUser buttons" />
+        <feature type="Poti" n="1" name="Potentiometer for ADC" />
+        <feature type="LED" n="2" name="User LEDs" />
+      <debugInterface adapter="J-Link Lite" connector="Micro-USB" />
+      <debugInterface adapter="JTAG/SW" connector="10 pin Cortex debug (0.05 inch connector)" />
+    </board>
+
+    <board vendor="Infineon" name="XMC4400 Drive Card" revision="V1" salesContact="sales@infineon.com" orderForm="https://www.infineon.com/cms/en/product/evaluation-boards/kit_xmc4400_dc_v1/#!order">
+      <description>Infineon XMC4400 Boot Kit Board Support and Examples</description>
+      <image small="Images/XMC4400DRIVECARD.png" />
+      <book category="overview" name="https://www.infineon.com/cms/en/product/evaluation-boards/kit_xmc4400_dc_v1/" title="XMC4400 Drive Card Web Page" />
+      <book category="manual" name="Documents/Board_Users_Manual_DriveCard_XMC4400_R1.0.pdf" title="User Manual" />
+      <book category="setup" name="Documents/Infineon-PMSM_FOC_SENSORLESS_Getting_Started-GettingStarted-v01_05-EN.pdf" title="Getting Started" />
+      <mountedDevice deviceIndex="0" Dvendor="Infineon:7" Dname="XMC4400-F100x512" />
+      <compatibleDevice deviceIndex="0" Dvendor="Infineon:7" DsubFamily="XMC1400 Series" />
+        <feature type="ODbg" n="1" name="On-board J-LINK Lite" />
+        <feature type="PWR" n="5" name="USB Powered" />
+        <feature type="PWR" n="3.3" m="5" name="POWER Connector for external supply" />
+        <feature type="Poti" n="1" />
+        <feature type="LED" n="8" name="2xPower indicating LEDs, 2xUser LEDs, 2xEncoder enable LEDs, 2 Debug LEDs" />
+        <feature type="ConnOther" n="1" name="Power Board connector" />
+        <feature type="ConnOther" n="2" name="Encoder Interface" />
+        <feature type="ConnOther" n="2" name="Hall Interface" />
+        <feature type="ConnOther" n="2" name="Multi Feedback Interface" />
+      <debugInterface adapter="J-Link" connector="Micro-USB" />
+    </board>
+
+     <board vendor="Infineon" name="XMC4300 Relax Kit" revision="V1" salesContact="sales@infineon.com" orderForm="https://www.infineon.com/cms/de/product/evaluation-boards/kit_xmc43_relax_ecat_v1/#!order">
+      <description>XMC4300 Relax Kit Support and Examples</description>
+      <image small="Images/XMC4300-Ethercat.jpg" />
+      <book category="overview" name="https://www.infineon.com/cms/de/product/evaluation-boards/kit_xmc43_relax_ecat_v1/" title="XMC4300 Relax Kit Overview" />
+      <book category="schematic" name="Documents/Infineon-PCB Footprints and Symbols - XMC4700-XMC4800 - Source Eagle - Relax Kit Series-PCB-v01_00-EN.zip" title="Schematics" />
+      <book category="manual" name="Documents/Infineon-User_Manual_XMC4300_Relax_Kit.pdf-UM-v01_01-EN.pdf" title="User Manual" />
+      <mountedDevice deviceIndex="0" Dvendor="Infineon:7" Dname="XMC4300-F100x256" />
+      <compatibleDevice deviceIndex="0" Dvendor="Infineon:7" DsubFamily="XMC4300 Series" />
+        <feature type="ODbg" n="1" name="On-board J-LINK Lite" />      
+        <feature type="XTAL" n="14400000" />
+        <feature type="XTAL" n="32768" name="32k on-board crystal" />
+        <feature type="PWR" n="5" name="USB Powered" />
+        <feature type="USB" n="1" name="USB Device (Micro-AB)" />
+        <feature type="ContOther" n="2" name="EtherCAT Slave IN and OUT interface via RJ45 jack" />
+        <feature type="ConnOther" n="1" name="mikroBUS" />
+        <feature type="ConnOther" n="1" name="Arduino Uno Rev3" />
+        <feature type="Button" n="3" name="RESET, 2xUser buttons" />
+        <feature type="LED" n="2" name="2xUser LEDs" />
+        <feature type="CAN" n="1" name="DB9 Male Connector" />        
+      <debugInterface adapter="J-Link Lite" connector="Micro-USB" />
+      <debugInterface adapter="JTAG/SW" connector="10 pin Cortex debug (0.05 inch connector)" />
+    </board>
+ 
+    <board vendor="Infineon" name="XMC4500 CPU Board - General Purpose (CPU_45A)" revision="V3" salesContact="sales@infineon.com">
+      <description>XMC4500 CPU Board - General Purpose (CPU_45A) Board Support and Examples</description>
+      <image small="Images/Hexagon-XMC4500-small.jpg" large="Images/Hexagon-XMC4500-large.jpg" />
+      <book category="schematic" name="Documents/PCB_Sources_Eagle_CPU_45A-V2.zip" title="Schematics" />
+      <book category="manual" name="Documents/Board_Users_Manual_CPU_Board_XMC4500_General_Purpose_(CPU_45A-V3)_R1.0.pdf" title="User Manual" />
+      <book category="manual" name="Documents/Board_Users_Manual_Standard_HMI_Card_R1.0.pdf" title="User Manual" />
+      <book category="manual" name="Documents/Board_Users_Manual_Ethernet_CAN_RS485_Interface_Card_R1.0.pdf" title="User Manual" />
+      <book category="manual" name="Documents/Board_Users_Manual_Automation_IO_Card_R1.0.pdf" title="User Manual" />
+      <book category="setup" name="Documents/XMC4500_Hex_QSG.pdf" title="Quick Start Guide" /> 
+      <mountedDevice deviceIndex="0" Dvendor="Infineon:7" Dname="XMC4500-F144x1024" />
+      <compatibleDevice deviceIndex="0" Dvendor="Infineon:7" DsubFamily="XMC4500 Series" />
+        <feature type="ODbg" n="1" name="On-board J-LINK Lite" />
+        <feature type="XTAL" n="12000000" />
+        <feature type="XTAL" n="32768" name="32k on-board crystal" />
+        <feature type="ROM" n="1" name="32 MBit Quad-SPI Flash" />
+        <feature type="PWR" n="5" name="USB Powered" />
+        <feature type="USB" n="1" name="USB OTG (Micro-AB)" />
+        <feature type="ConnOther" n="1" name="DriveMonitor2 Connector (10-pin + 6-pin)" />
+        <feature type="ConnOther" n="1" name="HMI Satellite Connector (80-pin edge card)" />
+        <feature type="ConnOther" n="1" name="COM Satellite Connector (80-pin edge card)" />
+        <feature type="ConnOther" n="1" name="ACT Satellite Connector (80-pin edge card)" />
+        <feature type="ConnOther" n="1" name="Power Scale Connector (for power measurement)" />
+        <feature type="Batt" n="1" name="CR2032 Battery for RTC" />        
+        <feature type="Button" n="2" name="Reset, 1xUser button" />
+        <feature type="ContOther" n="1" name="2-Pin DIP Switch (Hardware boot mode selection)" />
+        <feature type="Poti" n="1" name="Potentiometer for ADC (connected to P14.1)" />
+        <feature type="LED" n="5" name="LEDs: 1 x User (P3.9), 3.3 Volt, 5 Volt, 5 Volt USB, PORST" />
+        <feature type="CustomFF" n="95" m="95" name="Hexagon Application Kit Form Factor" />
+      <debugInterface adapter="J-Link Lite" connector="Micro-USB" />
+      <debugInterface adapter="JTAG/SW" connector="10 pin Cortex debug (0.05 inch connector)" />
+      <debugInterface adapter="JTAG/SW" connector="20-pin Cortex debug + ETM Trace (0.05 inch connector)" />
+    </board>
+
+    <board vendor="Infineon" name="XMC4500 CPU Board - General Purpose (CPU_45B)" revision="V2" salesContact="sales@infineon.com">
+      <description>XMC4500 CPU Board - General Purpose (CPU_45B) Board Support and Examples</description>
+      <image small="Images/XMC4500_SDRAM_small.jpg" large="Images/XMC4500_SDRAM.png" />
+      <book category="schematic" name="Documents/PCB_Sources_Eagle_CPU_45B-V1.zip" title="Schematics" />
+      <book category="manual" name="Documents/Board_Users_Manual_CPU_Board_XMC4500_SDRAM_R1_0.pdf" title="User Manual" />
+      <book category="setup" name="Documents/XMC4500_Hex_QSG.pdf" title="Quick Start Guide" />     
+      <mountedDevice deviceIndex="0" Dvendor="Infineon:7" Dname="XMC4500-E144x1024" />
+      <compatibleDevice deviceIndex="0" Dvendor="Infineon:7" DsubFamily="XMC4500 Series" />
+        <feature type="XTAL" n="12000000" />
+        <feature type="XTAL" n="32768" name="32k on-board crystal" />
+        <feature type="ROM" n="1" name="32 MBit Quad-SPI Flash" />
+        <feature type="PWR" n="5" name="USB Powered" />
+        <feature type="USB" n="1" name="USB OTG (Micro-AB)" />
+        <feature type="ConnOther" n="1" name="DriveMonitor2 Connector (10-pin + 6-pin)" />
+        <feature type="ConnOther" n="1" name="HMI Satellite Connector (80-pin edge card)" />
+        <feature type="ConnOther" n="1" name="COM Satellite Connector (80-pin edge card)" />
+        <feature type="ConnOther" n="1" name="ACT Satellite Connector (80-pin edge card)" />
+        <feature type="ConnOther" n="1" name="Power Scale Connector (for power measurement)" />
+        <feature type="ContOther" n="1" name="2-Pin DIP Switch (Hardware boot mode selection)" />
+        <feature type="Batt" n="1" name="CR2032 Battery for RTC" />        
+        <feature type="Poti" n="1" name="Potentiometer for ADC (connected to P14.1)" />
+        <feature type="Button" n="1" name="Reset" />
+        <feature type="LED" n="5" name="LEDs: 1 x User (P3.9), 3.3 Volt, 5 Volt, 5 Volt USB, PORST" />
+        <feature type="CustomFF" n="95" m="95" name="Hexagon Application Kit Form Factor" />
+      <debugInterface adapter="J-Link Lite" connector="Micro-USB" />
+      <debugInterface adapter="JTAG/SW" connector="10 pin Cortex debug (0.05 inch connector)" />
+      <debugInterface adapter="JTAG/SW" connector="20-pin Cortex debug + ETM Trace (0.05 inch connector)" />
+    </board>
+
+    <board vendor="Infineon" name="XMC4500 Relax Kit" revision="V1" salesContact="sales@infineon.com" orderForm="https://www.infineon.com/cms/de/product/evaluation-boards/kit_xmc45_relax_v1/#!order">
+      <description>XMC4500 Relax Kit Board Support and Examples</description>
+      <image small="Images/XMC4500-Relax_Kit.jpg" />
+      <book category="overview" name="https://www.infineon.com/cms/de/product/evaluation-boards/kit_xmc45_relax_v1/" title="XMC4500 Relax Kit Overview" />
+      <book category="schematic" name="Documents/PCB_Sources_Eagle_XMC4500_Relax_V1.zip" title="Schematics" />
+      <book category="manual" name="Documents/Board_Users_Manual_XMC4500_Relax_Kit-V1_R1.2.pdf" title="User Manual" />
+      <book category="setup" name="Documents/XMC4500_QSG.pdf" title="Quick Start Guide" /> 
+      <mountedDevice deviceIndex="0" Dvendor="Infineon:7" Dname="XMC4500-F100x1024" />
+      <compatibleDevice deviceIndex="0" Dvendor="Infineon:7" DsubFamily="XMC4500 Series" />
+        <feature type="ODbg" n="1" name="On-board J-LINK Lite" />      
+        <feature type="XTAL" n="12000000" />
+        <feature type="XTAL" n="32768" name="32k on-board crystal" />
+        <feature type="ROM" n="1" name="32 MBit Quad-SPI Flash" />
+        <feature type="PWR" n="5" name="USB Powered" />
+        <feature type="USB" n="1" name="USB Device (Micro-AB)" />
+        <feature type="MemCard" n="1" name="SD Card Holder" />        
+        <feature type="ETH" n="1" m="100000000" name="Ethernet RJ45 Plug, Würth" />
+        <feature type="ConnOther" n="2" name="2x20 pin header" />
+        <feature type="Button" n="3" name="RESET, 2xUser buttons" />
+        <feature type="LED" n="2" name="2xUser LEDs" />
+      <debugInterface adapter="J-Link Lite" connector="Micro-USB" />
+      <debugInterface adapter="JTAG/SW" connector="10-pin Cortex Debug Connector (0.05 inch connector)" />
+    </board>
+    
+    <board vendor="Infineon" name="XMC4500 Relax Lite Kit" revision="V1" salesContact="sales@infineon.com" orderForm="https://www.infineon.com/cms/de/product/evaluation-boards/kit_xmc45_relax_lite_v1/#!order">
+      <description>XMC4500 Relax Lite Kit Board Support and Examples</description>
+      <image small="Images/XMC4500-Relax_Lite_Kit.JPG" />
+      <book category="overview" name="https://www.infineon.com/cms/de/product/evaluation-boards/kit_xmc45_relax_lite_v1/" title="XMC4500 Relax Lite Kit Overview" />
+      <book category="schematic" name="Documents/PCB_Sources_Eagle_XMC4500_Relax_V1.zip" title="Schematics" />
+      <book category="manual" name="Documents/Board_Users_Manual_XMC4500_Relax_Kit-V1_R1.2.pdf" title="User Manual" />
+      <book category="setup" name="Documents/XMC4500_QSG.pdf" title="Quick Start Guide" /> 
+      <mountedDevice deviceIndex="0" Dvendor="Infineon:7" Dname="XMC4500-F100x1024" />
+      <compatibleDevice deviceIndex="0" Dvendor="Infineon:7" DsubFamily="XMC4500 Series" />
+        <feature type="ODbg" n="1" name="On-board J-LINK Lite" />      
+        <feature type="XTAL" n="12000000" />
+        <feature type="XTAL" n="32768" name="32k on-board crystal" />
+        <feature type="PWR" n="5" name="USB Powered" />
+        <feature type="USB" n="1" name="USB Device (Micro-AB)" />
+        <feature type="ConnOther" n="2" name="2x20 pin header" />
+        <feature type="Button" n="3" name="RESET, 2xUser buttons" />
+        <feature type="LED" n="2" name="2xUser LEDs" />
+      <debugInterface adapter="J-Link Lite" connector="Micro-USB" />
+      <debugInterface adapter="JTAG/SW" connector="10-pin Cortex Debug Connector (0.05 inch connector)" />
+    </board>
+
+    <board vendor="Infineon" name="XMC4700 Relax Kit" revision="V1" salesContact="sales@infineon.com" orderForm="https://www.infineon.com/cms/de/product/evaluation-boards/kit_xmc47_relax_v1/#!order">
+      <description>XMC4700 Relax Kit Support and Examples</description>
+      <image small="Images/XMC4700_Relax_Kit.jpg" />
+      <book category="overview" name="https://www.infineon.com/cms/de/product/evaluation-boards/kit_xmc47_relax_v1/" title="XMC4700 Relax Kit Overview" />
+      <book category="schematic" name="Documents/Infineon-PCB Footprints and Symbols - XMC4700-XMC4800 - Source Eagle - Relax Kit Series-PCB-v01_00-EN.zip" title="Schematics" />
+      <book category="manual" name="Documents/Infineon-Board_User_Manual_XMC4700_XMC4800_Relax_Kit_Series-UM-v01_02-EN.pdf" title="User Manual" />
+      <mountedDevice deviceIndex="0" Dvendor="Infineon:7" Dname="XMC4700-F144x2048" />
+      <compatibleDevice deviceIndex="0" Dvendor="Infineon:7" DsubFamily="XMC4700 Series" />
+        <feature type="ODbg" n="1" name="On-board J-LINK Lite" />      
+        <feature type="XTAL" n="14400000" />
+        <feature type="XTAL" n="32768" name="32k on-board crystal" />
+        <feature type="ROM" n="1" name="32 MBit Quad-SPI Flash" />
+        <feature type="PWR" n="5" name="USB Powered" />
+        <feature type="USB" n="1" name="USB Device (Micro-AB)" />
+        <feature type="MemCard" n="1" name="SD Card Holder" />        
+        <feature type="ETH" n="1" m="100000000" name="Ethernet RJ45 Plug, Würth" />
+        <feature type="ConnOther" n="1" name="Arduino Uno Rev3" />
+        <feature type="ConnOther" n="2" name="2x20 pin header" />
+        <feature type="Button" n="3" name="RESET, 2xUser buttons" />
+        <feature type="LED" n="2" name="2xUser LEDs" />
+      <debugInterface adapter="J-Link Lite" connector="Micro-USB" />
+      <debugInterface adapter="JTAG/SW" connector="10-pin Cortex Debug Connector (0.05 inch connector)" />
+    </board>
+
+    <board vendor="Infineon" name="XMC4800 Relax EtherCAT Kit" revision="V1" salesContact="sales@infineon.com" orderForm="https://www.infineon.com/cms/de/product/evaluation-boards/kit_xmc48_relax_ecat_v1/#!order">
+      <description>XMC4800 Relax Kit Support and Examples</description>
+      <image small="Images/XMC4800_Relax_EtherCat_Kit.jpg" />
+      <book category="overview" name="https://www.infineon.com/cms/de/product/evaluation-boards/kit_xmc48_relax_ecat_v1/" title="XMC4800 Relax EtherCAT Overview" />
+      <book category="schematic" name="Documents/Infineon-PCB Footprints and Symbols - XMC4700-XMC4800 - Source Eagle - Relax Kit Series-PCB-v01_00-EN.zip" title="Schematics" />
+      <book category="manual" name="Documents/Infineon-Board_User_Manual_XMC4700_XMC4800_Relax_Kit_Series-UM-v01_02-EN.pdf" title="User Manual" />
+      <mountedDevice deviceIndex="0" Dvendor="Infineon:7" Dname="XMC4800-F144x2048" />
+      <compatibleDevice deviceIndex="0" Dvendor="Infineon:7" DsubFamily="XMC4800 Series" />
+        <feature type="ODbg" n="1" name="On-board J-LINK Lite" />      
+        <feature type="XTAL" n="14400000" />
+        <feature type="XTAL" n="32768" name="32k on-board crystal" />
+        <feature type="ROM" n="1" name="32 MBit Quad-SPI Flash" />
+        <feature type="PWR" n="5" name="USB Powered" />
+        <feature type="USB" n="1" name="USB Device (Micro-AB)" />
+        <feature type="MemCard" n="1" name="SD Card Holder" />        
+        <feature type="ETH" n="1" m="100000000" name="Ethernet RJ45 Plug, Würth" />
+        <feature type="ContOther" n="2" name="EtherCAT Slave IN and OUT interface via RJ45 jack" />
+        <feature type="ConnOther" n="1" name="Arduino Uno Rev3" />
+        <feature type="ConnOther" n="2" name="2x20 pin header" />
+        <feature type="Button" n="3" name="RESET, 2xUser buttons" />
+        <feature type="LED" n="2" name="2xUser LEDs" />
+      <debugInterface adapter="J-Link Lite" connector="Micro-USB" />
+      <debugInterface adapter="JTAG/SW" connector="10-pin Cortex Debug Connector (0.05 inch connector)" />
+    </board>
+
+    <board vendor="Infineon" name="XMC4800 Automation Board" revision="V2" salesContact="sales@infineon.com" orderForm="https://www.infineon.com/cms/de/product/evaluation-boards/kit_xmc48_aut_base_v2/#!order">
+      <description>XMC4800 Automation Board Support and Examples</description>
+      <image small="Images/AutomationBoard.jpg" />
+      <book category="overview" name="https://www.infineon.com/cms/de/product/evaluation-boards/kit_xmc48_aut_base_v2/" title="XMC4800 Automation Board Overview" />
+      <book category="schematic" name="Documents/Infineon-XMC4000_Automation_Eagle-GS-v01_00-EN.zip" title="Schematics" />
+      <book category="manual" name="Documents/Infineon-XMC4800_Automation_Board-V2-UM-v01_00-EN.pdf" title="User Manual" />
+      <mountedDevice deviceIndex="0" Dvendor="Infineon:7" Dname="XMC4800-E196x2048" />
+      <compatibleDevice deviceIndex="0" Dvendor="Infineon:7" DsubFamily="XMC4800 Series" />
+        <feature type="XTAL" n="14400000" />
+        <feature type="XTAL" n="32768" name="32k on-board crystal" />
+        <feature type="RAM" n="1" name="64Mb SDRAM" />
+        <feature type="ROM" n="1" name="Cypress FM25CL64B, 64-Kbit (8K × 8) Serial (SPI) F-RAM" />
+        <feature type="USB" n="1" name="USB Device (Micro-AB)" />
+        <feature type="ETH" n="1" m="100000000" name="Ethernet RJ45 Plug, Würth" />
+        <feature type="ContOther" n="2" name="EtherCAT Slave IN and OUT interface via RJ45 jack" />
+        <feature type="ContOther" n="2" name="2x10 Signal Header for ISOFACE outputs/inputs and 24V supply" />
+        <feature type="Button" n="1" name="RESET" />
+        <feature type="LED" n="3" name="User RGB LED, EtherCAT LED_RUN, LED_ERR" />
+        <feature type="CAN" n="1" name="DB9 Male Connector" />        
+        <feature type="Batt" n="1" name="CR2032 Battery for RTC" />        
+      <debugInterface adapter="JTAG/SW" connector="10-pin Cortex Debug Connector (0.05 inch connector)" />
+    </board>
+    
+     <board vendor="Infineon" name="XMC4800 IoT Connectivity Kit" revision="V1.1" salesContact="sales@infineon.com" orderForm="https://www.infineon.com/cms/en/product/evaluation-boards/kit_xmc48_iot_aws_wifi/#!order">
+      <description>XMC4800 IoT Connectivity Kit Support and Examples</description>
+      <image small="Images/XMC4300-Ethercat.jpg" />
+      <book category="overview" name="https://www.infineon.com/cms/en/product/evaluation-boards/kit_xmc48_iot_aws_wifi/" title="XMC4800 IoT Connectivity Kit Overview" />
+      <book category="schematic" name="Documents/Infineon-PCB_Footprints_and_Symbols-XMC_48000_Relax_EtherCat_Kit_v1.0-PCB-v01_00-EN.zip" title="Schematics" />
+      <book category="manual" name="Documents/Infineon-XMC4800_IoT_Amazon_FreeRTOS_Connectivity_kit-UM-v01_00-EN.pdf" title="User Manual" />
+      <mountedDevice deviceIndex="0" Dvendor="Infineon:7" Dname="XMC4800-F100x2048" />
+      <compatibleDevice deviceIndex="0" Dvendor="Infineon:7" DsubFamily="XMC4800 Series" />
+        <feature type="ODbg" n="1" name="On-board J-LINK Lite" />      
+        <feature type="XTAL" n="14400000" />
+        <feature type="XTAL" n="32768" name="32k on-board crystal" />
+        <feature type="PWR" n="5" name="USB Powered" />
+        <feature type="USB" n="1" name="USB Device (Micro-AB)" />
+        <feature type="ContOther" n="2" name="EtherCAT Slave IN and OUT interface via RJ45 jack" />
+        <feature type="ConnOther" n="1" name="mikroBUS" />
+        <feature type="ConnOther" n="1" name="Arduino Uno Rev3" />
+        <feature type="Button" n="3" name="RESET, 2xUser buttons" />
+        <feature type="LED" n="2" name="2xUser LEDs" />
+        <feature type="CAN" n="1" name="DB9 Male Connector" />        
+      <debugInterface adapter="J-Link Lite" connector="Micro-USB" />
+      <debugInterface adapter="JTAG/SW" connector="10-pin Cortex Debug Connector (0.05 inch connector)" />
+    </board>
+
+  </boards>
+  
+  
+  </package>

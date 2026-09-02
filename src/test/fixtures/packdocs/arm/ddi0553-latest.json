@@ -1,0 +1,109 @@
+{
+ "document": "ddi0553",
+ "isConfidential": false,
+ "version": "bz",
+ "versionLabel": "B.z",
+ "language": "en",
+ "languageLabel": "English",
+ "title": "Armv8-M Architecture Reference Manual",
+ "keywords": [],
+ "products": [],
+ "topic": {
+  "label": "Armv8-M Architecture Reference Manual",
+  "content": "PGh0bWw+PGJvZHk+dGl0bGUgcGFnZTwvYm9keT48L2h0bWw+",
+  "slug": "",
+  "topics": [],
+  "anchors": [],
+  "_links": {
+   "self-relative": [
+    {
+     "href": "/documentation/ddi0553/bz?lang=en&rev=0"
+    }
+   ],
+   "self": [
+    {
+     "href": "https://documentation-service.arm.com/documentation/ddi0553/bz?lang=en&rev=0"
+    }
+   ]
+  }
+ },
+ "metadata": {
+  "created": "2026-02-25T08:47:08.847+0000",
+  "updated": "2026-02-25T08:47:08.847+0000",
+  "published": "2026-02-24T00:00:00.000+0000",
+  "productQuality": "EAC",
+  "contentType": "Architecture Document",
+  "audience": [
+   "Architects",
+   "Firmware Engineers",
+   "Hardware Engineers",
+   "Kernel Developers",
+   "SoC Designers",
+   "Software Developers"
+  ],
+  "confidentiality": "Non-Confidential",
+  "author": "Arm",
+  "contentDescription": "This manual documents the microcontroller profile of version 8 of the Arm Architecture, the Armv8-M architecture profile.",
+  "contentFormat": "PDFOnly",
+  "topics": [
+   "Arm Assembly Language",
+   "Benchmarking",
+   "Best practice",
+   "Debugging",
+   "Image processing",
+   "Profiling",
+   "Validation",
+   "Verification"
+  ],
+  "categories": [
+   "Architecture products"
+  ],
+  "productType": "CPU Architectures",
+  "categoryClassifications": [
+   "ARCDOC"
+  ]
+ },
+ "revision": "0",
+ "_links": {
+  "versions": [
+   {
+    "href": "https://documentation-service.arm.com/documentation/ddi0553/versions"
+   }
+  ],
+  "revisions": [
+   {
+    "href": "https://documentation-service.arm.com/documentation/ddi0553/revisions"
+   }
+  ],
+  "self": [
+   {
+    "href": "https://documentation-service.arm.com/documentation/ddi0553/bz?lang=en&rev=0"
+   }
+  ],
+  "self-relative": [
+   {
+    "href": "/documentation/ddi0553/bz?lang=en&rev=0"
+   }
+  ],
+  "resources": [
+   {
+    "href": "https://documentation-service.arm.com/static/699eb70d77ad5021756604d8?token=",
+    "name": "DDI0553B_z_armv8m_arm.pdf",
+    "extension": "pdf",
+    "contentType": "application/pdf"
+   },
+   {
+    "href": "https://documentation-service.arm.com/static/699eb70d77ad5021756604d9?token=",
+    "name": "DDI0624_armv8M_faults_on_instruction_fetch.xlsx",
+    "extension": "xlsx",
+    "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+   },
+   {
+    "href": "https://documentation-service.arm.com/static/699eb70d77ad5021756604da?token=",
+    "name": "DDI0625_armv8M_faults_on_exception_handling.xlsx",
+    "extension": "xlsx",
+    "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+   }
+  ]
+ }
+}

@@ -112,3 +112,95 @@ DebugMCP. This is a living document — keep it in sync as items ship.
   ("all GDB strategies exhausted") until probe reconnect. A `reconnect_probe`
   or automatic retry-with-reconnect inside read_memory would save the manual
   server bounce.
+
+### 10. Documentation lookups (bypassed with a web search for a datasheet)
+
+**Observed (2026-08-31, STM32 board with an Analog Devices AD4883 ADC):** the
+agent had the documentation tools and the datasheet was already indexed as
+`user/ad4883` (116 pages), yet it web-searched the part, timed out, fetched
+twice more, and never called `list_target_docs`. Its own diagnosis:
+
+- it read the tools as "what the DFP/BSP ship" — an ADC datasheet did not fit
+  that category, and nothing said the user/workspace document folders are
+  *for* third-party parts;
+- "what is an AD4883?" pattern-matched to a web lookup, and once in web mode it
+  stayed there;
+- there was no cheap discovery step in its habit loop — one `list_target_docs`
+  call would have answered;
+- the first correct call resolved an unrelated `Blinky+MPS3` cbuild-run from a
+  fixture folder in the same workspace, so it failed until `pack`/`device` were
+  passed — friction that trains an agent to reach for the web.
+
+**Shipped (unreleased):** the MCP instructions, the tool descriptions, the
+`cmsis-pack-docs` / `cmsis-debug-live` / `add-board-layer` skills and the
+`build` topic say that third-party parts (sensors, ADCs, codecs, radios) are
+documented the same way — any part number starts at `list_target_docs`, an
+unlisted datasheet is fetched by URL with `fetch_doc` (the web finds the URL,
+the tools read the document), never read as a PDF — and that a document the
+user provides goes into `docs/` or through *Import Document for Current
+Target*. Target resolution asks the CMSIS Solution extension for the active
+csolution and target-type and picks that context when the workspace holds
+several solutions, so the first call works without `target`.
+
+**Not covered here:** the agent-side habit itself. A project `CLAUDE.md` /
+`AGENTS.md` line — "before any web search for a part number, run
+`list_target_docs`" — is the project's call; the Claude Code `PreToolUse`
+hook that denies `Read` on `*.pdf` is the hard stop for the ingest half.
+
+### 11. Search ranking benchmark (issue #29)
+
+`npm run bench:search -- --pages <doc.pages.jsonl> --svd <device.svd>` — gold =
+manual pages whose heading names a register in parentheses; queries from the SVD
+`<description>` of each register (set a: descriptions that do not contain the
+register name; set b: description + name). RM0455 rev 3 (2 965 pages, 495 register
+headings) × STM32H7B3.svd (Keil::STM32H7xx_DFP 4.1.3), pdftotext extraction.
+
+Set (a), 313 queries:
+
+| index | heading weight | post boost | R@1 | R@3 | MRR |
+|---|---|---|---|---|---|
+| body only (0.x) | 0 | 3 | 49.5% | 70.9% | 0.621 |
+| body + heading | 3 | 1.5 | 62.9% | 81.8% | 0.734 |
+| body + heading | **5** | **1.5** | **64.5%** | **81.8%** | **0.741** |
+
+Set (b), 333 queries:
+
+| index | heading weight | post boost | R@1 | R@3 | MRR |
+|---|---|---|---|---|---|
+| body only (0.x) | 0 | 3 | 78.1% | 96.7% | 0.873 |
+| body + heading | 3 | 1.5 | 98.2% | 100.0% | 0.990 |
+| body + heading | **5** | **1.5** | **98.8%** | **100.0%** | **0.994** |
+
+Shipped: index version 2 with the heading field, weight 5, post boost 1.5.
+The remaining set-(a) misses are registers whose SVD description is generic
+("control register 1") — the SVD-driven query expansion (#29 part 2) is the
+next lever.
+
+Extractor comparison (issue #28), same RM0455 PDF, heading field on (weight 5,
+post boost 1.5), NFKC tokenizer. pdf.js (bundled, legacy build) extracted the
+2 965 pages in 3.9 s; pdftotext in 3.0 s.
+
+| extractor | set (a) R@1 | R@3 | MRR | set (b) R@1 | R@3 | MRR |
+|---|---|---|---|---|---|---|
+| pdftotext -layout | 64.5% | 81.8% | 0.740 | 98.8% | 100.0% | 0.994 |
+| pdf.js (lines rebuilt by baseline, column gaps kept) | 65.0% | 81.2% | 0.739 | 99.1% | 100.0% | 0.995 |
+
+Within noise, so pdf.js is the default (`packDocs.extractor: auto`); poppler
+stays selectable. Body-only ranking (the 0.x index) was noticeably worse on
+pdf.js text (MRR 0.559 vs 0.613 on set a) — the heading field is what makes the
+two extractors equivalent.
+
+SVD query expansion (issue #29 part 2), pdf.js pages, heading weight 5:
+
+| query set | expansion off | expansion on (registers + acronyms too) | expansion on (instances + fields only, shipped) |
+|---|---|---|---|
+| (a) description only, 309 | R@1 65.0% · MRR 0.739 | 62.8% · 0.725 | 65.0% · 0.739 |
+| (b) description + name, 329 | 99.1% · 0.995 | 99.1% · 0.995 | 99.1% · 0.995 |
+| (c) register name only, 329 | 98.2% · 0.987 | 97.9% · 0.986 | 98.2% · 0.987 |
+
+Expanding register names or the acronyms inside a sentence dilutes the
+ranking, and the heading field already finds register pages from the bare
+name; expansion is therefore limited to peripheral instances (`USART1` →
+its long name and type synonyms) and bare field names (`GPIOAEN` → its
+register) — the queries where the manual's wording differs from the
+identifier, which this benchmark cannot score against register headings.

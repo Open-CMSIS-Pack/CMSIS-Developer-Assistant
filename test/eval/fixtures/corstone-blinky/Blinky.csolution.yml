@@ -1,0 +1,44 @@
+# Copyright (c) 2024 Arm Limited. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+solution:
+  created-for: ARM::V2M_MPS3_SSE_300_BSP@1.5.0
+  description: Blinky example
+
+  packs:
+    - pack: ARM::CMSIS@6.0.0
+    - pack: ARM::CMSIS-Compiler@2.0.0
+    - pack: ARM::V2M_MPS3_SSE_300_BSP
+
+  cdefault:
+
+  target-types:
+    - type: MPS3
+      board: V2M-MPS3-SSE-300-FVP
+      # Evaluation fixture: the CMSIS Solution extension's Run/Debug buttons drive
+      # the Corstone-300 FVP through the model's own GDBServer plugin (MDK FVP
+      # models 11.32.23+). .vscode/fvp.sh resolves the plugin, line-buffers the
+      # model and runs it in Docker on macOS. See test/eval/README.md.
+      target-set:
+        - set:
+          debugger:
+            name: Arm-FVP
+            model: ${workspaceFolder}/.vscode/fvp.sh
+            config-file: fvp_config.txt
+
+  build-types:
+    - type: Debug
+      debug: on
+      optimize: none
+
+    - type: Release
+      debug: off
+      optimize: balanced
+
+  projects:
+    - project: ./Blinky/Blinky.cproject.yml
+
+  output-dirs:
+    cprjdir: ./build/$TargetType$/$Compiler$/$BuildType$/$Project$
+    intdir:  ./build/$TargetType$/$Compiler$/$BuildType$/$Project$/intdir
+    outdir:  ./build/$TargetType$/$Compiler$/$BuildType$/$Project$/outdir

@@ -426,5 +426,14 @@ out/*
 coverage/*
 .vscode-test/*
 .cmsis-dev/*
+# agent evaluation runs (scripts/eval-scenario.ts)
+test/eval/.work/
+test/eval/reports/
 # macOS Finder metadata
 .DS_Store
+
+# Source files and test fixtures that the inherited Visual Studio patterns
+# above ([Bb]uild[Ll]og.*, *.log, [Aa][Rr][Mm]/) would otherwise swallow.
+!src/core/buildInfo/buildLog.ts
+!src/test/fixtures/buildinfo/*.log
+!src/test/fixtures/packdocs/arm/

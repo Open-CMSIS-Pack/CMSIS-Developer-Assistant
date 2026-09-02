@@ -1,0 +1,5 @@
+{
+  "$comment": "Puppeteer config for npm run diagram (mermaid-cli). Points at a locally installed Chrome so no Chromium download is needed; adjust executablePath on Linux/Windows.",
+  "executablePath": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "args": ["--no-sandbox"]
+}

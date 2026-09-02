@@ -9,6 +9,16 @@ allowed-tools:
   - get_device_info
   - cmsis_action
   - flash
+  - list_target_docs
+  - search_target_docs
+  - read_doc_pages
+  - fetch_doc
+  - get_peripheral_docs
+  - list_build_artifacts
+  - get_memory_usage
+  - lookup_symbol
+  - get_section_layout
+  - get_build_diagnostics
   - start_debugging
   - stop_debugging
   - restart_debugging
@@ -35,6 +45,9 @@ allowed-tools:
   - read_cycle_counter
   - read_peripheral_register
   - get_fault_info
+  - diagnose_fault
+  - lookup_peripheral
+  - lookup_register
   - serial_list_ports
   - serial_open
   - serial_close
@@ -83,12 +96,26 @@ order, and stop as soon as you have the device, core, ELF path and probe:
 5. `.vscode/launch.json` — the `type: gdbtarget` entry whose `name` you would
    pass as `configurationName`.
 
+A solution can declare several `target-types` (board and FVP, the HE and HP
+cores of a dual-core device); `cmsis_action` acts on the one the CMSIS
+Solution panel has selected, and every reply names it (`… on HP@debug`).
+On a multi-target solution pass `target` (`MPS3` or `HP@debug`): a differing
+target is switched and verified before anything runs, an undeclared one is
+refused with the declared list.
+
 If those files are missing, build first (`cmsis_action` with `action='build'`).
+It waits for cbuild and ends with ✅ or ❌ plus the exit code — read that line
+rather than polling for output files. Pack resolution or a first build can
+exceed a call's 60 s cap; the reply then says the call did not complete and
+the build is still running — wait, then run `build` again for the real result.
+Every tool that takes `timeoutMs` accepts up to 60000 ms for that one call.
 If `launch.json` is stale, the user has to regenerate it: **CMSIS Solution →
 Manage Solution → Debugger → Apply**. You cannot do that step for them.
 
-`get_debug_instructions` returns the full version of this, including the pack
-documentation notes.
+`get_debug_instructions` with `topic: 'build'` returns the full version of this,
+including the pack documentation notes; without `topic` it returns a short
+overview and the list of topics (`session`, `build`, `breakpoints`,
+`inspection`, `faults`, `troubleshooting`).
 
 ---
 
@@ -146,7 +173,10 @@ method.
    without reading values. On a slow probe that turns thirty reads into one.
 4. **Read what you need.** `get_variables_values` (optionally with
    `variableNames`), `get_call_stack` then `get_frame_variables` to inspect a
-   caller without disturbing the active frame.
+   caller without disturbing the active frame. Listings without
+   `variableNames` are capped (40 per scope, 200 chars per value) and say so;
+   pass names to lift the cap. Motion tools return a compact state — top
+   frames and the breakpoints only when they changed.
 5. **Cross-check against the hardware.** A variable and the peripheral can
    disagree — see below.
 
@@ -177,6 +207,20 @@ This is the characteristic embedded bug, and the reason the memory tools exist.
 - **Read the peripheral, not the shadow copy.** `read_peripheral_register` goes
   through the SVD, so ask for `GPIOA`/`ODR` by name. If the SVD is missing, the
   `cbuild-run.yml` says where it should be.
+- **Ask the SVD first.** `lookup_register` (`RCC`, `APB1ENR`) says which bit is
+  the clock enable before you read anything; `lookup_peripheral` with an
+  `address` turns a BFAR into a peripheral and register. Neither needs a
+  session or touches the target.
+- **Then the manual.** When the SVD gives a bit position but not its meaning,
+  `search_target_docs` (register or bit name) and `get_peripheral_docs` answer
+  from the reference manual with page cites, and `lookup_symbol` turns a fault
+  PC into a function — when `cmsis-developer-assistant.packDocs.enabled` /
+  `buildInfo.enabled` are on (off by default; see `$cmsis-pack-docs`). Do not
+  ask the user for a manual and do not read a PDF into your context: search,
+  or suggest the setting; a PDF the user provides goes into `docs/` and is
+  searched. Third-party parts (sensors, ADCs, codecs) included: a part-number
+  lookup starts with `list_target_docs`; the web is only for finding a PDF
+  URL to hand to `fetch_doc`.
 - **Read the address directly.** `read_memory` on the register address tells you
   what the bus sees. A mismatch against the C variable means the write never
   landed — wrong alias, missing `volatile`, or a peripheral clock that is off.
@@ -188,13 +232,18 @@ This is the characteristic embedded bug, and the reason the memory tools exist.
 
 ## When it faulted
 
-`get_fault_info` decodes CFSR/HFSR/DFSR/MMFAR/BFAR bit by bit. Read it before
-theorising — it usually names the fault class outright (`PRECISERR`,
-`IACCVIOL`, `STKOF`, `UNALIGNED`).
+`diagnose_fault` does the whole first pass in one call: the decoded fault
+registers, the stacked exception frame (the PC of the faulting instruction and
+its caller — on a stacked exception the interesting PC is in the frame, not in
+the current registers), the top frames, the faulting address resolved against
+the SVD, and up to three ranked hypotheses each with the next call. Read it
+before theorising — it usually names the cause outright (an unclocked
+peripheral at BFAR, a null pointer, a stack overflow, a missing Thumb bit).
 
-Then: `read_core_registers` for the PC and the stack pointers, and
-`get_call_stack` to walk up. On a stacked exception the interesting PC is in the
-exception frame, not in the current registers.
+The pieces stay available when you need one of them alone: `get_fault_info`
+(CFSR/HFSR/DFSR/MMFAR/BFAR bit by bit), `read_core_registers`,
+`read_memory` at PSP/MSP for the frame, `get_call_stack` to walk up,
+`lookup_peripheral { address }` for an address.
 
 `references/cmsis-embedded-guide.md` has the SCS memory map and the decode
 recipes. `references/troubleshooting/embedded.md` covers probe-not-detected,

@@ -105,6 +105,33 @@ export function getSkillInstallRoots(options: SkillInstallRootsOptions = {}): Sk
     return { install, sweepOnly: sweepOnly.filter(dir => !install.includes(dir)) };
 }
 
+/**
+ * Where a project's own skills go, for one workspace folder — the same
+ * conventions one level down: `<folder>/.agents/skills` is the cross-agent
+ * project location, `<folder>/.claude/skills` the only one Claude Code
+ * reads, so it is written when Claude Code is on this machine (a Claude home
+ * exists) or the project already has a `.claude` directory. When it is not
+ * written it is still swept, for a copy an earlier setup left there.
+ */
+export function getProjectSkillInstallRoots(folder: string, options: SkillInstallRootsOptions = {}): SkillInstallRoots {
+    const env = options.env ?? process.env;
+    const home = options.home ?? os.homedir();
+    const exists = options.exists ?? fs.existsSync;
+
+    const install = [path.join(folder, '.agents', 'skills')];
+    const sweepOnly: string[] = [];
+
+    const claudeHome = env.CLAUDE_CONFIG_DIR || path.join(home, '.claude');
+    const claudeProject = path.join(folder, '.claude', 'skills');
+    if (exists(claudeHome) || exists(path.join(folder, '.claude'))) {
+        install.push(claudeProject);
+    } else {
+        sweepOnly.push(claudeProject);
+    }
+
+    return { install, sweepOnly };
+}
+
 export interface SkillSyncRecord {
     root: string;
     name: string;
@@ -159,7 +186,6 @@ export class SkillInstaller {
     constructor(
         private readonly extensionPath: string,
         private readonly extensionVersion: string,
-        private readonly roots: SkillInstallRoots,
     ) {}
 
     /**
@@ -167,8 +193,18 @@ export class SkillInstaller {
      * (hidden). Best-effort throughout: each root and each skill fails on
      * its own and is reported, never thrown — not being able to write a
      * skill file must never take activation down with it.
+     *
+     * The roots are per call: the personal directories and each workspace
+     * folder's project directories are synced from their own selections.
+     * A root is only created when something is to be installed into it, so
+     * a project without a selection never gains an empty `.agents/skills`.
      */
-    public async sync(catalog: SkillCatalog, explicit: readonly string[], implied: readonly string[]): Promise<SkillSyncReport> {
+    public async sync(
+        roots: SkillInstallRoots,
+        catalog: SkillCatalog,
+        explicit: readonly string[],
+        implied: readonly string[],
+    ): Promise<SkillSyncReport> {
         const report: SkillSyncReport = { installed: [], removed: [], skippedForeign: [], failed: [] };
         const byName = new Map(catalog.skills.map(entry => [entry.name, entry]));
 
@@ -186,7 +222,11 @@ export class SkillInstaller {
             }
         }
 
-        for (const root of this.roots.install) {
+        for (const root of roots.install) {
+            if (desired.size === 0) {
+                await this.sweep(root, desired, report);
+                continue;
+            }
             try {
                 await fs.promises.mkdir(root, { recursive: true });
             } catch (error) {
@@ -199,7 +239,7 @@ export class SkillInstaller {
             await this.sweep(root, desired, report);
         }
 
-        for (const root of this.roots.sweepOnly) {
+        for (const root of roots.sweepOnly) {
             await this.sweep(root, new Map(), report);
         }
 
@@ -228,6 +268,10 @@ export class SkillInstaller {
                 return;
             }
 
+            // Staging left behind by a process that died mid-copy (an
+            // extension host killed during a sync) would sit in the root as a
+            // dot-directory the harnesses list as a skill; clear ours first.
+            await this.removeStaleStaging(root, entry.name);
             await fs.promises.rm(staging, { recursive: true, force: true });
             await fs.promises.cp(source, staging, { recursive: true });
 
@@ -255,6 +299,22 @@ export class SkillInstaller {
         } catch (error) {
             report.failed.push({ root, name: entry.name, error: describe(error) });
             await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => undefined);
+        }
+    }
+
+    /** Remove `.<name>.tmp-<pid>` staging directories of earlier, interrupted syncs. */
+    private async removeStaleStaging(root: string, name: string): Promise<void> {
+        let entries: string[];
+        try {
+            entries = await fs.promises.readdir(root);
+        } catch {
+            return;
+        }
+        const prefix = `.${name}.tmp-`;
+        for (const entry of entries) {
+            if (entry.startsWith(prefix)) {
+                await fs.promises.rm(path.join(root, entry), { recursive: true, force: true }).catch(() => undefined);
+            }
         }
     }
 

@@ -2,36 +2,47 @@
 
 ⚠️  **CRITICAL INSTRUCTIONS - FOLLOW THESE STEPS:**
 
-0. **FIRST OF ALL:** Establish target awareness — read the project's CMSIS YAMLs and `launch.json` (see "PHASE 0" below). Without this you will guess at addresses, peripheral names and the wrong launch configuration.
-1. **THEN:** Call `get_session_status` to check whether a debug session is already running. Branch on the result (see "PHASE 1" below) — never blindly call `start_debugging`, it will refuse if a session is already active.
-2. **THEN:** Use `add_breakpoint` to set an initial breakpoint at a starting point.
-3. **THEN:** Optionally use `add_breakpoint` to set breakpoints at strategic points.
-4. **THEN:** Bring up the target only when `get_session_status` returned `no-session`:
-   - **CMSIS / Cortex-M solutions:** use `cmsis_action` with `action="load_and_debug"`. This is the same flow as clicking the **Debug** button in the CMSIS Solution panel — it builds (if needed), flashes the device, and attaches the debugger using the configuration the user picked in **Manage Solution → Debugger**. **Do not use `start_debugging` for CMSIS projects** — it bypasses the flash step and uses whichever debug-tab config happens to be selected.
-   - **Non-CMSIS projects** (Python, Java, JS/TS, etc.): use `start_debugging` with `configurationName` from `launch.json`.
-   - **Already-flashed CMSIS target, just want to attach:** use `cmsis_action` with `action="attach"` (skips programming).
-5. **THEN:** Use repetitively all the other tools to navigate and inspect step by step.
-6. **FINALLY:** Get to the problematic line to fully understand the root cause. If needed, restart the debug session using `restart_debugging`.
+0. **FIRST OF ALL:** Establish target awareness — read the project's CMSIS YAMLs and `launch.json` (topic `build`); otherwise you guess at addresses, peripheral names and the launch configuration.
+1. **THEN:** Call `get_session_status` and branch on the result (topic `session`). `start_debugging` and `cmsis_action load_and_debug` refuse while a session is active.
+2. **THEN:** Set an initial breakpoint with `add_breakpoint` (`line`, optionally `condition`), then a few strategic ones within the FPB budget (topic `breakpoints`).
+3. **THEN:** Bring the target up only from `no-session`: `cmsis_action load_and_debug` for CMSIS solutions (builds, flashes, attaches — the panel's *Debug* button), `attach` for an already-flashed target, `start_debugging` only for non-CMSIS launch configurations.
+4. **THEN:** Run, wait, look, read: `continue_execution` / `wait_for_stop`; `list_variable_names` before `get_variables_values`; cross-check variables against the hardware with `read_peripheral_register` / `read_memory` (topic `inspection`). On a fault, `get_fault_info` first (topic `faults`).
+5. **FINALLY:** Trace back to the root cause, not the symptom (topic `troubleshooting`), then `clear_all_breakpoints`.
 
 ## 🐞 DEBUGGER FIRST — do not start by adding prints
 
-Do not begin a runtime investigation by editing the firmware to add `printf` over UART/ITM, LED toggles or trace macros. On a Cortex-M that costs a rebuild, a reflash and a reset per hypothesis, moves code and data around, and changes the timing of the thing you are observing. Set a breakpoint and inspect the live state instead (variables, registers, memory, peripherals). Use `add_logpoint` only knowing it still halts the core per hit (see *Logpoints* below); for hot paths prefer `read_cycle_counter` or a RAM buffer read back with `read_memory`. Add permanent logging only when observability itself is the requested change. If the debugger cannot be used, state the concrete blocker before falling back to another method.
+Do not begin a runtime investigation by editing the firmware to add `printf` over UART/ITM, LED toggles or trace macros. On a Cortex-M that costs a rebuild, a reflash and a reset per hypothesis, moves code and data around, and changes the timing of the thing you are observing. Set a breakpoint and inspect the live state instead (variables, registers, memory, peripherals). Use `add_logpoint` only knowing it still halts the core per hit (topic `breakpoints`); for hot paths prefer `read_cycle_counter` or a RAM buffer read back with `read_memory`. Add permanent logging only when observability itself is the requested change. If the debugger cannot be used, state the concrete blocker before falling back to another method.
 
-## 🔎 PHASE 1 — SESSION STATUS GATE
+<!-- topic: session | The five session states and the right next action for each, several VS Code windows, leaving the session clean -->
+## 🔎 Session status gate
 
 Always call `get_session_status` *before* any session-changing tool. The five possible states each have a different correct next action:
 
 | State | What it means | Correct next action |
 | ----- | ------------- | ------------------- |
-| `no-session` | No debug session is attached. | **CMSIS solutions: always use `cmsis_action load_and_debug`** (flashes then attaches via the CMSIS Solution panel — same as clicking the panel's *Debug* button). Use `start_debugging` ONLY for non-CMSIS targets (Python, Java, JS, etc.) or when you specifically need to attach without flashing. |
+| `no-session` | No debug session is attached. | **CMSIS solutions: `cmsis_action load_and_debug`** (flashes then attaches via the CMSIS Solution panel — the panel's *Debug* button). `start_debugging` ONLY for non-CMSIS launch configurations or to attach without flashing. |
 | `initializing` | The adapter is starting / flashing. | Wait briefly and call `get_session_status` again — do NOT issue another start. |
 | `stopped` | A session is attached and the target is paused. | Skip `start_debugging` entirely. Use inspection tools (`get_call_stack`, `get_variables_values`, `read_memory`, …) directly, or `continue_execution` to resume. |
-| `running` | A session is attached and the CPU is executing. | Inspection reads will be rejected. Call `pause_execution`, set/hit a breakpoint, or call `stop_debugging` first depending on intent. |
+| `running` | A session is attached and the CPU is executing. | Inspection reads, breakpoint changes and stepping are rejected. Call `pause_execution`, or `wait_for_stop` if a breakpoint is expected to hit, or `stop_debugging`. |
 | `unresponsive` | The probe / GDB server is hung. | Call `check_target_connection` to confirm, then `restart_debugging` or `stop_debugging`. Do NOT issue more inspection calls — they will time out. |
 
-`start_debugging` and `cmsis_action load_and_debug` will refuse with a structured error if a session is already active, naming the existing session and pointing you at `restart_debugging` / `stop_debugging`. Save the round-trip by checking up front.
+`start_debugging` and `cmsis_action load_and_debug` refuse with a structured error if a session is already active, naming the existing session and pointing you at `restart_debugging` / `stop_debugging`. Save the round-trip by checking up front.
 
-## 🛰️ PHASE 0 — TARGET AWARENESS (do this *before* any breakpoint or debug call)
+Every tool call is measured; `get_session_status` ends with the session's tool-call totals (calls, bytes returned, time in tools, timeouts, errors) so you can see what an investigation is costing.
+
+## 🪟 Several VS Code windows open
+
+The MCP server runs in one window (the router) and forwards each call to the window that owns the target. It resolves from a file path when the tool has one, otherwise from the window that has an active debug session.
+
+When **two windows are debugging at once** it refuses to guess and names both — reading the wrong board's memory looks exactly like a firmware bug and costs far more than being asked to pick. Use `list_debug_windows` to see the candidates and `select_debug_window({ pid })` to pin one for the rest of the session.
+
+## 🧹 Clean up
+
+Once the root cause is identified and verified, call `clear_all_breakpoints` before concluding — a clean slate for the next task, and free FPB comparators for it.
+<!-- /topic -->
+
+<!-- topic: build | Target awareness from the CMSIS YAMLs and launch.json; build, flash and attach with cmsis_action / flash / start_debugging; long builds and the result line -->
+## 🛰️ Target awareness (do this *before* any breakpoint or debug call)
 
 Embedded debugging without target context is guesswork. Before issuing any debug command, gather the following from the workspace. After a successful build these files exist; if any are missing, build first (`cmsis_action` with `action='build'`).
 
@@ -45,6 +56,10 @@ Embedded debugging without target context is guesswork. Before issuing any debug
 | 4 | `out/<context>.cbuild-run.yml` | Debug runtime: GDB server (pyOCD / J-Link), port, programming algorithms, reset / debug sequences, SVD path. This is what the CMSIS Debugger extension hands to the gdbtarget config. |
 | 5 | `.vscode/launch.json` | The actual VS Code debug configurations. Look for `type: gdbtarget` entries — their `name` field is what you pass as `configurationName` to `start_debugging`. Should be auto-generated/refreshed by the user from the **CMSIS Solution → Manage Solution → Debugger** dialog. |
 
+### Which target the panel will act on
+
+A csolution can declare several `target-types` (a board and an FVP, the HE and HP cores of a dual-core device), each with its own `target-set` debugger configuration. `cmsis_action` acts on whichever one the CMSIS Solution panel has selected — exactly like its buttons — and every result names that target (`… on HP@debug`): read it. On a multi-target solution pass `target` (`MPS3` or `HP@debug`, the names from `<name>.csolution.yml`). When it differs from the active one the tool switches the selection (`.vscode/cmsis.json`, then a solution re-activation) and verifies through the extension before it builds, flashes or attaches; when the switch cannot be verified, or the target is not declared, it refuses and lists the declared targets. A switch is refused under a live debug session — `stop_debugging` first.
+
 ### If `launch.json` is missing or out of date
 
 Ask the user to:
@@ -53,144 +68,59 @@ Ask the user to:
 
 You cannot do this for the user — it is a UI-driven step in the CMSIS Solution extension.
 
-### Documentation links from CMSIS packs
+### The pack documentation is a tool call away
 
-Some projects expose **documentation links** in the CMSIS Solution dialog (board datasheets, MCU reference manuals, BSP/DFP READMEs). These come from the installed CMSIS-Packs (DFP, BSP) or external URLs declared in the pack manifest. Before assuming peripheral semantics, addresses, or fault behavior:
+The DFP/BSP ship or link the reference manual, datasheet, errata and board manual. With `cmsis-developer-assistant.packDocs.enabled` on, `list_target_docs` lists them with ids and state, `search_target_docs` finds the page for a register, bit or address, `read_doc_pages` reads it (cite `<doc id> <edition> p.<n>`), `fetch_doc` downloads a web-linked or Arm document, and `get_peripheral_docs` assembles a page-cited dossier for one peripheral. Before assuming peripheral semantics, addresses, clock or fault behaviour:
 
-- Check the pack documentation surfaced in the CMSIS Solution UI.
-- The SVD shipped with the DFP is the authoritative source for peripheral names and bit fields used by `read_peripheral_register`.
+- Search the documentation first. Do **not** ask the user for a manual before `list_target_docs` / `fetch_doc` have been tried, and do not read a PDF into your context — a document the user provides belongs in the workspace `docs/` folder (or the **Import Document for Current Target** command), where it is indexed and searched.
+- Third-party parts on the board — sensors, ADCs, codecs, radios — are documented the same way: for any part number call `list_target_docs` first; if the datasheet is not listed, find its PDF URL on the web and `fetch_doc { url }`. The web finds the URL; the datasheet is read through the tools.
+- If the tools are absent from your tool list, they are switched off: suggest the setting instead of asking for documents.
+- The SVD shipped with the DFP (`lookup_register`, `lookup_peripheral`) is authoritative for register names, offsets and bit positions; the manual is where the meaning, sequences and constraints live. Use both.
 
 ### Cross-check with `get_device_info`
 
-After `start_debugging` (or `cmsis_action load_and_debug`), call `get_device_info` once to confirm the live session matches what the YAMLs said: program path, GDB server, port, `cbuildRunFile` reference. A mismatch means the user picked a different `configurationName` than the one you analysed.
+After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_info` once to confirm the live session matches what the YAMLs said: program path, GDB server, port, `cbuildRunFile` reference, and the `CMSIS target:` line (the panel's target-type@set). A mismatch means the user picked a different `configurationName` or target than the one you analysed.
 
 ### Quick checklist
 
 - [ ] Found `<name>.cbuild-idx.yml` and identified the active context.
 - [ ] Read the matching `<context>.cbuild.yml` — know the device, core, ELF path.
 - [ ] Read the matching `<context>.cbuild-run.yml` — know the probe, port, SVD.
+- [ ] Know which target-type the panel is on; on a multi-target solution pass `target` and check the `on <target>` in the reply.
 - [ ] Confirmed `launch.json` has a `gdbtarget` entry whose name to pass to `start_debugging`.
-- [ ] Skimmed any pack documentation linked from the CMSIS dialog.
+- [ ] Documentation questions go to `search_target_docs` / `get_peripheral_docs` (or the `packDocs.enabled` suggestion) — never to the user, never to a PDF read whole.
 - [ ] (After attaching) `get_device_info` matches expectations.
 
-## 🚨 ROOT CAUSE ANALYSIS - CRITICAL FRAMEWORK
+## 🔨 Build, flash, attach
 
-### **NEVER STOP AT SYMPTOMS - ALWAYS FIND THE ROOT CAUSE**
+`cmsis_action` drives the CMSIS Solution extension on the currently active csolution target — the same as clicking the panel's buttons. `target` (`MPS3` or `HP@debug`) selects the target-type / target-set: a differing one is switched and verified first, an undeclared one is refused with the declared list; every result names the target it ran on. For embedded debugging it is the entry point; `start_debugging` uses the plain VS Code debug tab and skips the build / flash pipeline.
 
-When you encounter an issue during debugging (e.g., null variable, unexpected value, error), you MUST apply this systematic approach:
+| Action | What it does | What comes back |
+| ------ | ------------ | --------------- |
+| `build` | Build the active context. | Waits for the cbuild task. |
+| `load` | Flash the built image. | Waits for the flash task. |
+| `erase` | Erase target flash. | Waits for the task. |
+| `load_and_run` | Flash and run without a debug session. | Waits for the task. |
+| `load_and_debug` | Flash and start a debug session (the *Debug* button). | Returns when the session is up, with its state. |
+| `attach` | Attach to an already-flashed target (skips programming). | Returns when the session is up. |
+| `detach` / `stop_run` | Detach the debugger / stop a previous `load_and_run`. | Immediate. |
 
-#### **SYMPTOM vs ROOT CAUSE - Key Distinction:**
+**Read the result line.** `build`, `load`, `erase` and `load_and_run` end with a terminal ✅ success / ❌ failure and the task's exit code. On ❌ fix the source and build again — do not poll for an output file and do not call `get_session_status` to find out whether a build worked. `load_and_debug` and `attach` verify that the session really has a target behind it (a phantom session with no threads is reported as such).
 
-- **SYMPTOM:** What you observe is wrong (e.g., "variable X is null")  
-- **ROOT CAUSE:** WHY the symptom occurred (e.g., "variable X is null because function Y failed to initialize it due to missing parameter Z")
+**Long builds.** Pack resolution or a first build can take longer than a tool call's 60 s cap. If the reply says the call did not complete within its cap, the build is still running in the terminal, not failed: wait, then run `cmsis_action build` again — the incremental build finishes quickly and returns the real result. `timeoutMs` (max 60000) widens or tightens the wait of one call; for `load_and_debug` / `attach` it bounds the session-readiness wait.
 
-#### **ROOT CAUSE INVESTIGATION PROCESS:**
+**`flash`** programs the target with `pyocd load --cbuild-run` and returns synchronously: bytes programmed and rate, or the exit code with pyOCD's error lines. It programs every image listed under `output:` in the cbuild-run file (multi-core safe), auto-resolves that file from `launch.json` / `out/` when `cbuildRunFile` is omitted, and needs `pyocd` on the PATH. It **refuses while a debug session is active** — programming under a live session wedges most probes — so the sequence is `stop_debugging` → `flash` → `cmsis_action attach` (or `load_and_debug`). `cmsis_action load` is the alternative that uses the CMSIS extension's own flash pipeline.
 
-1. **IDENTIFY THE SYMPTOM**
-   - What exactly is wrong? (null value, wrong type, unexpected behavior)
-   - Record the current line and variable state
+**`start_debugging`** launches a `launch.json` configuration through the normal VS Code pipeline (`configurationName` = the `name` of a `gdbtarget` entry; `workingDirectory` is required). Use it for non-CMSIS projects, or to attach to an already-flashed CMSIS target without reprogramming. It refuses while a session is active.
+<!-- /topic -->
 
-2. **ASK THE CRITICAL QUESTION: "WHY?" e.g**
-   - Why is this variable null/undefined/wrong?
-   - Why did this function return an unexpected value?
-   - Why did this condition evaluate incorrectly?
-
-3. **TRACE BACKWARDS TO THE SOURCE**
-   - Set breakpoint at the problematic point
-   - Restart the session to step in it.
-
-4. **CONTINUE UNTIL YOU FIND THE ORIGIN**
-   - Keep asking "why" until you reach the original source of the problem
-   - The root cause is typically where data enters the system incorrectly or where a fundamental assumption is violated
-
-#### **⚠️ WARNING SIGNS YOU'RE STOPPING TOO EARLY:**
-
-- You found a null/undefined variable but didn't check why it's null
-- You see an error but didn't trace where the error originates
-- You identify "bad data" but didn't find why the data is bad
-- You found a failed condition but didn't check why it fails
-
-#### **✅ SIGNS YOU'VE FOUND THE ROOT CAUSE:**
-
-- You can explain the COMPLETE chain from root cause to symptom
-- Fixing this issue would prevent the symptom from occurring
-- The issue is at a fundamental level (data input, configuration, logic error)
-- You understand not just WHAT is wrong, but WHY it's wrong
-
-### **🔍 PRACTICAL EXAMPLES - SYMPTOM vs ROOT CAUSE**
-
-#### **Example 1: Null Variable**
-
-❌ **STOPPING AT SYMPTOM:** "The user object is null on line 45"  
-✅ **FINDING ROOT CAUSE:** "The user object is null because the getUserById() function returned null, which happened because the database query failed due to an incorrect connection string in the configuration file"
-
-**Investigation Steps:**
-
-1. Found user object is null → Set breakpoint in getUserById()
-2. Found getUserById() returns null → Set breakpoint inside the function
-3. Found database query fails → Check connection parameters
-4. Found incorrect connection string → ROOT CAUSE IDENTIFIED
-
-#### **Example 2: Function Exits Early**
-
-❌ **STOPPING AT SYMPTOM:** "The processOrder() function exits early due to invalid payment status"  
-✅ **FINDING ROOT CAUSE:** "The processOrder() function exits early because the payment validation fails when the payment service doesn't receive the required 'currency' field, which wasn't included in the request due to a missing form field in the UI"
-
-**Investigation Steps:**
-
-1. Function exits early → Set breakpoint at validation check
-2. Payment status is invalid → Debug payment validation logic
-3. Currency field is missing → Trace back to request formation
-4. UI form missing currency field → ROOT CAUSE IDENTIFIED
-
-#### **Example 3: Unexpected Value**
-
-❌ **STOPPING AT SYMPTOM:** "The calculation result is NaN"  
-✅ **FINDING ROOT CAUSE:** "The calculation result is NaN because one of the input parameters contains a string instead of a number, which occurs because the parseFloat() conversion fails when the input data contains currency symbols that weren't stripped by the data sanitization function"
-
-**Investigation Steps:**
-
-1. Result is NaN → Check input parameters
-2. Parameter contains string → Find where conversion should happen
-3. parseFloat() fails → Check what's being parsed
-4. Currency symbols not stripped → ROOT CAUSE IDENTIFIED
-
-#### **🎯 ROOT CAUSE INVESTIGATION CHECKLIST**
-
-Before stopping your debug session, ensure you can answer:
-
-- [ ] What is the immediate symptom?
-- [ ] What function/code caused this symptom?
-- [ ] What input/condition caused that function to behave incorrectly?
-- [ ] Where did that incorrect input/condition originate?
-- [ ] Can I trace this back further to a more fundamental cause?
-- [ ] If I fix this root cause, will it prevent the symptom from occurring?
-
-## 📋 DETAILED INSTRUCTIONS
-
-- **Before debugging:** Set at least one breakpoint in a starting point of the code. Optionally add more breakpoints in points you found as strategic points.
-- **Start debugging:** Launch the debug session with proper configuration (the program will immediately start on the first breakpoint)
-- **During debugging:**
-  - **Navigate:** Use stepping commands and continue command to move through code execution
-  - **Inspect:** Check variables and evaluate expressions when needed
-- **Root Cause Investigation:** If you encounter any issue - DON'T SPECULATE! Apply the systematic root cause analysis:
-    1. Identify if what you found is a symptom or root cause
-    2. If it's a symptom, set breakpoints to trace backwards to the source
-    3. Restart the debug session to investigate the deeper cause
-    4. Continue until you find the root cause
-
-## Breakpoint Strategy Guide
-
-🎯 **BREAKPOINT STRATEGY:**
+<!-- topic: breakpoints | Where to put breakpoints, conditions, logpoints and their cost on Cortex-M, the FPB comparator budget -->
+## 🎯 Breakpoint strategy
 
 - **Pass `line` (1-based), not `lineContent`.** `lineContent` is deprecated: it substring-matches and sets a breakpoint on *every* line containing the text. In C that routinely means dozens of lines — `}`, `return;`, `break;` — and it will exhaust the FPB comparators (see below) before you notice.
-- Set breakpoints inside the function body and not on the signature or definition line itself (e.g "def" in python)
-- Place breakpoints only on executable lines (avoid comments, empty lines)
-- Set breakpoints before loops or conditionals  
-- Set breakpoints at variable assignments you want to inspect
-- Set breakpoints at error-prone areas
-- Set breakpoints at the start of functions to inspect parameters
-- Set breakpoints before and after critical operations
+- Set breakpoints inside the function body, on an executable line — not on the signature, a comment, an empty line or a lone brace.
+- Set breakpoints before loops or conditionals, at assignments you want to inspect, at the start of functions to inspect parameters, and before and after critical operations (peripheral init, DMA start, a mutex handover).
+- Set at least one breakpoint before bringing the target up: the program then stops at a place you chose instead of somewhere in a busy loop.
 
 ### Conditional breakpoints
 
@@ -229,13 +159,25 @@ Defensive defaults:
 - When you have to investigate a wider area, work iteratively: set 2–3 well-chosen breakpoints, hit one, learn what you need, remove or replace it before adding the next.
 - After concluding an investigation phase, call `clear_all_breakpoints` to free comparators.
 
-Software breakpoints (which Flash patches without a comparator) are *not* an option on Flash for most Cortex-M targets — only RAM-resident code can use them, which is rarely the case here.
+Software breakpoints (which patch Flash without a comparator) are *not* an option on Flash for most Cortex-M targets — only RAM-resident code can use them, which is rarely the case here.
 
-## ⏱️ Embedded execution control: wait_for_stop, reset, cycle timing
+### Common mistakes
+
+❌ Starting the target without a breakpoint → ✅ set the initial breakpoint first.
+❌ Locating a breakpoint with `lineContent` → ✅ pass the 1-based `line`.
+❌ Hitting a breakpoint 500 times to reach one iteration → ✅ pass `condition` so GDB only halts the core when it holds.
+❌ Stepping over the problematic line without understanding why → ✅ break *on* it, restart, and inspect before it executes.
+❌ Leaving six breakpoints bound on a Cortex-M4 → ✅ stay within the comparator budget, `clear_all_breakpoints` between phases.
+<!-- /topic -->
+
+<!-- topic: inspection | Run-and-wait, reset vs restart, cycle-accurate timing, reading variables, registers, memory and peripherals, secret redaction -->
+## ⏱️ Execution control: wait_for_stop, reset, cycle timing
 
 **Never sleep blind waiting for a stop.** After `continue_execution` returned while the target was still running (timeout), or after issuing execution through `evaluate_expression` (`-exec continue`), call `wait_for_stop` — it blocks on the raw DAP `stopped` event and returns the stop reason + state, or a structured timeout. It returns immediately if the target is already stopped, and it issues no execution commands itself.
 
-**`reset` vs `restart_debugging`.** `restart_debugging` restarts the whole VS Code session (re-launch, breakpoints re-bound). `reset` resets only the target *inside* the live session — the session and breakpoints survive — and verifies the outcome: after the reset-halt the PC must equal the reset vector, or the tool says the target did NOT appear to reset. Trust the verification, not the command echo. Methods: `auto` (escalates `system` → `core` → `hardware`), `system` (SYSRESETREQ), `core` (VECTRESET), `hardware` (nSRST — only works when the reset line is wired from probe to target; if it isn't, no software reset can recover a wedge — power-cycle).
+**A motion tool that timed out has already paused the target** and reports where it actually is. Read that PC before adding more breakpoints — firmware sitting in a polling loop, an ISR, or a fault handler all look the same from the outside and the PC tells them apart immediately.
+
+**`reset` vs `restart_debugging`.** `restart_debugging` restarts the whole VS Code session (re-launch, breakpoints re-bound). `reset` resets only the target *inside* the live session — the session and breakpoints survive — and verifies the outcome: after the reset-halt the PC must equal the reset vector read from the vector table, or the tool says the target did NOT appear to reset (silent non-resets are common on attach configurations). Trust the verification, not the command echo. A running target is halted first. Methods: `auto` (escalates `system` → `core` → `hardware` until one verifies), `system` (SYSRESETREQ), `core` (VECTRESET), `hardware` (nSRST — only works when the reset line is wired from probe to target; if it isn't, no software reset can recover a wedge — power-cycle). `halt: true` (default) leaves the target at the reset vector; `halt: false` resumes after verification. When `reset` reports no reset on a J-Link / secure-boot part, the fallback is `stop_debugging` and `cmsis_action load_and_debug` again.
 
 **Cycle-accurate timing with `read_cycle_counter`.** Read the DWT cycle counter at point A, run to point B (`continue_execution` / `wait_for_stop`), read again, subtract mod 2^32. Caveats that bite: the 32-bit counter wraps (~10.7 s @ 400 MHz — accumulate over longer spans), and CYCCNT **stops while the core is halted and during WFE sleep** — it counts ACTIVE cycles only, so a delta excludes halted debug time and sleep.
 
@@ -244,9 +186,22 @@ Software breakpoints (which Flash patches without a comparator) are *not* an opt
 `list_variable_names` reports what is in scope by **name and type only**, reading no values. `get_variables_values` then reads them — pass `variableNames` to fetch just what you need, or omit it to dump the whole scope.
 
 - On a **slow probe or a large frame**, discover first and then request two names instead of thirty. That is one round trip instead of thirty.
-- On a small frame, omitting `variableNames` is fine and usually what you want — embedded frames are small.
+- On a small frame, omitting `variableNames` is fine and usually what you want — embedded frames are small. Without `variableNames` a listing is capped at 40 variables per scope and 200 characters per value, with a footer saying how many were left out; with `variableNames` nothing is capped.
+- Step, continue, pause and `wait_for_stop` return a compact state: the location, the top 5 frames (the rest counted — `get_call_stack` has them all, workspace-relative, 20 inline unless you pass `levels`), and the breakpoint list only when it changed.
 - Names that match nothing are reported back explicitly, so a typo does not look like "the variable does not exist".
 - To inspect a **caller's** frame without disturbing the active one: `get_call_stack` → take a `frameId` → `get_frame_variables`.
+- `evaluate_expression` evaluates C expressions in the current frame; `-exec …` passes a GDB command through (`-exec x/8xw $sp`, `-exec info registers`).
+
+## 🔌 When the variable and the hardware disagree
+
+This is the characteristic embedded bug, and the reason the memory tools exist.
+
+- **Read the peripheral, not the shadow copy.** `read_peripheral_register` goes through the SVD, so ask for `GPIOA` / `ODR` by name; without a register name it lists the peripheral's registers. If the SVD is missing, the `cbuild-run.yml` says where it should be.
+- **Ask the SVD before you read.** `lookup_register { peripheral, register }` shows the bit fields and enumerated values, `lookup_peripheral { name }` the register map, `lookup_peripheral { address }` what sits at an address — none of them needs a session or touches the target.
+- **Read the address directly.** `read_memory` on the register address tells you what the bus sees (hex by default; `format: 'ascii'` or `'both'` on request, up to 4096 bytes). A mismatch against the C variable means the write never landed — wrong alias, missing `volatile`, or a peripheral clock that is off.
+- **Check the clock first.** A peripheral whose clock gate is closed reads back zeros or retains defaults and silently ignores writes — `RCC.AHBxENR` / `RCC.APBxENR` or the vendor's equivalent. This is the single most common "the peripheral is broken" cause.
+- **Watch for caches and write buffers** on M7 and larger parts: what the core wrote may not be what DMA reads, and what DMA wrote may not be what the core reads until the D-cache line is invalidated.
+- `read_core_registers` gives R0–R12, SP, LR, PC, xPSR, MSP, PSP, CONTROL, FAULTMASK, BASEPRI, PRIMASK in one call; `get_threads` lists RTOS tasks with their top frame.
 
 ### Secret redaction
 
@@ -256,36 +211,98 @@ This is tuned for firmware and should rarely get in your way:
 
 - **Numeric scalars are never withheld** — a `uint8_t auth`, a `token` counter, or `0xDEADBEEF` stays readable whatever it is called.
 - **Raw target reads are never redacted**: `read_memory`, `read_core_registers`, `read_peripheral_register`, `get_fault_info`, and `-exec` GDB passthrough through `evaluate_expression`. Real SVDs name registers `KEY`, `KR`, `KEYR` and `UNLOCK` — the watchdog and flash unlock registers — and those are exactly what you need when the watchdog is resetting you.
+<!-- /topic -->
 
-## 🪟 Several VS Code windows open
+<!-- topic: faults | Decode a HardFault, BusFault, MemManage or UsageFault: get_fault_info, the stacked exception frame, resolving the faulting address, the usual causes -->
+## 💥 When it faulted
 
-The MCP server runs in one window (the router) and forwards each call to the window that owns the target. It resolves from a file path when the tool has one, otherwise from the window that has an active debug session.
+0. **`diagnose_fault` does steps 1–4 in one call** — decoded registers, stacked frame, top frames, resolved address, ranked hypotheses with the next call. Use the individual steps when you need one piece alone or want to verify.
+1. **`get_fault_info` first.** It reads and decodes CFSR / HFSR / DFSR / MMFAR / BFAR / AFSR bit by bit and usually names the fault class outright. `FORCED` in HFSR means a configurable fault escalated to HardFault because its own handler was disabled — the CFSR bits still say which one.
+2. **`read_core_registers`** for PC, LR, MSP, PSP and xPSR. Halted inside the handler, LR holds `EXC_RETURN` (`0xFFFFFFxx`): bit 2 set → the exception frame was pushed on **PSP**, clear → on **MSP**; bit 4 clear → an FP-extended frame (26 words) instead of the basic 8. The low nine bits of xPSR are the active exception number (3 HardFault, 4 MemManage, 5 BusFault, 6 UsageFault).
+3. **`read_memory` 32 bytes at that stack pointer**: R0, R1, R2, R3, R12, LR, PC, xPSR in that order. The stacked **PC is the faulting instruction** for a precise fault; the stacked LR is its caller. `get_call_stack` walks up from there; `get_frame_variables` on a `frameId` shows the locals at the fault site.
+4. **Resolve the address.** BFAR (when `BFARVALID`) or MMFAR (when `MMARVALID`): `lookup_peripheral { address }` names the peripheral and register at it from the SVD without touching the target. `0x4000_0000`–`0x5FFF_FFFF` is a peripheral → check its clock gate with `read_peripheral_register` before anything else; the `0x2000_0000` range is SRAM → pointer arithmetic or an overflowed buffer; `0xE000_0000` is the PPB; anything outside the device's memory map is a wild pointer.
 
-When **two windows are debugging at once** it refuses to guess and names both — reading the wrong board's memory looks exactly like a firmware bug and costs far more than being asked to pick. Use `list_debug_windows` to see the candidates and `select_debug_window({ pid })` to pin one for the rest of the session.
+| Flag | Usual cause |
+| ---- | ----------- |
+| BFSR `PRECISERR` + BFAR | Access to an unclocked, disabled or nonexistent peripheral, or beyond the end of RAM |
+| BFSR `IMPRECISERR` | A buffered write that faulted later — look one store back from the stacked PC |
+| BFSR `IBUSERR`, MMFSR `IACCVIOL` | Jumped through a corrupted function pointer, or returned into garbage after a stack overflow |
+| MMFSR `DACCVIOL` | MPU violation, or a null-pointer dereference with region 0 unmapped |
+| `STKERR` / `MSTKERR`, UFSR `STKOF` | Stack overflow while pushing the frame — compare SP with the stack bounds from the linker script / `.map` |
+| UFSR `UNDEFINSTR`, `INVSTATE` | Executing data, or a branch to an even address — Thumb needs bit 0 set |
+| UFSR `UNALIGNED` | Unaligned access with `UNALIGN_TRP` set — a packed struct or a cast pointer |
+| UFSR `DIVBYZERO` | Integer division by zero with `DIV_0_TRP` set in CCR (`0xE000ED14`) |
+| UFSR `NOCP` | FPU instruction with the FPU off — check CPACR (`0xE000ED88`) |
+| HFSR `VECTTBL` | Vector table fetch failed — VTOR points at the wrong image |
 
-## Common Patterns
+**Stack overflow without a fault flag:** `read_core_registers`, compare MSP / PSP with the stack region; a canary at the bottom of the stack tells you whether it was crossed. On Armv8-M, `MSPLIM` / `PSPLIM` turn this into a `STKOF` fault instead.
+<!-- /topic -->
 
-❌ **COMMON MISTAKE:** Starting debugging without breakpoints
-✅ **BEST PRACTICE:** Always set an initial breakpoint before starting debugging
-❌ **COMMON MISTAKE:** Set breakpoint in a method signature/definition line like 'def func()'
-✅ **BEST PRACTICE:** Set breakpoint in the method body
-❌ **COMMON MISTAKE:** Set breakpoint on commented line e.g '//', '#' and ect.
-✅ **BEST PRACTICE:** Set breakpoint only on executable lines.
-❌ **COMMON MISTAKE:** Step over the problematic line without fully understanding why the issue occured.
-✅ **BEST PRACTICE:** Stop the session, set breakpoint in the problematic line and restart the session.
-❌ **COMMON MISTAKE:** Locating a breakpoint with `lineContent` — it matches every line containing that text.
-✅ **BEST PRACTICE:** Pass the 1-based `line` number.
-❌ **COMMON MISTAKE:** Hitting a breakpoint 500 times to reach one iteration.
-✅ **BEST PRACTICE:** Pass `condition` so GDB only halts the core when it holds.
-❌ **COMMON MISTAKE:** Dumping every variable in a large frame over a slow probe.
-✅ **BEST PRACTICE:** `list_variable_names` first, then `get_variables_values` with `variableNames`.
+<!-- topic: troubleshooting | Root cause, not symptom: the investigation loop, embedded examples, breakpoints that never hit, warning signs and the closing checklist -->
+## 🚨 ROOT CAUSE ANALYSIS - CRITICAL FRAMEWORK
 
-## 🧹 CLEANUP AFTER ROOT CAUSE VERIFICATION
+### **NEVER STOP AT SYMPTOMS - ALWAYS FIND THE ROOT CAUSE**
 
-Once you have:
+When you encounter an issue during debugging (a wrong value, a fault, a peripheral that does not respond), apply this systematic approach:
 
-- ✅ Identified the ROOT CAUSE (not just the symptom)
-- ✅ Verified your understanding by tracing the complete chain
-- ✅ Confirmed the fix addresses the root cause
+#### **SYMPTOM vs ROOT CAUSE**
 
-Use clean all breakpoints before concluding your debugging session. This ensures a clean slate for the next debugging task.
+- **SYMPTOM:** what you observe is wrong ("the ADC buffer is all zeros")
+- **ROOT CAUSE:** *why* it is wrong ("the buffer is in cacheable SRAM and the driver never invalidates the D-cache after the DMA transfer")
+
+#### **ROOT CAUSE INVESTIGATION PROCESS**
+
+1. **Identify the symptom** — what exactly is wrong; record the current line, the variable state and, on a fault, the decoded flags.
+2. **Ask why** — why is this value wrong, why did this function return early, why did this condition fail.
+3. **Trace backwards** — set a breakpoint where the wrong value is produced (with `condition` to stop only when it is wrong), restart or reset, step into it. Cross-check every "the hardware should have done X" against the hardware: `read_peripheral_register`, `read_memory`.
+4. **Continue until the origin** — keep asking why until you reach where data enters the system incorrectly or a fundamental assumption (clock enabled, cache coherent, initialisation order, stack size) is violated.
+
+#### **⚠️ WARNING SIGNS YOU'RE STOPPING TOO EARLY**
+
+- You found a wrong value but did not check who last wrote it.
+- You decoded a fault but did not resolve BFAR / the stacked PC to a line and a reason.
+- You saw the peripheral register was wrong but did not check the clock gate and the init order.
+- You have an explanation that the FVP / simulation would contradict.
+
+#### **✅ SIGNS YOU'VE FOUND THE ROOT CAUSE**
+
+- You can explain the complete chain from root cause to symptom.
+- Fixing it would prevent the symptom, and you can verify that on the target (reflash, run to the same breakpoint, read the same register).
+- It sits at a fundamental level: initialisation order, clock tree, memory attributes, a violated hardware assumption, a wrong constant.
+
+### **🔍 PRACTICAL EXAMPLES - SYMPTOM vs ROOT CAUSE**
+
+#### **Example 1: `adc_buffer[0]` reads 0 on the board, correct on the FVP**
+
+❌ **STOPPING AT SYMPTOM:** "the DMA does not fill the buffer on hardware"
+✅ **FINDING ROOT CAUSE:** breakpoint after the transfer-complete flag → `get_variables_values adc_buffer` shows zeros → `read_memory` at `&adc_buffer` shows the samples → the core is reading a stale D-cache line: the buffer lives in cacheable SRAM and the driver never invalidates after DMA. The FVP models no cache, so it "works" there.
+
+#### **Example 2: HardFault a few seconds after boot**
+
+❌ **STOPPING AT SYMPTOM:** "HardFault_Handler is reached"
+✅ **FINDING ROOT CAUSE:** `get_fault_info` → BusFault `PRECISERR`, BFAR `0x40005400` (the I2C1 block) → stacked PC in `i2c_init` → `read_peripheral_register RCC APB1ENR` shows `I2C1EN = 0` → the sensor driver's init runs before the clock tree is configured. Root cause: initialisation order in `main`, not the I2C driver.
+
+#### **Example 3: the firmware restarts every few seconds, no fault flags**
+
+❌ **STOPPING AT SYMPTOM:** "it crashes"
+✅ **FINDING ROOT CAUSE:** `read_peripheral_register RCC CSR` shows the independent-watchdog reset flag → breakpoint in the loop that kicks the watchdog with `condition` on the loop counter → the kick sits behind a semaphore wait that blocks for longer than the timeout. Root cause: the watchdog is fed from a task that can block.
+
+#### **Example 4: UART prints garbage after the clock switch**
+
+❌ **STOPPING AT SYMPTOM:** "the UART is misconfigured"
+✅ **FINDING ROOT CAUSE:** `read_peripheral_register` on the UART's baud register matches the divisor the driver computed → `get_variables_values SystemCoreClock` is still the reset-clock value → `SystemCoreClockUpdate()` was never called after the PLL switch. Root cause: a stale clock variable, not the UART.
+
+### When it did not reach your breakpoint
+
+`continue_execution` that times out already pauses the target and reports where it actually is — read that before adding more breakpoints. Firmware sitting in a polling loop, an ISR, or a fault handler all look the same from the outside and the PC tells them apart immediately. If the PC is in a fault handler, switch to `get_fault_info`. If the breakpoint never bound, `list_breakpoints` shows it unverified: the line has no code (optimised away, wrong file), or the FPB comparators are exhausted.
+
+#### **🎯 ROOT CAUSE INVESTIGATION CHECKLIST**
+
+Before stopping your debug session, ensure you can answer:
+
+- [ ] What is the immediate symptom?
+- [ ] What code produced it, and what did the hardware (registers, memory) say at that point?
+- [ ] What input, state or hardware condition made that code misbehave?
+- [ ] Where did that incorrect input or condition originate?
+- [ ] If I fix this root cause, will it prevent the symptom — and did I verify that on the target?
+<!-- /topic -->

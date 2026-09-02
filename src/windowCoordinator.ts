@@ -17,10 +17,11 @@
 import * as vscode from 'vscode';
 import { randomUUID } from 'node:crypto';
 import { ControlServer } from './controlServer';
-import { DebugMCPServer, PortInUseError, SessionHandlers } from './debugMCPServer';
+import { DebugMCPServer, DebugMCPServerOptions, PortInUseError, SessionHandlers } from './debugMCPServer';
 import { DebuggingExecutor, ConfigurationManager, DebuggingHandler } from '.';
 import { HardwareTimeouts } from './debuggingExecutor';
 import { RoutingDebuggingHandler } from './routingDebuggingHandler';
+import type { PackDocsHandlers } from './packDocsDispatch';
 import { WorkspaceRegistry } from './utils/workspaceRegistry';
 import { logger } from './utils/logger';
 
@@ -40,6 +41,20 @@ export interface CoordinatorOptions {
      * which is what two real windows look like.
      */
     registry?: WorkspaceRegistry;
+    /**
+     * Passed through to the `DebugMCPServer` this window builds when it wins
+     * the router port. Resolved from settings once at activation; see
+     * `DebugMCPServerOptions` for why it is fixed per instance.
+     */
+    serverOptions?: DebugMCPServerOptions;
+    /**
+     * This window's documentation / build-artefact handlers. Every window
+     * gets a pair (they are lazy until a call arrives), so a forwarded op
+     * always finds them on the worker side; the `packDocsEnabled` /
+     * `buildInfoEnabled` server options decide whether the router offers the
+     * tools at all.
+     */
+    packDocs?: PackDocsHandlers;
 }
 
 /**
@@ -86,7 +101,7 @@ export class WindowCoordinator {
     }
 
     public async start(context: vscode.ExtensionContext): Promise<void> {
-        this.controlServer = new ControlServer(this.localHandler, this.controlToken);
+        this.controlServer = new ControlServer(this.localHandler, this.controlToken, this.options.packDocs);
         await this.controlServer.start();
 
         this.publish();
@@ -113,6 +128,7 @@ export class WindowCoordinator {
             this.options.timeoutInSeconds,
             this.options.hardwareTimeouts,
             () => this.sessionHandlers(),
+            this.options.serverOptions,
         );
 
         try {
@@ -166,6 +182,7 @@ export class WindowCoordinator {
         return {
             debug: router,
             serial: (op, args) => router.serialOp(op, args),
+            packDocs: (op, args) => router.packDocsOp(op, args),
         };
     }
 

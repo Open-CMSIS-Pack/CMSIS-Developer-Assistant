@@ -113,13 +113,15 @@ suite('Agent skill catalog', () => {
         }
     });
 
-    test('the bundled entries are the debugging skill and the help skill, nothing else', () => {
+    test('the bundled entries are the board-layer, pack-docs, debugging and help skills, nothing else', () => {
         const bundled = catalog().skills.filter(entry => entry.source === 'bundled');
         assert.deepStrictEqual(bundled.map(entry => [entry.name, entry.category, entry.path]), [
+            ['add-board-layer', 'project', 'skills/add-board-layer'],
+            ['cmsis-pack-docs', 'bring-up', 'skills/cmsis-pack-docs'],
             ['cmsis-debug-live', 'debug', 'skills/cmsis-debug-live'],
             [HELP_SKILL_NAME, 'help', `skills/${HELP_SKILL_NAME}`],
         ]);
-        assert.deepStrictEqual(bundledSkillNames(catalog()), ['cmsis-debug-live', HELP_SKILL_NAME]);
+        assert.deepStrictEqual(bundledSkillNames(catalog()), ['add-board-layer', 'cmsis-pack-docs', 'cmsis-debug-live', HELP_SKILL_NAME]);
     });
 
     test('every dependency resolves to a catalog skill and nothing depends on itself', () => {
@@ -314,6 +316,27 @@ suite('Agent skill catalog', () => {
             assert.deepStrictEqual(desired.implied, [], 'pack members must not sneak in through the closure');
             assert.deepStrictEqual(desired.suppressed, ['r-pack', 'know']);
             assert.deepStrictEqual(desired.unknown, ['from-the-future']);
+        });
+
+        test('without the bundled skills — a project selection — only the pack picks and their pack dependencies are desired', () => {
+            const desired = resolveDesiredSkills(fake, ['r-pack', 'cmsis-debug-live'], { includeBundled: false });
+            assert.deepStrictEqual(desired.explicit, ['r-pack'], 'a bundled name in the picks is neither installed nor unknown');
+            assert.deepStrictEqual([...desired.implied].sort(), ['docs', 'gen', 'know', 'know2', 'val']);
+            assert.deepStrictEqual(desired.unknown, []);
+
+            assert.deepStrictEqual(resolveDesiredSkills(fake, [], { includeBundled: false }),
+                { explicit: [], implied: [], unknown: [], suppressed: [] }, 'nothing picked, nothing desired: the project is left alone');
+            assert.deepStrictEqual(resolveDesiredSkills(fake, ['r-pack'], { includeBundled: false, packEnabled: false }),
+                { explicit: [], implied: [], unknown: [], suppressed: ['r-pack'] });
+
+            // A pack skill depending on a bundled one: the personal copy serves; the project gets no duplicate.
+            const dependsOnBundled: SkillCatalog = {
+                ...fake,
+                skills: fake.skills.map(entry => entry.name === 'val' ? { ...entry, dependsOn: ['cmsis-debug-live'] } : entry),
+            };
+            assert.deepStrictEqual(resolveDesiredSkills(dependsOnBundled, ['val'], { includeBundled: false }).implied, []);
+            assert.deepStrictEqual(resolveDesiredSkills(dependsOnBundled, ['val']).implied, [],
+                'with the bundled skills in, the dependency is already explicit');
         });
 
         test('hasPackSkillSelected sees routers and members, not bundled or unknown names', () => {

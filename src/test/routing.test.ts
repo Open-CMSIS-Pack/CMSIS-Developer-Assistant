@@ -9,7 +9,11 @@ import { ControlServer } from '../controlServer';
 import { RoutingDebuggingHandler } from '../routingDebuggingHandler';
 import { IDebuggingHandler } from '../debuggingHandler';
 import { WindowRegistration, WorkspaceRegistry } from '../utils/workspaceRegistry';
-import { DEBUG_OPS, SERIAL_OPS, forwardTimeoutMs, isKnownOp, isSerialOp, pathHintOf } from '../core/opTable';
+import {
+    DEBUG_OPS, PACKDOCS_BUILD_OPS, PACKDOCS_DOC_OPS, PACKDOCS_OPS, SERIAL_OPS,
+    forwardTimeoutMs, isKnownOp, isPackDocsDocOp, isPackDocsOp, isSerialOp, pathHintOf,
+} from '../core/opTable';
+import type { PackDocsHandlers } from '../packDocsDispatch';
 
 /**
  * A handler that answers every op with a label, so a test can assert *which*
@@ -24,6 +28,21 @@ function fakeHandler(label: string): IDebuggingHandler {
         handler[op] = answer(op);
     }
     return handler as unknown as IDebuggingHandler;
+}
+
+/** The pack-docs pair of a window, answering with the label and which handler served the op. */
+function fakePackDocs(label: string): PackDocsHandlers {
+    const make = (kind: 'docs' | 'build', ops: readonly string[]) => {
+        const h: Record<string, unknown> = {};
+        for (const op of ops) {
+            h[op] = async (args?: unknown) => `${label}:${kind}:${op}:${JSON.stringify(args ?? {})}`;
+        }
+        return h;
+    };
+    return {
+        docs: make('docs', PACKDOCS_DOC_OPS) as unknown as PackDocsHandlers['docs'],
+        build: make('build', PACKDOCS_BUILD_OPS) as unknown as PackDocsHandlers['build'],
+    };
 }
 
 suite('Op table', () => {
@@ -42,8 +61,17 @@ suite('Op table', () => {
         assert.ok(!isSerialOp('handleReadMemory'));
     });
 
-    test('every declared op is unique across the two tables', () => {
-        const all = [...DEBUG_OPS, ...SERIAL_OPS];
+    test('pack-docs ops are known, split into docs and build, and distinct from the rest', () => {
+        assert.ok(isKnownOp('handleSearchTargetDocs'));
+        assert.ok(isKnownOp('handleGetMemoryUsage'));
+        assert.ok(isPackDocsOp('handleListTargetDocs') && isPackDocsDocOp('handleListTargetDocs'));
+        assert.ok(isPackDocsOp('handleLookupSymbol') && !isPackDocsDocOp('handleLookupSymbol'));
+        assert.ok(!isPackDocsOp('handleReadMemory') && !isSerialOp('handleFetchDoc'));
+        assert.strictEqual(PACKDOCS_OPS.length, 10);
+    });
+
+    test('every declared op is unique across the three tables', () => {
+        const all = [...DEBUG_OPS, ...SERIAL_OPS, ...PACKDOCS_OPS];
         assert.strictEqual(new Set(all).size, all.length, 'an op name is declared twice');
     });
 
@@ -73,6 +101,12 @@ suite('Op table', () => {
                 'a build must not be cut off mid-way');
             assert.ok(forwardTimeoutMs('handleFlash', {}, 30_000) >= 600_000,
                 'cutting off a flash leaves a half-programmed part');
+        });
+        test('documentation ops get the same floor — indexing a manual takes minutes', () => {
+            assert.ok(forwardTimeoutMs('handleSearchTargetDocs', {}, 30_000) >= 600_000);
+            assert.ok(forwardTimeoutMs('handleReadDocPages', { timeoutMs: 600_000 }, 30_000) >= 615_000);
+            assert.strictEqual(forwardTimeoutMs('handleLookupSymbol', {}, 30_000), 45_000,
+                'build-artefact reads are quick and keep the normal bound');
         });
     });
 });
@@ -106,8 +140,10 @@ suite('Multi-window routing', () => {
     async function window(
         name: string,
         over: Partial<WindowRegistration> = {},
+        packDocs: PackDocsHandlers | null = fakePackDocs(name),
     ): Promise<WindowRegistration> {
-        const server = new ControlServer(fakeHandler(name), `token-${name}`);
+        // `null` = a window whose extension built no pack-docs handlers.
+        const server = new ControlServer(fakeHandler(name), `token-${name}`, packDocs ?? undefined);
         servers.push(server);
         const port = await server.start();
 
@@ -267,6 +303,28 @@ suite('Multi-window routing', () => {
                 () => r.serialOp('handleNotAnOp' as never, {}),
                 (err: Error) => {
                     assert.match(err.message, /Unknown control op/);
+                    return true;
+                },
+            );
+        });
+
+        test('pack-docs ops reach the owning window and the right handler', async () => {
+            await window('alpha', { workspaceFolders: [path.join(dir, 'alpha')] });
+            await window('beta', { workspaceFolders: [path.join(dir, 'beta')] });
+            const r = router();
+            r.selectDebugWindow({ workspaceFolder: path.join(dir, 'beta', 'src') });
+            assert.strictEqual(await r.packDocsOp('handleListTargetDocs', { target: 'HE' }),
+                'beta:docs:handleListTargetDocs:{"target":"HE"}');
+            assert.strictEqual(await r.packDocsOp('handleGetMemoryUsage', { top: 5 }),
+                'beta:build:handleGetMemoryUsage:{"top":5}');
+        });
+
+        test('a window without pack-docs handlers refuses the op instead of misrouting it', async () => {
+            await window('bare', { workspaceFolders: [path.join(dir, 'bare')] }, null);
+            await assert.rejects(
+                () => router().packDocsOp('handleListTargetDocs', {}),
+                (err: Error) => {
+                    assert.match(err.message, /not available in this window/);
                     return true;
                 },
             );

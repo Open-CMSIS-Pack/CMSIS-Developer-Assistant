@@ -19,6 +19,7 @@ import {
     loadSvd, findPeripheral, findRegister, listPeripheralNames,
     decodeFields, SvdPeripheral, SvdRegister, SvdDevice
 } from './svdParser.js';
+import { matchName } from './svdLookup.js';
 import { customRequestWithTimeout, HardwareTimeoutError } from '../utils/timeout.js';
 
 /**
@@ -144,18 +145,22 @@ export async function readPeripheralViaMemory(
 
     const svdPeriph = findPeripheral(device, peripheral);
     if (!svdPeriph) {
-        const names = listPeripheralNames(device);
-        return `Peripheral '${peripheral}' not found in SVD.\n` +
-            `Available peripherals (${names.length}):\n  ${names.join(', ')}\n`;
+        // Suggestions instead of every name: a 200-peripheral list is the
+        // kind of result that compacts an agent's context for a typo.
+        const { suggestions } = matchName(listPeripheralNames(device), peripheral);
+        return `Peripheral '${peripheral}' not found in SVD.` +
+            (suggestions.length ? ` Did you mean: ${suggestions.join(', ')}?` : '') +
+            '\nBrowse the device with lookup_peripheral (no arguments lists every peripheral).\n';
     }
 
     if (register) {
         // Read a single register
         const svdReg = findRegister(svdPeriph, register);
         if (!svdReg) {
-            const regNames = svdPeriph.registers.map(r => r.name);
-            return `Register '${register}' not found in ${peripheral}.\n` +
-                `Available registers (${regNames.length}):\n  ${regNames.join(', ')}\n`;
+            const { suggestions } = matchName(svdPeriph.registers.map(r => r.name), register);
+            return `Register '${register}' not found in ${peripheral}.` +
+                (suggestions.length ? ` Did you mean: ${suggestions.join(', ')}?` : '') +
+                `\nlookup_peripheral { name: '${svdPeriph.name}' } shows the register map without reading the target.\n`;
         }
         return await readSingleRegister(session, svdPeriph, svdReg, frameId);
     }
@@ -242,7 +247,7 @@ async function readAllRegisters(
     }
 
     if (regs.length > maxRegs) {
-        result += `\n  ... and ${regs.length - maxRegs} more registers (specify register name to read individually)\n`;
+        result += `\n  ... and ${regs.length - maxRegs} more registers — lookup_peripheral shows the whole map without reading the target; pass register to read one.\n`;
     }
 
     return result;

@@ -49,6 +49,11 @@ that `cmsis-debug-live` is the first tool invoked. The static contract tests in
 It is opt-in on purpose: it needs an authenticated Copilot CLI, spends AI
 credits, and a model's first move is not deterministic.
 
+`npm run eval:scenario -- <id>` goes one step further: it runs the agent on a
+planted bug in a real csolution (Corstone-300 FVP) with this skill and the MCP
+server, and reports tool calls, bytes, turns, time and a pass/fail against the
+expected root cause — see `test/eval/README.md`.
+
 Pass a different prompt after `--`:
 
 ```text

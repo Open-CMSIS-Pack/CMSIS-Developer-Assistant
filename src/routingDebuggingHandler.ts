@@ -301,6 +301,15 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     handleGetFaultInfo(args?: { timeoutMs?: number }): Promise<string> {
         return this.forward('handleGetFaultInfo', args);
     }
+    handleDiagnoseFault(args?: { levels?: number; timeoutMs?: number }): Promise<string> {
+        return this.forward('handleDiagnoseFault', args);
+    }
+    handleLookupPeripheral(args?: { name?: string; address?: string; filter?: string; svdFile?: string; pname?: string; timeoutMs?: number }): Promise<string> {
+        return this.forward('handleLookupPeripheral', args);
+    }
+    handleLookupRegister(args: { peripheral: string; register: string; svdFile?: string; pname?: string; timeoutMs?: number }): Promise<string> {
+        return this.forward('handleLookupRegister', args);
+    }
     handleGetDeviceInfo(): Promise<string> {
         return this.forward('handleGetDeviceInfo');
     }
@@ -319,7 +328,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     handleGetFrameVariables(args: { frameId: number; scope?: 'local' | 'global' | 'all'; variableNames?: string[]; timeoutMs?: number }): Promise<string> {
         return this.forward('handleGetFrameVariables', args);
     }
-    handleCmsisCommand(args: { action: CmsisAction; timeoutMs?: number }): Promise<string> {
+    handleCmsisCommand(args: { action: CmsisAction; target?: string; timeoutMs?: number }): Promise<string> {
         return this.forward('handleCmsisCommand', args);
     }
     handleFlash(args: { cbuildRunFile?: string; timeoutMs?: number }): Promise<string> {
@@ -329,6 +338,13 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     // Serial tools reach the same control server; the op table decides that
     // these dispatch to the serial handler singleton on the far side.
     serialOp(op: string, args: unknown = {}): Promise<string> {
+        return this.forward(op, args);
+    }
+
+    // Documentation and build-artefact tools too: the worker's control server
+    // picks the pack-docs handler by op name, so the lookup runs in the window
+    // that owns the workspace and its cbuild-run files.
+    packDocsOp(op: string, args: unknown = {}): Promise<string> {
         return this.forward(op, args);
     }
 }

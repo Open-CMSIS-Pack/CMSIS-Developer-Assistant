@@ -1,0 +1,58 @@
++----------------------------------------------
+(1/2) Building context: "Blinky.Debug+NUCLEO-F756ZG"
+Using AC6 V6.24.0 compiler, from: '/Users/dev/.vcpkg/artifacts/2139c4c6/compilers.arm.armclang/6.24.0/bin'
+Building CMake target 'Blinky.Debug+NUCLEO-F756ZG'
+Using compiler: AC6 V6.24.0
+[1/4] Building C object CMakeFiles/Group_App.dir/Users/dev/Blinky/main.o
+/Users/dev/Blinky/main.c:12:10: error: expected "FILENAME" or <FILENAME>
+   12 | #include CMSIS_device_header
+      |          ^
+/Users/dev/Blinky/main.c:30:5: warning: unused variable 'tmp' [-Wunused-variable]
+   30 |     int tmp = 0;
+      |         ^
+In file included from /Users/dev/Blinky/main.c:3:
+/Users/dev/Blinky/RTE/Device/STM32F756ZGTx/RTE_Device.h:44:2: warning: "RTE_USART3 not configured" [-W#warnings]
+   44 | #warning "RTE_USART3 not configured"
+      |  ^
+/Users/dev/Blinky/main.c:30:5: warning: unused variable 'tmp' [-Wunused-variable]
+1 error generated.
+FAILED: [code=1] CMakeFiles/Group_App.dir/Users/dev/Blinky/main.o 
+/Users/dev/.vcpkg/artifacts/2139c4c6/compilers.arm.armclang/6.24.0/bin/armclang --target=arm-arm-none-eabi -mcpu=Cortex-M7 -c /Users/dev/Blinky/main.c -o CMakeFiles/Group_App.dir/Users/dev/Blinky/main.o
+[2/4] Building C object CMakeFiles/Group_Legacy.dir/Users/dev/Blinky/legacy.o
+"/Users/dev/Blinky/legacy.c", line 17: Warning: #223-D: function "old_api" declared implicitly
+      old_api();
+      ^
+"/Users/dev/Blinky/legacy.c", line 25 (column 9): Error: #20: identifier "undefined_thing" is undefined
+[3/4] Building ASM object CMakeFiles/Startup.dir/startup_stm32f756xx.o
+startup_stm32f756xx.S:88: Error: bad instruction `movs r0,#0'
+ninja: build stopped: subcommand failed.
++----------------------------------------------
+(2/2) Building context: "Blinky.Debug+FVP"
+Using GCC V13.3.1 compiler, from: '/Users/dev/.vcpkg/artifacts/2139c4c6/compilers.arm.arm.none.eabi.gcc/13.3.1/bin'
+Building CMake target 'Blinky.Debug+FVP'
+Using compiler: GCC V13.3.1
+[1/3] Building C object CMakeFiles/Group_App.dir/Users/dev/Blinky/main.c.obj
+/Users/dev/Blinky/main.c: In function 'main':
+/Users/dev/Blinky/main.c:41:12: warning: implicit declaration of function 'vioSetSignal' [-Wimplicit-function-declaration]
+   41 |            vioSetSignal(vioLED0, vioLEDon);
+      |            ^~~~~~~~~~~~
+/Users/dev/Blinky/main.c:41:25: error: 'vioLED0' undeclared (first use in this function)
+/Users/dev/Blinky/main.c:41:25: note: each undeclared identifier is reported only once for each function it appears in
+[2/3] Linking C executable Blinky.elf
+/Users/dev/.vcpkg/artifacts/2139c4c6/compilers.arm.arm.none.eabi.gcc/13.3.1/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld: CMakeFiles/Group_App.dir/Users/dev/Blinky/main.c.obj: in function `main':
+/Users/dev/Blinky/main.c:41: undefined reference to `vioSetSignal'
+/Users/dev/.vcpkg/artifacts/2139c4c6/compilers.arm.arm.none.eabi.gcc/13.3.1/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld: region `FLASH' overflowed by 1234 bytes
+collect2: error: ld returned 1 exit status
+FAILED: [code=1] Blinky.elf
+Error: L6218E: Undefined symbol osKernelStart (referred from main.o).
+Warning: L6329W: Pattern *.o(.bss.dummy) only matches removed unused sections.
+Fatal error: L6002U: Could not open file libfoo.a: No such file or directory
+CMake Error at CMakeLists.txt:12 (message):
+  Missing pack component
+  ARM::CMSIS:CORE
+error csolution: undefined variables in Blinky.cproject.yml: $Board-Layer$
+warning cbuild: build of context "Blinky.Debug+FVP" skipped
+ninja: build stopped: subcommand failed.
++------------------------------------------------------------
+Build summary: 0 succeeded, 2 failed - Time Elapsed: 00:00:04
++============================================================

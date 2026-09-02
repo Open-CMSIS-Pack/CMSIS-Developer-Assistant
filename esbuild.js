@@ -57,16 +57,25 @@ const esbuildProblemMatcherPlugin = {
     },
 };
 
+/**
+ * Two bundles: the extension, and the pdf.js worker thread it starts
+ * (`src/core/packDocs/pdfWorker.ts`), which carries the 1 MB library and is
+ * found by `PdfjsExtractor` as `pdfWorker.js` beside `extension.js` —
+ * `entryNames` flattens both into `dist/`.
+ */
+const entryPoints = ['src/extension.ts', 'src/core/packDocs/pdfWorker.ts'];
+
 async function main() {
     const ctx = await esbuild.context({
-        entryPoints: ['src/extension.ts'],
+        entryPoints,
+        entryNames: '[name]',
         bundle: true,
         format: 'cjs',
         minify: production,
         sourcemap: !production,
         sourcesContent: false,
         platform: 'node',
-        outfile: 'dist/extension.js',
+        outdir: 'dist',
         external,
         alias,
         logLevel: 'silent',

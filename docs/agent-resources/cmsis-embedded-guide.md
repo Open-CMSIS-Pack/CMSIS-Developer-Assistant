@@ -27,7 +27,7 @@ If the firmware is in a free run and you need to know where it is:
 
 ### When the Target Hits a HardFault
 
-1. Call `get_fault_info` to read and decode CFSR/HFSR/BFAR/MMFAR/DFSR/AFSR.
+1. Call `diagnose_fault` for the whole first pass (or `get_fault_info` for the decoded registers alone).
 2. Check the call stack with `get_call_stack` to find where the fault occurred. Capture a `frameId` of interest.
 3. `get_frame_variables` at that `frameId` to see locals at the fault site.
 4. Common causes:
@@ -93,6 +93,8 @@ When `continue_execution` or `step_*` times out, the server **auto-heals**: it p
 | `read_core_registers` | Read all Cortex-M core registers (R0–R15, xPSR, MSP, PSP, CONTROL, FAULTMASK, BASEPRI, PRIMASK) |
 | `read_peripheral_register` | Read peripheral registers via SVD data or memory fallback |
 | `get_fault_info` | Decode CFSR/HFSR/BFAR/MMFAR/DFSR/AFSR |
+| `diagnose_fault` | One-call triage: fault registers, stacked frame, top frames, resolved address, hypotheses |
+| `lookup_peripheral` / `lookup_register` | SVD queries without a session or target access: register map, address → register, bit fields |
 | `get_device_info` | Debug session info (target, GDB server, program, cbuild-run reference) |
 | `get_call_stack` | Full DAP stackTrace with frame IDs |
 | `get_threads` | DAP threads / RTOS tasks |

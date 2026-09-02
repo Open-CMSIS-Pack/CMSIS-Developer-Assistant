@@ -33,10 +33,17 @@ suite('Bundled agent skill', () => {
 
     const readSkill = () => fs.readFileSync(skillMd, 'utf8');
 
-    /** Tool names the MCP server actually registers. */
+    /**
+     * Tool names the MCP server actually registers: the core surface in
+     * debugMCPServer.ts plus the gated documentation / build-artefact groups
+     * registered from their own files.
+     */
     const registeredTools = (): string[] => {
-        const source = fs.readFileSync(path.join(repoRoot, 'src', 'debugMCPServer.ts'), 'utf8');
-        return [...source.matchAll(/registerTool\('([a-z0-9_]+)'/g)].map(m => m[1]);
+        const files = ['debugMCPServer.ts', 'packDocsTools.ts', 'buildInfoTools.ts'];
+        return files.flatMap((file) => {
+            const source = fs.readFileSync(path.join(repoRoot, 'src', file), 'utf8');
+            return [...source.matchAll(/registerTool\('([a-z0-9_]+)'/g)].map(m => m[1]);
+        });
     };
 
     /** The `allowed-tools:` block of the YAML frontmatter. */

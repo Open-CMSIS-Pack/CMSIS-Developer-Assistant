@@ -1,0 +1,5 @@
+This is a secure Blinky example to be used with the Corstone SSE-300 Ethos-U55
+FVP MPS3 model, or AN552 FPGA (Arm Corstone™ SSE-300 with Cortex®-M55 and
+Ethos™-U55 Example Subsystem for MPS3)
+
+Copyright (c) 2024 Arm Limited. All rights reserved. SPDX-License-Identifier: Apache-2.0

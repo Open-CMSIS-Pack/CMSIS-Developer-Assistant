@@ -2,15 +2,36 @@
 // Copyright 2026 Arm Limited and contributors
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { SERVER_VERSION } from './debuggingExecutor';
 import { AgentConfigurationManager } from './utils/agentConfigurationManager';
 import { clearSvdCache } from './core/svdParser';
 import { logger } from './utils/logger';
 import { registerSessionStateTracker } from './utils/sessionStateTracker';
 import { WindowCoordinator } from './windowCoordinator';
+import { createPackDocsHandlers, readPackDocsGates } from './packDocsHost';
+import { registerPackDocsCommands } from './packDocsCommands';
 
 let coordinator: WindowCoordinator | null = null;
 let agentConfigManager: AgentConfigurationManager | null = null;
+
+/**
+ * Where the tool-telemetry JSONL goes: empty means off, an absolute path is
+ * used as given, a relative one lives in the first workspace folder (and is
+ * off when there is none — a bare relative path in an empty window would land
+ * wherever the extension host happens to run).
+ */
+function resolveTelemetryPath(setting: string): string | undefined {
+    const trimmed = setting.trim();
+    if (!trimmed) { return undefined; }
+    if (path.isAbsolute(trimmed)) { return trimmed; }
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!root) {
+        logger.warn(`telemetry.jsonlPath "${trimmed}" is relative and no workspace folder is open; telemetry file is off`);
+        return undefined;
+    }
+    return path.join(root, trimmed);
+}
 
 export async function activate(context: vscode.ExtensionContext) {
     // Initialize logging first
@@ -22,11 +43,22 @@ export async function activate(context: vscode.ExtensionContext) {
     const serverPort = config.get<number>('serverPort', 3001);
     const dapRequestTimeoutMs = config.get<number>('dapRequestTimeoutMs', 10000);
     const memoryReadTimeoutMs = config.get<number>('memoryReadTimeoutMs', 30000);
+    const telemetryJsonlPath = resolveTelemetryPath(config.get<string>('telemetry.jsonlPath', ''));
+    const serialEnabled = config.get<boolean>('serial.enabled', true);
+    const { packDocsEnabled, buildInfoEnabled } = readPackDocsGates();
 
     logger.info(`Using timeoutInSeconds: ${timeoutInSeconds} seconds`);
     logger.info(`Using serverPort: ${serverPort}`);
     logger.info(`Using dapRequestTimeoutMs: ${dapRequestTimeoutMs} ms`);
     logger.info(`Using memoryReadTimeoutMs: ${memoryReadTimeoutMs} ms`);
+    if (telemetryJsonlPath) {
+        logger.info(`Tool telemetry JSONL: ${telemetryJsonlPath}`);
+    }
+    if (!serialEnabled) {
+        logger.info('Serial tools are disabled (cmsis-developer-assistant.serial.enabled)');
+    }
+    logger.info(`Documentation tools ${packDocsEnabled ? 'enabled' : 'disabled'} (cmsis-developer-assistant.packDocs.enabled), ` +
+        `build-artefact tools ${buildInfoEnabled ? 'enabled' : 'disabled'} (cmsis-developer-assistant.buildInfo.enabled)`);
 
     // Track DAP stopped/continued events so we can answer "is the target
     // currently paused?" reliably, regardless of what activeStackItem says.
@@ -57,6 +89,20 @@ export async function activate(context: vscode.ExtensionContext) {
     // publishes the window to the shared registry, then tries to claim the
     // well-known port. Exactly one window wins and serves MCP; the rest execute
     // work forwarded to them.
+    //
+    // The documentation / build-artefact handlers exist in every window (the
+    // commands use them, and a forwarded op must find them on the worker);
+    // the two gates only decide whether the router offers the tools.
+    const packDocs = createPackDocsHandlers(context, timeoutInSeconds);
+    registerPackDocsCommands(context, packDocs);
+    if (vscode.extensions.getExtension('arm.cmsis-pack-docs')) {
+        const message = 'CMSIS Developer Assistant: the experimental "CMSIS Pack Docs" extension is also installed. Its ' +
+            'tools are now built into this extension (settings cmsis-developer-assistant.packDocs.enabled / ' +
+            'buildInfo.enabled); uninstall it so agents do not see the same tool names twice.';
+        logger.warn(message);
+        void vscode.window.showWarningMessage(message);
+    }
+
     try {
         logger.info('Starting CMSIS Developer Assistant window coordinator...');
 
@@ -67,6 +113,13 @@ export async function activate(context: vscode.ExtensionContext) {
                 dapRequestMs: dapRequestTimeoutMs,
                 memoryReadMs: memoryReadTimeoutMs,
             },
+            serverOptions: {
+                serialEnabled,
+                packDocsEnabled,
+                buildInfoEnabled,
+                telemetry: { jsonlPath: telemetryJsonlPath },
+            },
+            packDocs,
         });
         await coordinator.start(context);
 
@@ -131,16 +184,37 @@ export async function activate(context: vscode.ExtensionContext) {
                 event.affectsConfiguration('cmsis-developer-assistant.aiSkills.enabled')) && agentConfigManager) {
                 await agentConfigManager.syncSkills('setting changed');
             }
-            if (!event.affectsConfiguration('cmsis-developer-assistant.serverPort')) {
+            // Documentation settings are re-read per call; only the handler's
+            // cached extractor selection needs a nudge.
+            if (event.affectsConfiguration('cmsis-developer-assistant.packDocs')) {
+                packDocs.docs.refreshSettings();
+            }
+            const portChanged = event.affectsConfiguration('cmsis-developer-assistant.serverPort');
+            const gateChanged = event.affectsConfiguration('cmsis-developer-assistant.packDocs.enabled') ||
+                event.affectsConfiguration('cmsis-developer-assistant.buildInfo.enabled');
+            if (!portChanged && !gateChanged) {
                 return;
             }
             const reload = 'Reload Window';
             const choice = await vscode.window.showInformationMessage(
-                'CMSIS Developer Assistant: the server port setting changed. Reload the window to restart the MCP server on the new port.',
+                portChanged
+                    ? 'CMSIS Developer Assistant: the server port setting changed. Reload the window to restart the MCP server on the new port.'
+                    : 'CMSIS Developer Assistant: the documentation / build-artefact tool setting changed. Reload the window so the next agent connection sees the new tool list.',
                 reload,
             );
             if (choice === reload) {
                 await vscode.commands.executeCommand('workbench.action.reloadWindow');
+            }
+        }),
+    );
+
+    // A folder added to the workspace may carry its own skill selection in
+    // its settings; sync so its project directories match. A removed folder
+    // is simply no longer synced — its skills belong to that project.
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeWorkspaceFolders(async () => {
+            if (agentConfigManager) {
+                await agentConfigManager.syncSkills('workspace folders changed');
             }
         }),
     );

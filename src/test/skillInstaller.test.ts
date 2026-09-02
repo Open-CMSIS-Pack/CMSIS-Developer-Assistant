@@ -23,6 +23,7 @@ import {
     SKILL_MARKER_FILE,
     SkillInstaller,
     SkillMarker,
+    getProjectSkillInstallRoots,
     getSkillInstallRoots,
     hideFromMenu,
 } from '../utils/skillInstaller';
@@ -61,8 +62,8 @@ suite('Agent skill installer', () => {
         }
     };
 
-    const installer = (): SkillInstaller =>
-        new SkillInstaller(extensionPath, '9.9.9', { install: [rootA, rootB], sweepOnly: [] });
+    const homeRoots = () => ({ install: [rootA, rootB], sweepOnly: [] });
+    const installer = (): SkillInstaller => new SkillInstaller(extensionPath, '9.9.9');
 
     const readMarker = (root: string, name: string): SkillMarker =>
         JSON.parse(fs.readFileSync(path.join(root, name, SKILL_MARKER_FILE), 'utf8'));
@@ -83,7 +84,7 @@ suite('Agent skill installer', () => {
     });
 
     test('installs the explicit picks into every root with a marker', async () => {
-        const report = await installer().sync(catalog, ['cmsis-debug-live'], []);
+        const report = await installer().sync(homeRoots(), catalog, ['cmsis-debug-live'], []);
         assert.deepStrictEqual(report.failed, []);
         for (const root of [rootA, rootB]) {
             assert.ok(fs.existsSync(path.join(root, 'cmsis-debug-live', 'SKILL.md')));
@@ -98,13 +99,13 @@ suite('Agent skill installer', () => {
     });
 
     test('upstream skills carry the upstream commit in their marker', async () => {
-        await installer().sync(catalog, ['gen'], []);
+        await installer().sync(homeRoots(), catalog, ['gen'], []);
         assert.strictEqual(readMarker(rootA, 'gen').sha, 'feedface');
         assert.strictEqual(readMarker(rootA, 'gen').source, 'cmsis-skills');
     });
 
     test('implied skills are installed hidden from the slash menu, explicit ones are not', async () => {
-        await installer().sync(catalog, ['r-pack'], ['gen']);
+        await installer().sync(homeRoots(), catalog, ['r-pack'], ['gen']);
         const router = fs.readFileSync(path.join(rootA, 'r-pack', 'SKILL.md'), 'utf8');
         const member = fs.readFileSync(path.join(rootA, 'gen', 'SKILL.md'), 'utf8');
         assert.ok(!/user-invocable/.test(router), 'the router stays user-invocable');
@@ -115,31 +116,31 @@ suite('Agent skill installer', () => {
     });
 
     test('a skill promoted from implied to explicit becomes visible again', async () => {
-        await installer().sync(catalog, ['r-pack'], ['gen']);
-        await installer().sync(catalog, ['r-pack', 'gen'], []);
+        await installer().sync(homeRoots(), catalog, ['r-pack'], ['gen']);
+        await installer().sync(homeRoots(), catalog, ['r-pack', 'gen'], []);
         assert.ok(!/user-invocable/.test(fs.readFileSync(path.join(rootA, 'gen', 'SKILL.md'), 'utf8')));
         assert.strictEqual(readMarker(rootA, 'gen').hidden, false);
     });
 
     test('re-sync replaces the directory, so files dropped from the bundle disappear', async () => {
-        await installer().sync(catalog, ['gen'], []);
+        await installer().sync(homeRoots(), catalog, ['gen'], []);
         assert.ok(fs.existsSync(path.join(rootA, 'gen', 'references', 'contract.md')));
         fs.rmSync(path.join(extensionPath, 'skills', 'cmsis-skills', 'gen', 'references'), { recursive: true });
-        await installer().sync(catalog, ['gen'], []);
+        await installer().sync(homeRoots(), catalog, ['gen'], []);
         assert.ok(!fs.existsSync(path.join(rootA, 'gen', 'references', 'contract.md')), 'stale file survived');
         assert.ok(fs.existsSync(path.join(rootA, 'gen', 'SKILL.md')));
         assert.ok(!fs.existsSync(path.join(rootA, `.gen.tmp-${process.pid}`)), 'staging dir left behind');
     });
 
     test('deselecting removes only directories this extension installed', async () => {
-        await installer().sync(catalog, ['cmsis-debug-live', 'gen'], []);
+        await installer().sync(homeRoots(), catalog, ['cmsis-debug-live', 'gen'], []);
         // A user's own skill, no marker:
         writeSkill(path.join(rootA, 'my-own-skill'), 'my-own-skill');
         // A user's own skill that happens to share a catalog name, no marker:
         writeSkill(path.join(rootB, 'gen'), 'gen');
         fs.rmSync(path.join(rootB, 'gen', SKILL_MARKER_FILE), { force: true });
 
-        const report = await installer().sync(catalog, ['cmsis-debug-live'], []);
+        const report = await installer().sync(homeRoots(), catalog, ['cmsis-debug-live'], []);
 
         assert.ok(!fs.existsSync(path.join(rootA, 'gen')), 'our marked copy should be removed');
         assert.ok(fs.existsSync(path.join(rootA, 'my-own-skill', 'SKILL.md')), 'user skill must survive');
@@ -149,13 +150,13 @@ suite('Agent skill installer', () => {
 
     test('disabling the AI Skills Pack removes the pack skills this extension installed and keeps the bundled ones', async () => {
         const enabled = resolveDesiredSkills(catalog, ['r-pack']);
-        await installer().sync(catalog, enabled.explicit, enabled.implied);
+        await installer().sync(homeRoots(), catalog, enabled.explicit, enabled.implied);
         assert.ok(fs.existsSync(path.join(rootA, 'r-pack', 'SKILL.md')));
         assert.ok(fs.existsSync(path.join(rootA, 'gen', 'SKILL.md')));
         writeSkill(path.join(rootA, 'my-own-skill'), 'my-own-skill');
 
         const disabled = resolveDesiredSkills(catalog, ['r-pack'], { packEnabled: false });
-        const report = await installer().sync(catalog, disabled.explicit, disabled.implied);
+        const report = await installer().sync(homeRoots(), catalog, disabled.explicit, disabled.implied);
 
         for (const root of [rootA, rootB]) {
             assert.ok(!fs.existsSync(path.join(root, 'r-pack')), 'router should be removed');
@@ -170,7 +171,7 @@ suite('Agent skill installer', () => {
 
     test('never overwrites a foreign skill directory of the same name', async () => {
         writeSkill(path.join(rootA, 'gen'), 'gen', { 'mine.md': 'keep me' });
-        const report = await installer().sync(catalog, ['gen'], []);
+        const report = await installer().sync(homeRoots(), catalog, ['gen'], []);
         assert.deepStrictEqual(report.skippedForeign, [{ root: rootA, name: 'gen' }]);
         assert.ok(fs.existsSync(path.join(rootA, 'gen', 'mine.md')));
         assert.ok(!fs.existsSync(path.join(rootA, 'gen', SKILL_MARKER_FILE)));
@@ -180,20 +181,20 @@ suite('Agent skill installer', () => {
 
     test('an unmarked cmsis-debug-live from an earlier release is replaced and can be removed', async () => {
         writeSkill(path.join(rootA, 'cmsis-debug-live'), 'cmsis-debug-live', { 'old.md': 'from 2.0' });
-        await installer().sync(catalog, ['cmsis-debug-live'], []);
+        await installer().sync(homeRoots(), catalog, ['cmsis-debug-live'], []);
         assert.ok(!fs.existsSync(path.join(rootA, 'cmsis-debug-live', 'old.md')));
         assert.ok(fs.existsSync(path.join(rootA, 'cmsis-debug-live', SKILL_MARKER_FILE)));
 
         writeSkill(path.join(rootB, 'cmsis-debug-live'), 'cmsis-debug-live');
         fs.rmSync(path.join(rootB, 'cmsis-debug-live', SKILL_MARKER_FILE), { force: true });
-        const report = await installer().sync(catalog, [], []);
+        const report = await installer().sync(homeRoots(), catalog, [], []);
         assert.ok(!fs.existsSync(path.join(rootB, 'cmsis-debug-live')));
         assert.ok(report.removed.some(r => r.root === rootB && r.name === 'cmsis-debug-live'));
     });
 
     test('an unmarked directory named cmsis-debug-live with a different skill inside is left alone', async () => {
         writeSkill(path.join(rootA, 'cmsis-debug-live'), 'something-else');
-        const report = await installer().sync(catalog, ['cmsis-debug-live'], []);
+        const report = await installer().sync(homeRoots(), catalog, ['cmsis-debug-live'], []);
         assert.deepStrictEqual(report.skippedForeign, [{ root: rootA, name: 'cmsis-debug-live' }]);
     });
 
@@ -201,8 +202,7 @@ suite('Agent skill installer', () => {
         const legacy = path.join(tmp, 'home', '.copilot', 'skills');
         writeSkill(path.join(legacy, 'cmsis-debug-live'), 'cmsis-debug-live');
         writeSkill(path.join(legacy, 'theirs'), 'theirs');
-        const sut = new SkillInstaller(extensionPath, '9.9.9', { install: [rootA], sweepOnly: [legacy] });
-        await sut.sync(catalog, ['cmsis-debug-live', 'gen'], []);
+        await installer().sync({ install: [rootA], sweepOnly: [legacy] }, catalog, ['cmsis-debug-live', 'gen'], []);
         assert.ok(!fs.existsSync(path.join(legacy, 'cmsis-debug-live')));
         assert.ok(fs.existsSync(path.join(legacy, 'theirs', 'SKILL.md')));
         assert.ok(!fs.existsSync(path.join(legacy, 'gen')));
@@ -210,7 +210,7 @@ suite('Agent skill installer', () => {
 
     test('a missing bundled skill is reported, not thrown', async () => {
         const broken: SkillCatalog = { ...catalog, skills: [...catalog.skills, { name: 'ghost', description: '', category: 'devops', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/ghost', dependsOn: [] }] };
-        const report = await installer().sync(broken, ['ghost', 'gen'], []);
+        const report = await installer().sync(homeRoots(), broken, ['ghost', 'gen'], []);
         assert.strictEqual(report.failed.filter(f => f.name === 'ghost').length, 2);
         assert.ok(fs.existsSync(path.join(rootA, 'gen', 'SKILL.md')), 'other skills still install');
     });
@@ -221,14 +221,53 @@ suite('Agent skill installer', () => {
         }
         const locked = path.join(tmp, 'locked');
         fs.mkdirSync(locked, { mode: 0o500 });
-        const sut = new SkillInstaller(extensionPath, '9.9.9', { install: [path.join(locked, 'skills'), rootA], sweepOnly: [] });
         try {
-            const report = await sut.sync(catalog, ['gen'], []);
+            const report = await installer().sync({ install: [path.join(locked, 'skills'), rootA], sweepOnly: [] }, catalog, ['gen'], []);
             assert.ok(report.failed.some(f => f.root === path.join(locked, 'skills')));
             assert.ok(fs.existsSync(path.join(rootA, 'gen', 'SKILL.md')));
         } finally {
             fs.chmodSync(locked, 0o700);
         }
+    });
+
+    test('staging left by an interrupted sync is removed on the next install of that skill', async () => {
+        writeSkill(path.join(rootA, '.gen.tmp-12345'), 'gen');
+        writeSkill(path.join(rootA, '.gen.tmp-67890'), 'gen');
+        writeSkill(path.join(rootA, '.other.tmp-1'), 'other'); // not ours to judge: a different skill's staging
+        await installer().sync(homeRoots(), catalog, ['gen'], []);
+        assert.ok(!fs.existsSync(path.join(rootA, '.gen.tmp-12345')));
+        assert.ok(!fs.existsSync(path.join(rootA, '.gen.tmp-67890')));
+        assert.ok(fs.existsSync(path.join(rootA, '.other.tmp-1')));
+        assert.ok(fs.existsSync(path.join(rootA, 'gen', SKILL_MARKER_FILE)));
+    });
+
+    test('a project without a selection is only swept: its roots are never created', async () => {
+        const project = path.join(tmp, 'project');
+        fs.mkdirSync(project);
+        const roots = { install: [path.join(project, '.agents', 'skills'), path.join(project, '.claude', 'skills')], sweepOnly: [] };
+        const report = await installer().sync(roots, catalog, [], []);
+        assert.deepStrictEqual(report, { installed: [], removed: [], skippedForeign: [], failed: [] });
+        assert.deepStrictEqual(fs.readdirSync(project), [], 'no .agents or .claude directory may appear');
+    });
+
+    test('a project selection installs the pack skills into the project and a cleared selection removes them again', async () => {
+        const project = path.join(tmp, 'project');
+        const roots = { install: [path.join(project, '.agents', 'skills')], sweepOnly: [path.join(project, '.claude', 'skills')] };
+        writeSkill(path.join(project, '.agents', 'skills', 'theirs'), 'theirs');
+        writeSkill(path.join(project, '.claude', 'skills', 'gen'), 'gen'); // an earlier setup's copy, marked
+        fs.writeFileSync(path.join(project, '.claude', 'skills', 'gen', SKILL_MARKER_FILE), JSON.stringify({ name: 'gen' }));
+
+        const desired = resolveDesiredSkills(catalog, ['r-pack'], { includeBundled: false });
+        await installer().sync(roots, catalog, desired.explicit, desired.implied);
+        assert.ok(fs.existsSync(path.join(project, '.agents', 'skills', 'r-pack', SKILL_MARKER_FILE)));
+        assert.strictEqual(readMarker(path.join(project, '.agents', 'skills'), 'gen').hidden, true);
+        assert.ok(!fs.existsSync(path.join(project, '.agents', 'skills', 'cmsis-debug-live')), 'bundled skills stay personal');
+        assert.ok(!fs.existsSync(path.join(project, '.claude', 'skills', 'gen')), 'the sweep-only root lost our leftover');
+        assert.ok(fs.existsSync(path.join(project, '.agents', 'skills', 'theirs', 'SKILL.md')), 'the project\'s own skill survives');
+
+        const report = await installer().sync(roots, catalog, [], []);
+        assert.deepStrictEqual(report.removed.map(r => r.name).sort(), ['gen', 'r-pack']);
+        assert.deepStrictEqual(fs.readdirSync(path.join(project, '.agents', 'skills')), ['theirs']);
     });
 
     suite('hideFromMenu', () => {
@@ -264,6 +303,22 @@ suite('Agent skill installer', () => {
             const custom = roots(['/cfg/claude'], { CLAUDE_CONFIG_DIR: '/cfg/claude' });
             assert.ok(custom.install.includes(path.join('/cfg/claude', 'skills')));
             assert.ok(!custom.install.includes(path.join(home, '.claude', 'skills')));
+        });
+
+        test('project roots: .agents/skills always; .claude/skills written for Claude Code users or a project that has .claude, swept otherwise', () => {
+            const folder = '/work/proj';
+            const project = (existing: string[], env: NodeJS.ProcessEnv = {}) =>
+                getProjectSkillInstallRoots(folder, { env, home, exists: p => existing.includes(p) });
+            assert.deepStrictEqual(project([]), {
+                install: [path.join(folder, '.agents', 'skills')],
+                sweepOnly: [path.join(folder, '.claude', 'skills')],
+            });
+            assert.deepStrictEqual(project([path.join(home, '.claude')]).install,
+                [path.join(folder, '.agents', 'skills'), path.join(folder, '.claude', 'skills')]);
+            assert.deepStrictEqual(project(['/cfg/claude'], { CLAUDE_CONFIG_DIR: '/cfg/claude' }).sweepOnly, []);
+            assert.deepStrictEqual(project([path.join(folder, '.claude')]).install,
+                [path.join(folder, '.agents', 'skills'), path.join(folder, '.claude', 'skills')]);
+            assert.ok(!project([]).install.some(root => root.startsWith(home)), 'a project root never points into the home directory');
         });
 
         test('writes to $COPILOT_HOME/skills only when the variable is set', () => {

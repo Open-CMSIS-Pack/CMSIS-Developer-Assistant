@@ -1,0 +1,24 @@
+{
+  "fixture": "corstone-blinky",
+  "targets": [
+    "fvp",
+    "board"
+  ],
+  "budgets": {
+    "maxToolCalls": 25,
+    "maxTurns": 15,
+    "maxWallMs": 900000
+  },
+  "forbidden": {
+    "toolArgs": "add_logpoint|printf"
+  },
+  "id": "led-off-by-one",
+  "prompt": "The LED chaser runs up the strip once and then all LEDs stay off; there is no fault. Find the root cause.",
+  "overlay": "overlays/led-off-by-one",
+  "expectedRootCause": "off-by-one|led_port_value_max|1 << led_port_bit_length|MAX_LED_MASK|set_led_port returns 1|returns 1",
+  "expectedTools": [
+    "add_breakpoint",
+    "get_variables_values"
+  ],
+  "rootCause": "led_port_value_max = 1 << led_port_bit_length is one bit too wide: the mask 0x400 exceeds MAX_LED_MASK, set_led_port rejects it (returns 1) and the LEDs never update again. No fault \u2014 a breakpoint on set_led_port's early return shows it."
+}

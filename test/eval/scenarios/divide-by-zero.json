@@ -1,0 +1,23 @@
+{
+  "fixture": "corstone-blinky",
+  "targets": [
+    "fvp",
+    "board"
+  ],
+  "budgets": {
+    "maxToolCalls": 25,
+    "maxTurns": 15,
+    "maxWallMs": 900000
+  },
+  "forbidden": {
+    "toolArgs": "add_logpoint|printf"
+  },
+  "id": "divide-by-zero",
+  "prompt": "The Blinky firmware faults right after printing '= Blinky is running ='. Find the root cause and say which line is wrong and why.",
+  "overlay": "overlays/divide-by-zero",
+  "expectedRootCause": "DIVBYZERO|divide by zero|blink_divider",
+  "expectedTools": [
+    "diagnose_fault"
+  ],
+  "rootCause": "Integer division by zero: delay_ms / blink_divider with blink_divider = 0 and DIV_0_TRP set."
+}

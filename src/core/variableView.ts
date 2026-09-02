@@ -24,6 +24,21 @@
  */
 
 import { REDACTION_NOTICE } from '../utils/secretRedaction';
+import { clipValue, truncateList } from './textBudget';
+
+/** Caps on an un-narrowed listing; 0 disables a cap. */
+export interface ListingLimits {
+    maxVariables: number;
+    maxValueChars: number;
+}
+
+/**
+ * Applied by the handlers when the caller did not pass variableNames. Embedded
+ * frames are small, so the caps rarely bite; when they do, the footer says how
+ * to lift them.
+ */
+export const DEFAULT_LISTING_LIMITS: ListingLimits = { maxVariables: 40, maxValueChars: 200 };
+export const DEFAULT_NAME_LISTING_LIMIT = 100;
 
 export interface DapVariable {
     name: string;
@@ -108,27 +123,44 @@ export function renderScopes(
         header: string;
         emptyScopeText?: string;
         redact?: (name: string, value: string) => { value: string; redacted: boolean };
+        /**
+         * Caps applied when the caller did not narrow the request. A whole
+         * scope on a big frame, or one 4 KB array rendered inline, is the
+         * kind of result that forces a context compaction; the footer says
+         * how to lift the cap.
+         */
+        limits?: ListingLimits;
     } = { header: 'Variables' },
 ): string {
     const emptyScopeText = options.emptyScopeText ?? '  No variables in this scope';
     let out = `${options.header}:\n==========\n\n`;
     let anyRedacted = false;
+    const maxVariables = options.limits?.maxVariables ?? 0;
+    const maxValueChars = options.limits?.maxValueChars ?? 0;
 
     for (const scope of scopes) {
         out += `${scope.name}:\n`;
         if (scope.error) {
             out += `  Error retrieving variables: ${scope.error}\n`;
         } else if (scope.variables && scope.variables.length > 0) {
-            for (const variable of scope.variables) {
+            const { shown: variables, hidden } = truncateList(scope.variables, maxVariables);
+            for (const variable of variables) {
                 let shown = variable.value;
+                let redacted = false;
                 if (options.redact) {
                     const verdict = options.redact(variable.name, variable.value);
                     shown = verdict.value;
-                    anyRedacted ||= verdict.redacted;
+                    redacted = verdict.redacted;
+                    anyRedacted ||= redacted;
                 }
-                out += `  ${variable.name}: ${shown}`;
+                // The placeholder is never clipped — a cut placeholder reads
+                // like a partial value.
+                out += `  ${variable.name}: ${redacted ? shown : clipValue(shown, maxValueChars)}`;
                 if (variable.type) { out += ` (${variable.type})`; }
                 out += '\n';
+            }
+            if (hidden > 0) {
+                out += `  … ${hidden} more, truncated — narrow with variableNames\n`;
             }
         } else {
             out += `${emptyScopeText}\n`;
@@ -144,18 +176,24 @@ export function renderScopes(
  * what exists before deciding what is worth pulling over the wire, which on a
  * slow probe is the difference between one round trip and thirty.
  */
-export function renderVariableNames(scopes: DapScope[]): string {
+export function renderVariableNames(scopes: DapScope[], limits?: Pick<ListingLimits, 'maxVariables'>): string {
     let out = 'Variables in scope (names and types only — use get_variables_values to read values):\n\n';
     let total = 0;
+    const maxVariables = limits?.maxVariables ?? 0;
 
     for (const scope of scopes) {
         out += `${scope.name}:\n`;
         if (scope.error) {
             out += `  Error retrieving variables: ${scope.error}\n`;
         } else if (scope.variables && scope.variables.length > 0) {
-            for (const variable of scope.variables) {
+            const { shown, hidden } = truncateList(scope.variables, maxVariables);
+            for (const variable of shown) {
                 total++;
                 out += `  ${variable.name}${variable.type ? `: ${variable.type}` : ''}\n`;
+            }
+            if (hidden > 0) {
+                total += hidden;
+                out += `  … ${hidden} more — pass scope: 'local' or inspect one frame with get_frame_variables\n`;
             }
         } else {
             out += '  No variables in this scope\n';

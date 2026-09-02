@@ -2,7 +2,7 @@
   "name": "cmsis-developer-assistant",
   "displayName": "CMSIS Developer Assistant",
   "description": "Enable AI coding agents to manage and extend CMSIS projects, with a set of AI skills and MCP server to interface to build and debug.",
-  "version": "2.3.3",
+  "version": "2.3.9",
   "publisher": "arm",
   "license": "Apache-2.0 OR MIT",
   "homepage": "https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant",
@@ -39,7 +39,7 @@
     "npm": "^10.0.0",
     "vscode": "^1.109.0"
   },
-  "icon": "assets/debug_mcp_icon.png",
+  "icon": "assets/arm.png",
   "categories": [
     "Debuggers",
     "AI",
@@ -78,6 +78,31 @@
         "command": "cmsis-developer-assistant.resetPopupState",
         "title": "Reset Popup State",
         "category": "CMSIS Developer Assistant"
+      },
+      {
+        "command": "cmsis-developer-assistant.listTargetDocs",
+        "title": "List Target Documentation",
+        "category": "CMSIS Developer Assistant"
+      },
+      {
+        "command": "cmsis-developer-assistant.indexTargetDocs",
+        "title": "Index Target Documentation",
+        "category": "CMSIS Developer Assistant"
+      },
+      {
+        "command": "cmsis-developer-assistant.importUserDoc",
+        "title": "Import Document for Current Target",
+        "category": "CMSIS Developer Assistant"
+      },
+      {
+        "command": "cmsis-developer-assistant.openUserDocsFolder",
+        "title": "Open User Documents Folder",
+        "category": "CMSIS Developer Assistant"
+      },
+      {
+        "command": "cmsis-developer-assistant.openPackDocsPanel",
+        "title": "Open Pack Docs Panel",
+        "category": "CMSIS Developer Assistant"
       }
     ],
     "menus": {
@@ -108,8 +133,8 @@
           },
           "uniqueItems": true,
           "default": [],
-          "scope": "application",
-          "markdownDescription": "The AI Skills Pack skills — the Open-CMSIS-Pack [cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills) skills and their per-category entry points `cmsis-project`, `cmsis-bring-up`, `cmsis-pack` — to copy into your personal skills directories: `~/.agents/skills` always, `~/.claude/skills` when Claude Code is installed, `$COPILOT_HOME/skills` when that variable is set. Pick them with **CMSIS Developer Assistant: Select Agent Skills**. An entry point gives the agent one slash command for the whole category; skills a selected skill depends on are installed too, hidden from the slash menu. The extension's own `cmsis-debug-live` and `cmsis-help` are always installed and need not be listed. Deselected skills that this extension installed are removed; skills you installed yourself are never touched. Has no effect while `#cmsis-developer-assistant.aiSkills.enabled#` is off."
+          "scope": "resource",
+          "markdownDescription": "The AI Skills Pack skills — the Open-CMSIS-Pack [cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills) skills and their per-category entry points `cmsis-project`, `cmsis-bring-up`, `cmsis-pack` — to install. **Where this setting is stored decides where the skills go.** As a *User* setting they are copied into your personal skills directories, for every workspace: `~/.agents/skills` always, `~/.claude/skills` when Claude Code is installed, `$COPILOT_HOME/skills` when that variable is set. As a *Workspace* or *Folder* setting they are copied into that project only: `.agents/skills` (and `.claude/skills` when Claude Code is installed) next to your sources, to commit or ignore with the project — the selected pack skills only. **CMSIS Developer Assistant: Select Agent Skills** asks which of the two you want, the workspace first: a personal skill is offered to the agent in every project and costs context there, a project skill only where it applies. An entry point gives the agent one slash command for the whole category; skills a selected skill depends on are installed too, hidden from the slash menu. The extension's own `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed in your personal directories and need not be listed. Deselected skills that this extension installed are removed; skills you installed yourself are never touched. Has no effect while `#cmsis-developer-assistant.aiSkills.enabled#` is off."
         },
         "cmsis-developer-assistant.aiSkills.enabled": {
           "type": "boolean",
@@ -139,6 +164,115 @@
           "default": 30000,
           "minimum": 1000,
           "description": "Overall timeout (in milliseconds) for a single read_memory / read_core_registers tool call. Caps the total time spent talking to the hardware, even across many word-level fallback reads."
+        },
+        "cmsis-developer-assistant.telemetry.jsonlPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Append one JSON line per MCP tool call — tool name, argument and result size in bytes, duration, outcome — to this file, for offline analysis of what an agent session costs. Empty (the default) keeps the file off; the in-memory statistics behind `get_session_status` and the `cmsis-developer-assistant://stats` resource are always kept. A relative path is resolved against the first workspace folder. Read once at activation: changing it needs a window reload. The file records names and sizes only, never tool arguments or results."
+        },
+        "cmsis-developer-assistant.serial.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Offer the `serial_*` tools (UART ports and the Serial Monitor) to AI agents. Off removes the ten serial tools from the MCP tool list, which every agent turn carries — worth it when your workflow never reads a UART. Read once at activation: changing it needs a window reload, and it applies to the next agent connection."
+        },
+        "cmsis-developer-assistant.packDocs.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "**Experimental** — the documentation system is new and its tools, arguments and output may change between releases. Offer the documentation tools to AI agents: `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` — page-cited search over the reference manuals, datasheets, errata and board manuals the current csolution target's DFP/BSP ship or link, plus Arm documents, your own imported manuals and the workspace `docs/` folder. Adds five tools to the MCP tool list every agent turn carries; PDFs are indexed with the bundled pdf.js (poppler optional, see `packDocs.extractor`). Read once at activation: changing it needs a window reload.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.packDocs.extractor": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "pdfjs",
+            "pdftotext"
+          ],
+          "default": "auto",
+          "markdownDescription": "PDF text extractor. `pdfjs` is bundled and needs nothing installed (what `auto` uses); `pdftotext` uses poppler from the PATH or `packDocs.pdftotextPath`. Switching re-extracts documents on their next use.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.packDocs.pdftotextPath": {
+          "type": "string",
+          "default": "pdftotext",
+          "description": "Executable name or path of pdftotext, used when packDocs.extractor is pdftotext.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.packDocs.maxPdfMb": {
+          "type": "number",
+          "default": 150,
+          "description": "PDFs larger than this (in MB) are listed but not indexed.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.packDocs.includeUnlisted": {
+          "type": "boolean",
+          "default": true,
+          "description": "Also list PDFs found inside the device/board pack that no <book> element references.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.packDocs.workspaceDocDirs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".agent-artifacts/docs",
+            "docs"
+          ],
+          "markdownDescription": "Folders (relative to each workspace folder) whose PDFs are listed and searched together with the target's pack documents — the drop folder for a datasheet or manual the packs do not ship.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.packDocs.userDocsDir": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Folder for documents the packs do not ship (NDA manuals, portal downloads), outside any workspace and shared by every project; sub-folders attribute them to packs (`<Vendor>/<Pack>`), devices (`devices/<glob>`), boards (`boards/<name>`) or cores (`cores/<core>`). Empty: `~/.cmsis-pack-docs/user`. Fill it with **Import Document for Current Target**.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.buildInfo.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "**Experimental** — the build-artefact tools are new and may change between releases. Offer the build-artefact tools to AI agents: `list_build_artifacts`, `get_memory_usage`, `lookup_symbol`, `get_section_layout`, `get_build_diagnostics` — the ELF, linker map and build log of the current csolution target, read deterministically. Adds five tools to the MCP tool list every agent turn carries. Read once at activation: changing it needs a window reload.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.buildInfo.maxSymbols": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20,
+          "description": "Symbols and objects listed by get_memory_usage and get_section_layout (the tool's top argument overrides it).",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.buildInfo.logGlobs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/out/**/*.log",
+            "**/build*.log"
+          ],
+          "markdownDescription": "Workspace globs searched for build logs by `get_build_diagnostics` (newest first). Capture one with `cbuild … --log out/build.log`.",
+          "tags": [
+            "experimental"
+          ]
         }
       }
     }
@@ -153,18 +287,22 @@
     "test": "vscode-test --coverage --coverage-output coverage --coverage-reporter lcov --coverage-reporter text",
     "test:transport": "npm run compile && node test/transport/session-lifecycle.js && node test/transport/two-window-routing.js",
     "test:skill-trigger-agent": "tsx scripts/test-skill-trigger.ts",
+    "eval:scenario": "tsx scripts/eval-scenario.ts",
+    "bench:search": "tsx scripts/search-benchmark.ts",
     "bundle": "node esbuild.js",
     "package": "npm run build && tsx scripts/package.ts",
     "skills:sync": "tsx scripts/sync-skills.ts",
     "tpip:update": "tsx scripts/update-tpip docs/third-party-licenses.json",
     "tpip:report": "tsx scripts/tpip-reporter --header docs/tpip-header.md docs/third-party-licenses.json TPIP.md",
-    "lint:md": "markdownlint **/*.md -c ./.github/markdownlint.jsonc -i ./node_modules -i ./dist -i ./coverage -i ./out -i ./docs/architecture -i ./skills/cmsis-skills -i CHANGELOG.md"
+    "lint:md": "markdownlint **/*.md -c ./.github/markdownlint.jsonc -i ./node_modules -i ./dist -i ./coverage -i ./out -i ./docs/architecture -i ./skills/cmsis-skills -i CHANGELOG.md",
+    "diagram": "npx -y @mermaid-js/mermaid-cli@11 -p scripts/puppeteer.json -i assets/architecture.mmd -o assets/architecture.png -b white -s 2"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@types/express": "^5.0.6",
     "express": "^5.2.1",
     "jsonc-parser": "^3.3.1",
+    "pdfjs-dist": "6.3.289",
     "serialport": "^13.0.0",
     "zod": "^4.5.2"
   },

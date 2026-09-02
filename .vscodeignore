@@ -21,7 +21,6 @@ esbuild.js
 **/.vscode-test.*
 # 15 MB demo video: referenced from the GitHub repo, never by the packaged
 # extension or the marketplace readme. No reason to ship it to every user.
-assets/DebugMCP.mp4
 
 # The extension is bundled into dist/extension.js by esbuild, so the production
 # dependency tree does not need to ship — except for serialport, which is
@@ -51,3 +50,10 @@ coverage/**
 .qlty/**
 .github/**
 .npmrc
+# pdf.js runs on a worker thread of its own (dist/pdfWorker.js, the library
+# bundled in) and loads its "fake worker" from this file there.
+!node_modules/pdfjs-dist/package.json
+!node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs
+# Design notes and licence inputs stay in the repo; only docs/agent-resources is read at runtime (MCP resources).
+docs/**
+!docs/agent-resources/**

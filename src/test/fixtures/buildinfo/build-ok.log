@@ -1,0 +1,12 @@
++----------------------------------------------
+(1/1) Building context: "Blinky.Debug+NUCLEO-F756ZG"
+Using AC6 V6.24.0 compiler, from: '/opt/armclang/bin'
+Building CMake target 'Blinky.Debug+NUCLEO-F756ZG'
+Using compiler: AC6 V6.24.0
+[1/3] Building C object CMakeFiles/Group_App.dir/Users/dev/Blinky/main.o
+/Users/dev/Blinky/main.c:30:5: warning: unused variable 'tmp' [-Wunused-variable]
+[2/3] Building C object CMakeFiles/Startup.dir/startup.o
+[3/3] Linking C executable Blinky.axf
++------------------------------------------------------------
+Build summary: 1 succeeded, 0 failed - Time Elapsed: 00:00:03
++============================================================

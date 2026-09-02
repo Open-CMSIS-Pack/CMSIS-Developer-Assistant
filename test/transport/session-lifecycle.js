@@ -23,10 +23,16 @@
 //   4. DELETE /mcp tears the session down
 //   5. REGRESSION: three consecutive get_threads calls on one session all
 //      return — the bug the old per-request model was built to fix.
+//   6. Every tool call is measured: the stats resource, the
+//      get_session_status trailer and the server aggregate all count them.
+//   7. Server options are accepted and readable back; serialEnabled:false
+//      drops the serial tools. The tool list has a byte budget.
 
-require('./vscode-stub.js');
+const stub = require('./vscode-stub.js');
 
+const fs = require('fs');
 const http = require('http');
+const os = require('os');
 const path = require('path');
 const OUT = path.resolve(__dirname, '..', '..', 'out', 'src');
 
@@ -106,6 +112,9 @@ async function main() {
     });
     const sid = init.headers['mcp-session-id'];
     check('POST initialize returns 200', init.status === 200, `status=${init.status}`);
+    const instructions = parseSse(init.body)?.result?.instructions ?? '';
+    check('the default instructions point at the documentation setting instead of leaving agents to ask for PDFs',
+        /packDocs\.enabled/.test(instructions) && /rather than asking the user for a document/.test(instructions));
     check('POST initialize mints an mcp-session-id', typeof sid === 'string' && sid.length > 0, `sid=${sid}`);
 
     await request(port, 'POST', { 'mcp-session-id': sid }, {
@@ -131,9 +140,112 @@ async function main() {
     const tools = parseSse(list.body)?.result?.tools ?? [];
     const names = tools.map((t) => t.name);
     check('tools/list returns the tool surface', tools.length > 30, `${tools.length} tools`);
-    for (const expected of ['add_logpoint', 'list_variable_names', 'add_breakpoint', 'get_variables_values']) {
+    for (const expected of ['add_logpoint', 'list_variable_names', 'add_breakpoint', 'get_variables_values', 'diagnose_fault', 'lookup_register']) {
         check(`tools/list includes ${expected}`, names.includes(expected));
     }
+    // The tool list rides along on every agent turn, so its size is a
+    // per-turn cost. Budget for the single-window surface (42 tools); a
+    // regression must be attributable to one tool, hence the per-description cap.
+    const TOOLS_LIST_BUDGET_BYTES = 30_000; // 44 tools; raised from 28 000 for lookup_peripheral / lookup_register
+    const DESCRIPTION_CAP_CHARS = 700;
+    const toolsBytes = Buffer.byteLength(JSON.stringify(tools));
+    check(`tools/list stays under the ${TOOLS_LIST_BUDGET_BYTES} byte budget`, toolsBytes <= TOOLS_LIST_BUDGET_BYTES, `${toolsBytes} bytes`);
+    const longest = tools.map((t) => ({ name: t.name, len: (t.description ?? '').length })).sort((a, b) => b.len - a.len)[0];
+    check(`no tool description exceeds ${DESCRIPTION_CAP_CHARS} chars`, longest.len <= DESCRIPTION_CAP_CHARS, `${longest.name} ${longest.len}`);
+    const serialCount = names.filter((n) => n.startsWith('serial_')).length;
+    check('the serial tools are registered by default', serialCount === 10, `${serialCount} serial tools`);
+
+    // 4b. get_debug_instructions serves one topic on request and a small
+    //     overview with the topic list by default.
+    const topicCall = await request(port, 'POST', { 'mcp-session-id': sid }, {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'get_debug_instructions', arguments: { topic: 'breakpoints' } },
+    });
+    const topicText = parseSse(topicCall.body)?.result?.content?.[0]?.text ?? '';
+    check('get_debug_instructions serves the breakpoints topic', /FPB/.test(topicText) && !/CFSR/.test(topicText),
+        `${topicText.length} chars`);
+    const overviewCall = await request(port, 'POST', { 'mcp-session-id': sid }, {
+        jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'get_debug_instructions', arguments: {} },
+    });
+    const overviewText = parseSse(overviewCall.body)?.result?.content?.[0]?.text ?? '';
+    check('get_debug_instructions defaults to the overview with the topic list',
+        /## Topics/.test(overviewText) && overviewText.length < 3500 && overviewText.length < topicText.length * 2,
+        `${overviewText.length} chars`);
+
+    // 4c. The SVD lookups need no session; with no workspace (this stub) they
+    //     explain where an SVD was looked for instead of failing.
+    const lookup = await request(port, 'POST', { 'mcp-session-id': sid }, {
+        jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'lookup_peripheral', arguments: {} },
+    });
+    const lookupParsed = parseSse(lookup.body);
+    const lookupText = lookupParsed?.result?.content?.[0]?.text ?? '';
+    check('lookup_peripheral without an SVD explains what it tried',
+        !lookupParsed?.error && lookupParsed?.result?.isError !== true && /No SVD file found.*Tried:/s.test(lookupText),
+        lookupText.split('\n')[0]);
+
+    // 4d. cmsis_action names the target it acts on, refuses an undeclared
+    //     target, and switches a declared one through cmsis.json + solution
+    //     re-activation — verified through getActiveTargetSet before it acts.
+    //     `detach` is the action under test because it runs no cbuild task.
+    const solDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmsis-target-'));
+    const solutionFile = path.join(solDir, 'demo.csolution.yml');
+    fs.writeFileSync(solutionFile, [
+        'solution:', '  target-types:',
+        '    - type: HE', '      device: X:HE', '      target-set:', '        - set:',
+        '          debugger:', '            name: CMSIS-DAP@pyOCD',
+        '    - type: HP', '      device: X:HP', '      target-set:', '        - set: debug', '        - set: release',
+        '  build-types:', '    - type: Debug',
+        '  projects:', '    - project: app.cproject.yml', '',
+    ].join('\n'));
+    const cmsisJsonPath = path.join(solDir, '.vscode', 'cmsis.json');
+    let activeTarget = 'HE';
+    const commandLog = [];
+    stub.workspace.workspaceFolders = [{ uri: { fsPath: solDir } }];
+    stub.commandHandlers = {
+        'cmsis-csolution.getSolutionFile': async () => solutionFile,
+        'cmsis-csolution.getActiveTargetSet': async () => activeTarget,
+        'cmsis-csolution.deactivateSolution': async () => { commandLog.push('deactivate'); activeTarget = ''; },
+        'cmsis-csolution.activateSolution': async (p) => {
+            // The extension re-reads cmsis.json on activation; mimic that.
+            commandLog.push(`activate ${p}`);
+            const sel = JSON.parse(fs.readFileSync(cmsisJsonPath, 'utf8')).targetSet?.demo;
+            activeTarget = sel?.activeTargetType === 'HP' ? (sel.HP === 1 ? 'HP@release' : 'HP@debug') : 'HE';
+        },
+        'cmsis-csolution.cmsisDetachDebugger': async () => undefined,
+    };
+    const cmsisAction = async (args, id) => {
+        const r = await request(port, 'POST', { 'mcp-session-id': sid }, {
+            jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'cmsis_action', arguments: args },
+        });
+        return parseSse(r.body)?.result?.content?.[0]?.text ?? '';
+    };
+    const plain = await cmsisAction({ action: 'detach' }, 6);
+    check('cmsis_action names the active target', /CMSIS 'detach' on HE issued/.test(plain), plain.split('\n')[0]);
+    const undeclared = await cmsisAction({ action: 'detach', target: 'Nope' }, 7);
+    check('cmsis_action refuses an undeclared target and lists the choices',
+        /not attempted.*'Nope' is not declared.*Declared targets: HE, HP@debug, HP@release/s.test(undeclared)
+            && commandLog.length === 0 && !fs.existsSync(cmsisJsonPath),
+        undeclared.split('\n')[0]);
+    const switched = await cmsisAction({ action: 'detach', target: 'HP@release' }, 8);
+    const written = fs.existsSync(cmsisJsonPath) ? JSON.parse(fs.readFileSync(cmsisJsonPath, 'utf8')) : {};
+    check('cmsis_action switches a declared target via cmsis.json + re-activation and verifies it',
+        /CMSIS 'detach' on HP@release, switched from HE issued/.test(switched)
+            && commandLog.join(',') === `deactivate,activate ${solutionFile}`
+            && written.targetSet?.demo?.activeTargetType === 'HP' && written.targetSet?.demo?.HP === 1,
+        `${switched.split('\n')[0]} | ${commandLog.join(',')} | ${JSON.stringify(written)}`);
+    const matching = await cmsisAction({ action: 'detach', target: 'HP' }, 9);
+    check('cmsis_action leaves a matching target alone', /CMSIS 'detach' on HP@release issued/.test(matching) && commandLog.length === 2,
+        matching.split('\n')[0]);
+    // An extension that ignores the written selection: the panel stays on HE.
+    activeTarget = 'HE';
+    stub.commandHandlers['cmsis-csolution.deactivateSolution'] = async () => { commandLog.push('deactivate'); };
+    stub.commandHandlers['cmsis-csolution.activateSolution'] = async (p) => { commandLog.push(`activate ${p}`); };
+    const unverified = await cmsisAction({ action: 'detach', target: 'HP', timeoutMs: 20_000 }, 10);
+    check('cmsis_action refuses when the switch cannot be verified',
+        /not attempted: wrote 'HP' to .*still reports 'HE'.*Manage Solution/s.test(unverified), unverified.split('\n')[0]);
+    stub.commandHandlers = {};
+    stub.workspace.workspaceFolders = [];
+    fs.rmSync(solDir, { recursive: true, force: true });
 
     // 5. REGRESSION: three consecutive get_threads on one session must all return.
     for (let i = 1; i <= 3; i++) {
@@ -150,13 +262,137 @@ async function main() {
             call.status === 200 ? '' : call.body);
     }
 
-    // 6. DELETE tears the session down
+    // 6. Tool telemetry: the calls above were measured at the MCP boundary.
+    const stats = await request(port, 'POST', { 'mcp-session-id': sid }, {
+        jsonrpc: '2.0', id: 20, method: 'resources/read', params: { uri: 'cmsis-developer-assistant://stats' },
+    });
+    const statsText = parseSse(stats.body)?.result?.contents?.[0]?.text ?? '';
+    let statsJson = null;
+    try { statsJson = JSON.parse(statsText); } catch { /* reported by the check */ }
+    check('stats resource counts the tool calls',
+        !!statsJson && statsJson.session.calls >= 6 && statsJson.session.perTool.get_threads?.calls === 3
+            && statsJson.session.perTool.get_debug_instructions?.calls === 2,
+        statsJson ? `session.calls=${statsJson.session.calls}` : statsText.slice(0, 120));
+    const status = await request(port, 'POST', { 'mcp-session-id': sid }, {
+        jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
+    });
+    const statusText = parseSse(status.body)?.result?.content?.[0]?.text ?? '';
+    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 11 calls/m.test(statusText),
+        statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
+    check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 7,
+        `${server.getMetrics().totals().calls} calls`);
+
+    // 7. DELETE tears the session down
     const del = await request(port, 'DELETE', { 'mcp-session-id': sid });
     check('DELETE /mcp accepts a valid session', del.status === 200 || del.status === 204, `status=${del.status}`);
     const afterDelete = await openStream(port, sid);
     check('GET /mcp after DELETE is rejected', afterDelete.status === 400, `status=${afterDelete.status}`);
 
     await server.stop();
+
+    // 8. Server options are accepted, kept for the instance's lifetime and
+    //    readable back. Behaviour behind them (serial gating, telemetry) lands
+    //    with the packages that consume each field; here only the plumbing.
+    const configured = new DebugMCPServer(0, 30, undefined, undefined, { serialEnabled: false });
+    await configured.initialize();
+    await configured.start();
+    const cport = configured.getActualPort();
+    check('server options are readable back', configured.getOptions().serialEnabled === false,
+        JSON.stringify(configured.getOptions()));
+    const cinit = await request(cport, 'POST', {}, {
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'transport-check', version: '1.0.0' } },
+    });
+    const csid = cinit.headers['mcp-session-id'];
+    await request(cport, 'POST', { 'mcp-session-id': csid }, { jsonrpc: '2.0', method: 'notifications/initialized' });
+    const clist = await request(cport, 'POST', { 'mcp-session-id': csid }, {
+        jsonrpc: '2.0', id: 2, method: 'tools/list', params: {},
+    });
+    const ctools = parseSse(clist.body)?.result?.tools ?? [];
+    const cnames = ctools.map((t) => t.name);
+    check('serialEnabled:false leaves the serial tools out',
+        cnames.every((n) => !n.startsWith('serial_')) && ctools.length === tools.length - serialCount,
+        `${ctools.length} tools`);
+    await request(cport, 'DELETE', { 'mcp-session-id': csid });
+    await configured.stop();
+
+    // 9. The documentation / build-artefact tools are off by default (the
+    //    list measured above) and on per instance through two gates. Real
+    //    handlers on a temp-dir host — the cores need no vscode — so the
+    //    enabled list is measured against its own budget and the tools answer
+    //    a workspace with no build with guidance rather than an error.
+    const { PackDocsHandler } = require(path.join(OUT, 'packDocsHandler.js'));
+    const { BuildInfoHandler } = require(path.join(OUT, 'buildInfoHandler.js'));
+    const { localPackDocsDispatch } = require(path.join(OUT, 'packDocsDispatch.js'));
+    const { defaultSettings, silentLog } = require(path.join(OUT, 'core', 'packDocs', 'host.js'));
+    const { defaultBuildInfoSettings } = require(path.join(OUT, 'core', 'buildInfo', 'host.js'));
+    const { DebuggingExecutor, ConfigurationManager, DebuggingHandler } = require(path.join(OUT, 'index.js'));
+    const { localSerialDispatch } = require(path.join(OUT, 'debugMCPServer.js'));
+    const docsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmsis-packdocs-'));
+    const docsHost = {
+        packRoot: path.join(docsDir, 'packs'), storageDir: path.join(docsDir, 'store'),
+        settings: () => defaultSettings, log: silentLog, userAgent: 'transport-check',
+        workspaceFolders: () => [docsDir], findCbuildRunFiles: async () => [],
+    };
+    const buildHost = { workspaceFolders: () => [docsDir], findFiles: async () => [], settings: () => defaultBuildInfoSettings, log: silentLog };
+    const packDocs = localPackDocsDispatch({
+        docs: new PackDocsHandler(docsHost, { timeoutMs: 30_000 }),
+        build: new BuildInfoHandler(buildHost, { timeoutMs: 30_000 }),
+    });
+    const debug = new DebuggingHandler(new DebuggingExecutor(), new ConfigurationManager(), 30);
+    const full = new DebugMCPServer(0, 30, undefined, () => ({ debug, serial: localSerialDispatch, packDocs }),
+        { packDocsEnabled: true, buildInfoEnabled: true });
+    await full.initialize();
+    await full.start();
+    const fport = full.getActualPort();
+    const finit = await request(fport, 'POST', {}, {
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'transport-check', version: '1.0.0' } },
+    });
+    const fsid = finit.headers['mcp-session-id'];
+    const finstructions = parseSse(finit.body)?.result?.instructions ?? '';
+    check('the server instructions mention the documentation and build-artefact tools when they are on',
+        /documentation tools/.test(finstructions) && /build-artefact tools/.test(finstructions));
+    await request(fport, 'POST', { 'mcp-session-id': fsid }, { jsonrpc: '2.0', method: 'notifications/initialized' });
+    const flist = await request(fport, 'POST', { 'mcp-session-id': fsid }, {
+        jsonrpc: '2.0', id: 2, method: 'tools/list', params: {},
+    });
+    const ftools = parseSse(flist.body)?.result?.tools ?? [];
+    const fnames = new Set(ftools.map((t) => t.name));
+    const PACKDOCS_TOOLS = ['list_target_docs', 'search_target_docs', 'read_doc_pages', 'fetch_doc', 'get_peripheral_docs',
+        'list_build_artifacts', 'get_memory_usage', 'lookup_symbol', 'get_section_layout', 'get_build_diagnostics'];
+    check('packDocs/buildInfo enabled adds exactly the ten documentation and build-artefact tools',
+        PACKDOCS_TOOLS.every((n) => fnames.has(n)) && ftools.length === tools.length + PACKDOCS_TOOLS.length,
+        `${ftools.length} tools`);
+    check('the default list carries none of them', PACKDOCS_TOOLS.every((n) => !names.includes(n)));
+    // Budget for the everything-on list; the default list keeps its own above.
+    // 55 tools, measured 41 204 bytes when the pack-docs tools landed: the ten
+    // tools cost ~11.8 kB, most of it the per-tool target/pack/device/board
+    // arguments. A regression must be attributable to one tool, hence the cap.
+    const TOOLS_LIST_ALL_BUDGET_BYTES = 42_000;
+    const ftoolsBytes = Buffer.byteLength(JSON.stringify(ftools));
+    check(`tools/list with every group on stays under the ${TOOLS_LIST_ALL_BUDGET_BYTES} byte budget`,
+        ftoolsBytes <= TOOLS_LIST_ALL_BUDGET_BYTES, `${ftoolsBytes} bytes`);
+    const flongest = ftools.map((t) => ({ name: t.name, len: (t.description ?? '').length })).sort((a, b) => b.len - a.len)[0];
+    check(`no documentation or build-artefact description exceeds ${DESCRIPTION_CAP_CHARS} chars`,
+        flongest.len <= DESCRIPTION_CAP_CHARS, `${flongest.name} ${flongest.len}`);
+    const fcall = async (name, args, id) => {
+        const r = await request(fport, 'POST', { 'mcp-session-id': fsid }, {
+            jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args },
+        });
+        const parsed = parseSse(r.body);
+        return { error: !!parsed?.error || parsed?.result?.isError === true, text: parsed?.result?.content?.[0]?.text ?? '' };
+    };
+    const ldocs = await fcall('list_target_docs', {}, 3);
+    check('list_target_docs on a workspace without a build explains what to do instead of failing',
+        !ldocs.error && /cbuild-run|pack/i.test(ldocs.text), ldocs.text.split('\n')[0]);
+    const lbuild = await fcall('list_build_artifacts', {}, 4);
+    check('list_build_artifacts on a workspace without a build explains what to do instead of failing',
+        !lbuild.error && /cbuild-run|build/i.test(lbuild.text), lbuild.text.split('\n')[0]);
+    await request(fport, 'DELETE', { 'mcp-session-id': fsid });
+    await full.stop();
+    fs.rmSync(docsDir, { recursive: true, force: true });
+
     console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);
     process.exit(failures === 0 ? 0 : 1);
 }

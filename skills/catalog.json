@@ -26,6 +26,15 @@
       ]
     },
     {
+      "name": "add-board-layer",
+      "description": "Add a board layer to an existing CMSIS csolution by interviewing the user for the few facts that cannot be read from the repo — board/device, layer strategy, debugger, STDIO transport, memory — then generating Board.clayer.yml and its startup / retarget-stdio / regions / device-header files (reusing the BSP layer when it fits, running the DFP's configuration generator when startup only comes from it, or a minimal bare-metal layer otherwise) and wiring the target-type into the solution. Use when the user wants to add or author a board layer and would rather be asked than hand over every parameter up front.",
+      "category": "project",
+      "kind": "skill",
+      "source": "bundled",
+      "path": "skills/add-board-layer",
+      "dependsOn": []
+    },
+    {
       "name": "add-cmsis-target",
       "description": "Add a verified board or device target to an existing CMSIS solution, declare its support packs, and offer compatible packaged board layers when the project uses them. Use when the supplied hardware name may be fuzzy and an existing *.csolution.yml must be extended.",
       "category": "project",
@@ -146,6 +155,15 @@
       "dependsOn": [
         "pyocd-detect-debug-topology"
       ]
+    },
+    {
+      "name": "cmsis-pack-docs",
+      "description": "Look things up in the documentation of the current CMSIS csolution target through the CMSIS Developer Assistant documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) — the reference manual, datasheet, errata and board manual the packs ship or link, the Arm documents for the device's core (architecture reference manual, ADIv5/ADIv6, CoreSight and ETM specifications, core TRM), and the datasheets of third-party parts (sensors, ADCs, codecs) the user added or fetch_doc downloaded. Use for any part number before searching the web, before assuming what a peripheral register or bit does, when the SVD gives a bit position but not its meaning, when a peripheral does not behave as expected (check the errata), when a debug/trace bring-up skill needs a vendor or Arm document, or when the user asks where something is documented. Cites document id, edition and page. The tools are off by default: the setting `cmsis-developer-assistant.packDocs.enabled` turns them on (window reload).",
+      "category": "bring-up",
+      "kind": "skill",
+      "source": "bundled",
+      "path": "skills/cmsis-pack-docs",
+      "dependsOn": []
     },
     {
       "name": "debug-access-knowledge",
@@ -347,7 +365,7 @@
     },
     {
       "name": "cmsis-help",
-      "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
+      "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live, cmsis-pack-docs, add-board-layer) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
       "category": "help",
       "kind": "skill",
       "source": "bundled",

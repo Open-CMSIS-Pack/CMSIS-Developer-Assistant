@@ -6,6 +6,14 @@
       "category": "debug"
     },
     {
+      "name": "add-board-layer",
+      "category": "project"
+    },
+    {
+      "name": "cmsis-pack-docs",
+      "category": "bring-up"
+    },
+    {
       "name": "cmsis-help",
       "category": "help",
       "generated": true
@@ -14,10 +22,15 @@
   "help": {
     "displayName": "CMSIS: Help",
     "shortDescription": "List the CMSIS slash commands, VS Code commands, MCP tools and settings",
-    "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
+    "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live, cmsis-pack-docs, add-board-layer) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
     "commands": {
       "cmsis-developer-assistant.configure": "The first-run setup, on demand: register the MCP server with the agents you pick, then choose the AI Skills Pack skills to install.",
-      "cmsis-developer-assistant.selectSkills": "Pick the AI Skills Pack skills (category entry points or individual skills) to copy into your personal skills directories."
+      "cmsis-developer-assistant.selectSkills": "Pick the AI Skills Pack skills (category entry points or individual skills) to install, and where: the current project's `.agents/skills` (this workspace only — the default, so the skills cost context only where they apply) or your personal skills directories (every workspace).",
+      "cmsis-developer-assistant.listTargetDocs": "Write the current csolution target's documentation list (pack manuals, Arm documents, imported and workspace PDFs) to the output channel.",
+      "cmsis-developer-assistant.indexTargetDocs": "Extract and index every PDF of the current target now, with progress, so the first search is instant.",
+      "cmsis-developer-assistant.importUserDoc": "Copy PDFs the packs do not ship (NDA manuals, portal downloads) into the user documents folder, attributed to the current pack, device, board or core, and index them.",
+      "cmsis-developer-assistant.openUserDocsFolder": "Reveal the user documents folder in the file manager.",
+      "cmsis-developer-assistant.openPackDocsPanel": "Open the Pack Docs panel: the resolved target, its documents and their index state, the SVD peripherals, the page store (with confirmed actions to clear the extracted text or delete the downloaded PDFs), and a runner for the documentation tools."
     },
     "toolGroups": [
       {
@@ -38,7 +51,7 @@
       },
       {
         "name": "Cortex-M",
-        "summary": "`read_memory`, `read_core_registers`, `read_peripheral_register` (SVD), `get_fault_info` (CFSR/HFSR decode), `read_cycle_counter`, `get_device_info`."
+        "summary": "`read_memory`, `read_core_registers`, `read_peripheral_register` (SVD), `lookup_peripheral` / `lookup_register` (SVD map and bit fields, no session needed), `get_fault_info` (CFSR/HFSR decode), `diagnose_fault` (one-call triage: frame, stack, address, hypotheses), `read_cycle_counter`, `get_device_info`."
       },
       {
         "name": "Serial ports",
@@ -47,12 +60,22 @@
       {
         "name": "Session health and windows",
         "summary": "`get_session_status`, `check_target_connection`, `get_debug_instructions`; with several VS Code windows `list_debug_windows` and `select_debug_window`."
+      },
+      {
+        "name": "Documentation (experimental, off by default — cmsis-developer-assistant.packDocs.enabled)",
+        "summary": "`list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` — page-cited answers from the reference manuals, datasheets, errata and board manuals the target's packs ship or link, Arm documents, imported and workspace PDFs, and third-party part datasheets (sensors, ADCs) — start any part-number lookup here; fetch_doc indexes a PDF URL found on the web."
+      },
+      {
+        "name": "Build artefacts (experimental, off by default — cmsis-developer-assistant.buildInfo.enabled)",
+        "summary": "`list_build_artifacts`, `get_memory_usage`, `lookup_symbol`, `get_section_layout`, `get_build_diagnostics` — the ELF, linker map and build log of the current target, read deterministically."
       }
     ],
     "settings": {
-      "installedSkills": "The AI Skills Pack skills (entry points or individual skills) to copy into your personal skills directories; `cmsis-debug-live` and `cmsis-help` are always installed.",
+      "installedSkills": "The AI Skills Pack skills (entry points or individual skills) to install. As a User setting they go into your personal skills directories (every workspace), as a Workspace or Folder setting into that project's `.agents/skills` only; `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed personally.",
       "aiSkills.enabled": "Install the AI Skills Pack at all. Off: pack skills this extension installed are removed, the skills setup step and the install prompt are skipped; the selection is kept.",
-      "aiSkills.promptOnDetect": "Offer to install the pack — at most once a month — when an agent has the MCP server registered but no pack skill is selected."
+      "aiSkills.promptOnDetect": "Offer to install the pack — at most once a month — when an agent has the MCP server registered but no pack skill is selected.",
+      "packDocs.enabled": "Experimental. Offer the documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) to agents. Off by default; needs pdftotext (poppler); window reload.",
+      "buildInfo.enabled": "Experimental. Offer the build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, get_build_diagnostics) to agents. Off by default; window reload."
     }
   },
   "categories": [
@@ -66,7 +89,8 @@
       "workflow": [
         "`$check-cmsis-environment` (or `$check-zephyr-environment`) to confirm the toolchain before anything is created or built.",
         "`$identify-cmsis-board-support` (or `$identify-zephyr-board`) to resolve the hardware to exactly one verified identity and its BSP/DFP.",
-        "`$add-cmsis-target` to extend the solution, then `$identify-cmsis-board-layer` for a packaged board layer — or `$start-zephyr-project` for a new west-integrated solution."
+        "`$add-cmsis-target` to extend the solution, then `$identify-cmsis-board-layer` for a packaged board layer — or `$start-zephyr-project` for a new west-integrated solution.",
+        "`$add-board-layer` when no packaged layer fits: interview for the few open decisions, then author Board.clayer.yml with its startup, stdio and memory files — or integrate the DFP's configuration generator — and build to green."
       ]
     },
     {

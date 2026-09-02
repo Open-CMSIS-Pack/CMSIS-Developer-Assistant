@@ -27,6 +27,7 @@ prerequisites, steps and guardrails.
 1. `$check-cmsis-environment` (or `$check-zephyr-environment`) to confirm the toolchain before anything is created or built.
 2. `$identify-cmsis-board-support` (or `$identify-zephyr-board`) to resolve the hardware to exactly one verified identity and its BSP/DFP.
 3. `$add-cmsis-target` to extend the solution, then `$identify-cmsis-board-layer` for a packaged board layer — or `$start-zephyr-project` for a new west-integrated solution.
+4. `$add-board-layer` when no packaged layer fits: interview for the few open decisions, then author Board.clayer.yml with its startup, stdio and memory files — or integrate the DFP's configuration generator — and build to green.
 
 ## How to hand over
 

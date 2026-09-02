@@ -85,7 +85,13 @@ function buildTests(cfg: BoardConfig): TestCase[] {
 
     return [
         // ── Phase 1: no-session probes ─────────────────────────────────
-        { name: 'get_debug_instructions',  tool: 'get_debug_instructions', estimatedMs: 500 },
+        { name: 'get_debug_instructions',  tool: 'get_debug_instructions', estimatedMs: 500,
+          validate: t => /## Topics/.test(t) || 'overview without the topic list' },
+        { name: 'get_debug_instructions (faults)', tool: 'get_debug_instructions', args: { topic: 'faults' }, estimatedMs: 500,
+          validate: t => /CFSR/.test(t) || 'faults topic without CFSR' },
+        { name: 'lookup_peripheral (no session)', tool: 'lookup_peripheral', estimatedMs: 2000 },
+        { name: 'lookup_register (no session)', tool: 'lookup_register', estimatedMs: 2000,
+          args: { peripheral: cfg.peripheralProbe.peripheral, register: cfg.peripheralProbe.register ?? '' } },
         { name: 'get_session_status (idle)', tool: 'get_session_status',   estimatedMs: 500 },
         { name: 'check_target_connection (idle)', tool: 'check_target_connection', estimatedMs: 1000 },
 
@@ -139,6 +145,8 @@ function buildTests(cfg: BoardConfig): TestCase[] {
             args: () => ({ peripheral: cfg.peripheralProbe.peripheral, ...(cfg.peripheralProbe.register ? { register: cfg.peripheralProbe.register } : {}) }),
             estimatedMs: 15_000, softHintAfterMs: 8000 },
         { name: 'get_fault_info', tool: 'get_fault_info', estimatedMs: 10_000 },
+        { name: 'diagnose_fault', tool: 'diagnose_fault', estimatedMs: 20_000,
+          validate: t => /=== (Fault diagnosis|No fault flags set) ===/.test(t) || 'no diagnosis header' },
 
         // ── Phase 4: breakpoints & motion ─────────────────────────────
         { name: 'list_breakpoints (initial)', tool: 'list_breakpoints', estimatedMs: 500 },
@@ -318,9 +326,21 @@ async function main() {
     console.log(` ${pass} pass · ${fail} fail · ${skip} skip · ${results.length} total`);
     console.log('=================================================');
 
+    // Tool-call statistics from the server — bytes and time per tool for this
+    // run — when the server is new enough to expose them.
+    const toolStats = await client.readResource({ uri: 'cmsis-developer-assistant://stats' })
+        .then(r => {
+            const text = (r.contents[0] as { text?: unknown } | undefined)?.text;
+            return typeof text === 'string' ? JSON.parse(text) as { session?: { calls: number; bytesOut: number } } : undefined;
+        })
+        .catch(() => undefined);
+    if (toolStats?.session) {
+        console.log(`# tool stats: ${toolStats.session.calls} calls · ${toolStats.session.bytesOut} bytes returned`);
+    }
+
     // JSON report next to the driver
     const reportPath = path.join(__dirname, `realboard.report.${Date.now()}.json`);
-    fs.writeFileSync(reportPath, JSON.stringify({ endpoint: cfg.endpoint, results }, null, 2));
+    fs.writeFileSync(reportPath, JSON.stringify({ endpoint: cfg.endpoint, toolStats, results }, null, 2));
     console.log(`# report: ${reportPath}`);
 
     await client.close().catch(() => { /* ignore */ });

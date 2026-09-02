@@ -31,7 +31,8 @@ AI Agent (Cline/Copilot/Cursor) → MCP/HTTP → DebugMCPServer → DebuggingHan
 | `DebugState` | Debug session state model | [docs/architecture/debugState.md](docs/architecture/debugState.md) |
 | `DebugConfigurationManager` | Launch configs, language detection | [docs/architecture/debugConfigurationManager.md](docs/architecture/debugConfigurationManager.md) |
 | `AgentConfigurationManager` | AI agent auto-configuration and agent-skill installation | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
-| `skills/` | Bundled Agent Skills: `cmsis-debug-live`, the generated `cmsis-help`, the vendored Open-CMSIS-Pack/cmsis-skills skills, per-category routers, `catalog.json` | [skills/README.md](skills/README.md) |
+| `PackDocsHandler` / `BuildInfoHandler` | Documentation tools (pack PDFs, Arm documents, user/workspace docs, core SVDs — `src/core/packDocs`) and build-artefact tools (ELF, map, log — `src/core/buildInfo`); off by default, routed like every other op | [docs/architecture/packDocs.md](docs/architecture/packDocs.md) |
+| `skills/` | Bundled Agent Skills: `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs`, the generated `cmsis-help`, the vendored Open-CMSIS-Pack/cmsis-skills skills, per-category routers, `catalog.json` | [skills/README.md](skills/README.md) |
 
 ## Documentation Maintenance
 
@@ -91,7 +92,9 @@ Include in each source file:
 |---------|---------|-------------|
 | `cmsis-developer-assistant.serverPort` | 3001 | MCP server port |
 | `cmsis-developer-assistant.timeoutInSeconds` | 180 | Operation timeout |
-| `cmsis-developer-assistant.installedSkills` | `[]` | AI Skills Pack skills from `skills/catalog.json` to copy into the user's skills directories; the bundled `cmsis-debug-live` and `cmsis-help` are always installed (application scope) |
+| `cmsis-developer-assistant.installedSkills` | `[]` | AI Skills Pack skills from `skills/catalog.json` to install. The User value is copied into the user's skills directories, a Workspace / Folder value into that project's `.agents/skills` (pack skills only) — the setting's target is the "this user or this workspace" choice; the bundled `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed personally (resource scope) |
+| `cmsis-developer-assistant.packDocs.enabled` | `false` | Register the five documentation tools (needs `pdftotext`); `packDocs.*` tune extractor, size limit, unlisted PDFs, workspace and user document folders |
+| `cmsis-developer-assistant.buildInfo.enabled` | `false` | Register the five build-artefact tools; `buildInfo.maxSymbols`, `buildInfo.logGlobs` |
 | `cmsis-developer-assistant.aiSkills.enabled` | `true` | Install the AI Skills Pack at all; off removes the pack skills this extension installed and skips the skills setup step and the prompt (application scope) |
 | `cmsis-developer-assistant.aiSkills.promptOnDetect` | `true` | Monthly prompt to install the pack when an agent has the server registered but no pack skill is selected (application scope) |
 

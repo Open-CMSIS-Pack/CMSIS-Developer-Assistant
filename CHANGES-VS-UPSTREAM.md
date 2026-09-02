@@ -6,7 +6,7 @@ Originally derived from [microsoft/DebugMCP](https://github.com/microsoft/DebugM
 
 Upstream baseline: forked at [`4422d8c`](https://github.com/microsoft/DebugMCP/commit/4422d8c) (2026-03-14), last synced against [`4051049`](https://github.com/microsoft/DebugMCP/commit/4051049) (upstream v2.3.0, 2026-08-05) in fork v2.0.0; individual changes cherry-picked through [`148cbb9a`](https://github.com/microsoft/DebugMCP/commit/148cbb9a) (upstream v2.3.1, 2026-08-20). See [§9](#9-upstream-work-deliberately-not-taken) for what was deliberately left behind.
 
-Current release: **v2.3.3** — see [CHANGELOG.md](CHANGELOG.md) for the per-version detail.
+Current release: **v2.3.9** — see [CHANGELOG.md](CHANGELOG.md) for the per-version detail.
 
 ---
 
@@ -102,8 +102,13 @@ All paths are relative to the extension root (`DebugMCP/`).
 
 **CMSIS Solution panel control:**
 
-- `cmsis_action(action, timeoutMs?)` — `build` / `load` / `erase` / `load_and_run` / `load_and_debug` / `attach` / `detach` / `stop_run`. ⭐ Preferred entry point for embedded.
+- `cmsis_action(action, target?, timeoutMs?)` — `build` / `load` / `erase` / `load_and_run` / `load_and_debug` / `attach` / `detach` / `stop_run`; `target` (`type` or `type@set`) switches and verifies the active target first, results name the target they ran on. ⭐ Preferred entry point for embedded.
 - `flash(cbuildRunFile?, timeoutMs?)` — `pyocd load --cbuild-run` as a synchronous operation: bytes programmed + structured flash error; refuses under an active session.
+
+**Documentation and build artefacts (off by default, `packDocs.enabled` / `buildInfo.enabled`):**
+
+- `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` — page-cited search over the PDFs the target's DFP/BSP ship or link, Arm documents, imported and workspace PDFs, shipped Cortex-M core SVDs (`src/core/packDocs`, merged from the experimental CMSIS Pack Docs extension).
+- `list_build_artifacts`, `get_memory_usage`, `lookup_symbol`, `get_section_layout`, `get_build_diagnostics` — ELF, linker map and build log of the current target (`src/core/buildInfo`).
 
 **Session lifecycle & state:**
 
@@ -120,6 +125,8 @@ All paths are relative to the extension root (`DebugMCP/`).
 - `read_cycle_counter(timeoutMs?)` — DWT CYCCNT with trace/counter enable, NOCYCCNT detection, wrap/halt/WFE caveats
 - `read_peripheral_register(peripheral, register?, timeoutMs?)` — SVD-backed, names like `GPIOA`/`ODR`
 - `get_fault_info(timeoutMs?)` — decoded CFSR/HFSR/DFSR/MMFAR/BFAR/AFSR
+- `diagnose_fault(levels?, timeoutMs?)` — one-call triage: registers, stacked frame, frames, resolved address, hypotheses
+- `lookup_peripheral(name?, address?, filter?, svdFile?, pname?)` / `lookup_register(peripheral, register, svdFile?, pname?)` — SVD queries, no session, no target access
 - `get_device_info()` — probe, device, GDB server, port, CMSIS config
 - `get_call_stack(threadId?, levels?, timeoutMs?)` — full frames with `frameId`
 - `get_threads(timeoutMs?)` — DAP threads, RTOS tasks with pyOCD/J-Link RTOS plugins

@@ -207,20 +207,25 @@ export class PdfjsExtractor implements PdfExtractor {
         clearTimeout(this.idleTimer);
         worker.ref();
         return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
+            const timedOut = () => {
                 if (!this.pending.delete(id)) { return; }
                 reject(new Error(timeoutMessage));
                 // Terminating the thread is what stops pdf.js; anything else it
                 // owed fails with it and the next request starts a fresh one.
                 this.drop(worker, new Error(`pdf.js worker terminated: ${timeoutMessage}`));
                 void worker.terminate();
-            }, Math.max(0, timeoutMs));
+            };
+            // A zero timer still races the worker's reply (a warm thread answers
+            // within one Windows scheduler tick), so a non-positive timeout is
+            // decided here rather than on the event loop.
+            const timer = timeoutMs > 0 ? setTimeout(timedOut, timeoutMs) : undefined;
             this.pending.set(id, {
                 resolve: (r) => { clearTimeout(timer); resolve(r); },
                 reject: (e) => { clearTimeout(timer); reject(e); },
             });
             const request: PdfWorkerRequest = { id, ...call };
             worker.postMessage(request);
+            if (!timer) { timedOut(); }
         });
     }
 

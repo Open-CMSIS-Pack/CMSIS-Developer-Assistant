@@ -367,7 +367,7 @@
     "semver": "^7.8.5",
     "tsx": "^4.22.4",
     "typescript": "^5.9.3",
-    "yargs": "^18.0.0"
+    "yargs": "^18.2.0"
   },
   "overrides": {
     "minimatch": "^10.2.1",

@@ -29,7 +29,10 @@ const compiledSuites = 'out/src/test/**/*.test.js';
  * macOS: a short, fixed profile directory; the default one under the
  * repository can make the IPC socket path too long.
  */
-const profileArgs = process.platform === 'darwin' ? ['--user-data-dir=/tmp/cmsis-vscode-test'] : [];
+const profileArgs = [
+    ...(process.platform === 'darwin' ? ['--user-data-dir=/tmp/cmsis-vscode-test'] : []),
+    ...(process.platform === 'linux' ? ['--disable-gpu'] : []),
+];
 
 /** The end-to-end suites build pack and build fixtures in `suiteSetup`, beyond mocha's 2 s default on Windows runners. */
 const perTestLimitMs = 20_000;

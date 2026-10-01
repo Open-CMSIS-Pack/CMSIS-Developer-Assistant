@@ -4,7 +4,7 @@ Generated for release: 2.5.9
 
 | *Package* | *Version* | *Repository* | *License* |
 | --- | --- | --- | --- |
-| @modelcontextprotocol/sdk | 1.30.1 | https://github.com/modelcontextprotocol/typescript-sdk | [MIT](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/LICENSE) |
+| @modelcontextprotocol/sdk | 1.31.0 | https://github.com/modelcontextprotocol/typescript-sdk | [MIT](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/LICENSE) |
 | express | 5.2.1 | https://github.com/expressjs/express | [MIT](https://github.com/expressjs/express/blob/master/LICENSE) |
 | jsonc-parser | 3.3.1 | https://github.com/microsoft/node-jsonc-parser | [MIT](https://github.com/microsoft/node-jsonc-parser/blob/main/LICENSE.md) |
 | serialport | 13.0.0 | https://github.com/serialport/node-serialport | [MIT](https://github.com/serialport/node-serialport/blob/master/LICENSE) |

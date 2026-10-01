@@ -342,7 +342,7 @@
     "diagram": "npx -y @mermaid-js/mermaid-cli@11 -p scripts/puppeteer.json -i assets/architecture.mmd -o assets/architecture.png -b white -s 2"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.1",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@types/express": "^5.0.6",
     "express": "^5.2.1",
     "jsonc-parser": "^3.3.1",
@@ -372,10 +372,11 @@
   "overrides": {
     "minimatch": "^10.2.1",
     "diff": "^8.0.3",
-    "express-rate-limit": "^8.3.0",
-    "fast-uri": "^3.1.7",
+    "express-rate-limit": "^8.7.0",
+    "fast-uri": "^3.1.8",
     "serialize-javascript": "^7.0.4",
-    "hono": "^4.12.25",
+    "hono": "^4.13.7",
+    "ip-address": "^10.7.1",
     "path-to-regexp": "^8.4.0",
     "body-parser": "^2.3.0",
     "markdownlint-cli": {

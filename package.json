@@ -342,7 +342,7 @@
     "diagram": "npx -y @mermaid-js/mermaid-cli@11 -p scripts/puppeteer.json -i assets/architecture.mmd -o assets/architecture.png -b white -s 2"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/sdk": "^1.30.1",
     "@types/express": "^5.0.6",
     "express": "^5.2.1",
     "jsonc-parser": "^3.3.1",

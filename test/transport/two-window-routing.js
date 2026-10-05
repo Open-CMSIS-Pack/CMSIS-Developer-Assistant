@@ -222,8 +222,11 @@ async function main() {
     const routedList = await post(PORT, { 'mcp-session-id': sid }, { jsonrpc: '2.0', id: 90, method: 'tools/list', params: {} });
     const routedTools = parseSse(routedList.body)?.result?.tools ?? [];
     const routedBytes = Buffer.byteLength(JSON.stringify(routedTools));
-    check(`the routed tools/list stays under the ${ROUTED_TOOLS_LIST_BUDGET_BYTES} byte budget`,
-        routedTools.length > 30 && routedBytes <= ROUTED_TOOLS_LIST_BUDGET_BYTES, `${routedTools.length} tools, ${routedBytes} bytes`);
+    const existingRoutedBytes = Buffer.byteLength(JSON.stringify(routedTools.filter(t => t.name !== 'discover_board_or_device')));
+    check('existing routed tools retain their original byte budget', existingRoutedBytes <= ROUTED_TOOLS_LIST_BUDGET_BYTES);
+    check(`the routed tools/list stays within its original budget plus 1400 bytes for discovery`,
+        routedTools.length > 30 && routedBytes <= ROUTED_TOOLS_LIST_BUDGET_BYTES + 1_400
+            && routedBytes - existingRoutedBytes <= 1_400, `${routedTools.length} tools, ${routedBytes} bytes`);
     const withWindow = routedTools.filter((t) => t.inputSchema?.properties?.window !== undefined).map((t) => t.name).sort();
     const listed = [...WINDOW_ARGUMENT_TOOLS].filter((name) => routedTools.some((t) => t.name === name)).sort();
     check('the routed tools/list offers window on exactly the listed tools',

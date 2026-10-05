@@ -52,6 +52,8 @@
  */
 
 import * as vscode from 'vscode';
+import type { DiscoveryRequest } from './core/deviceDiscovery';
+import { runDeviceDiscovery } from './deviceDiscoveryHost';
 import { DebugState, formatBreakpointModifiers, StackFrame } from './debugState';
 import type { BreakpointBinding, GdbLogpoint, IDebuggingExecutor } from './debuggingExecutor';
 import { PickerCancelled, type IDebugConfigurationManager } from './utils/debugConfigurationManager';
@@ -160,6 +162,7 @@ export interface IDebuggingHandler {
     handleLookupPeripheral(args?: PeripheralLookup): Answer;
     handleLookupRegister(args: RegisterLookup): Answer;
     handleGetDeviceInfo(): Answer;
+    handleDiscoverBoardOrDevice(args: DiscoveryRequest): Answer;
     handleCheckTargetConnection(): Answer;
     handleGetSessionStatus(): Answer;
     handleGetRecentProblems(args?: ProblemsRequest): Answer;
@@ -936,6 +939,11 @@ export class DebuggingHandler
             }
             throw wrapError('Error checking target connection', caught);
         }
+    }
+
+    /** Catalog discovery works without a workspace, a solution or a stopped target. */
+    handleDiscoverBoardOrDevice(args: DiscoveryRequest): Answer {
+        return runDeviceDiscovery(args);
     }
 
     async handleGetDeviceInfo(): Answer {

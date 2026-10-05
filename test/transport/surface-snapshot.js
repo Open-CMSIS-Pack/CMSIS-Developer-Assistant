@@ -16,10 +16,11 @@
 
 // Agent-visible surface snapshot.
 //
-// Records everything an MCP client can observe without hardware: the
-// initialize result, tools/list, resources, and the reply of every tool when
-// no debug session exists. Four server shapes are covered: default,
-// serial off, every tool group on, and routed (no window registered).
+// Compares the MCP interface across five server configurations: default,
+// serial off, every tool group on, routed with no registered window, and
+// routed to one simulated worker. Captures initialization, tools/list and
+// resources, plus tool replies without a debug session except in serial-off
+// mode. Host/network-dependent serial_list_ports and fetch_doc are skipped.
 //
 //   node test/transport/surface-snapshot.js            compare with the snapshot
 //   node test/transport/surface-snapshot.js --update   rewrite the snapshot
@@ -58,6 +59,7 @@ const SKIP_CALLS = new Set([
 
 // Arguments for tools whose required parameters need a meaningful value.
 const ARGS = {
+    discover_board_or_device: { kind: 'board', name: 'Example' },
     add_breakpoint: { fileFullPath: '/nonexistent/main.c', lineContent: 'int main(void)' },
     add_logpoint: { fileFullPath: '/nonexistent/main.c', lineContent: 'int main(void)', logMessage: 'hit' },
     remove_breakpoint: { fileFullPath: '/nonexistent/main.c', line: 1 },
@@ -111,8 +113,12 @@ function parseSse(text) {
 
 /** Replace host-, time- and run-dependent fragments so two runs compare equal. */
 function normalise(text, ctx) {
-    let t = String(text);
-    for (const [from, to] of ctx.paths) { t = t.split(from).join(to); }
+    let t = String(text).replace(/\r\n/g, '\n');
+    for (const [from, to] of ctx.paths) {
+        // structuredContent is normalized after JSON serialization: Windows
+        // paths there contain escaped backslashes, unlike the text content.
+        t = t.split(JSON.stringify(from).slice(1, -1)).join(to).split(from).join(to);
+    }
     return t
         .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, '<time>')
         .replace(/\b\d+(\.\d+)?\s?(ms|s)\b/g, '<n>$2')

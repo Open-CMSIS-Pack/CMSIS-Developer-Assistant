@@ -100,6 +100,9 @@ Do not guess the board from a vague name and do not pick a folder yourself.
 
 ## 5. Create the solution
 
+Use `discover_board_or_device` when available to resolve the board/device and BSP/DFP
+packs. Pass its report to the creation skill; settle any reported choice first.
+
 Hand over to `$start-cmsis-project` with the folder, the project name, the board or
 device, the compiler and the debug adapter. It resolves the board with
 `$identify-cmsis-board-support`, installs the packs, lets the user choose between an

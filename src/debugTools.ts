@@ -54,6 +54,7 @@ import { ToolText, textOf } from './core/toolResult';
 import { SERVER_VERSION } from './debuggingExecutor';
 import type { DebugMCPServerOptions, SessionHandlers } from './debugMCPServer';
 import { registerBuildInfoTools } from './buildInfoTools';
+import { registerDiscoveryTool } from './deviceDiscoveryTools';
 import { registerPackDocsTools } from './packDocsTools';
 import { logger } from './utils/logger';
 
@@ -681,6 +682,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
         },
         annotations: LOOK_ONLY,
     }, (args) => debug.handleLookupRegister(args).then(reply));
+    registerDiscoveryTool(mcp, args => debug.handleDiscoverBoardOrDevice(args));
     mcp.registerTool('get_device_info', { description: ABOUT.get_device_info, annotations: LOOK_ONLY },
         () => debug.handleGetDeviceInfo().then(reply));
     mcp.registerTool('check_target_connection', { description: ABOUT.check_target_connection, annotations: LOOK_ONLY },

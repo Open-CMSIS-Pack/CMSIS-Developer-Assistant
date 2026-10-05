@@ -503,6 +503,11 @@ by #56.
 
 ## Tests
 
+`handleDiscoverBoardOrDevice` delegates read-only catalog discovery to
+`deviceDiscoveryHost.ts`, without a debug-session state gate. The selected window
+provides its CMSIS Solution v2 API. See [board/device catalog discovery](deviceDiscovery.md)
+for identity decisions, coverage limits and deadlines.
+
 - `src/test/debuggingHandler.test.ts`: the handler against a scripted
   executor and host, CMSIS jobs over fake task events included; a picker
   nobody answers and a stop that never settles (#14)

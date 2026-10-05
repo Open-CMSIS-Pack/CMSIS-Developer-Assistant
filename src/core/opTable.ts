@@ -84,6 +84,7 @@ export const DEBUG_OPS = [
     'handleLookupPeripheral',
     'handleLookupRegister',
     'handleGetDeviceInfo',
+    'handleDiscoverBoardOrDevice',
     'handleCheckTargetConnection',
     'handleGetSessionStatus',
     'handleGetRecentProblems',

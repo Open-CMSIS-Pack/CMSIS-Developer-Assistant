@@ -148,6 +148,7 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 | `read_cycle_counter` | Reads the DWT cycle counter for cycle-accurate timing between two stops. Enables the counter on first use and reports cores without one. |
 | `flash` | Programs the Flash with `pyocd load --cbuild-run` outside a debug session and returns bytes programmed or the structured pyOCD error. Uses the pyOCD bundled with the Arm CMSIS Debugger; refused while a debug session or a CMSIS Run task holds the probe. |
 | `get_device_info` | Returns device, probe, processor, GDB server, ports, and the `*.cbuild-run.yml` of the session. |
+| `discover_board_or_device` | Finds exact board/device catalog identities and BSP/DFP packs through CMSIS Solution API v2, without a project or debug session. Returns bounded candidates and reports ambiguity. Catalog completeness is unknown: no match does not prove no support. Does not verify physical hardware. |
 
 ### Serial ports
 

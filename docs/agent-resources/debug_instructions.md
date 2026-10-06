@@ -142,6 +142,10 @@ The DFP/BSP ship or link the reference manual, datasheet, errata and board manua
 
 ### Cross-check with `get_device_info`
 
+For catalog board/device support before a project exists, use `discover_board_or_device`.
+It reports BSP/DFP packs and unresolved choices; catalog facts do not independently
+verify the attached hardware.
+
 After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_info` once to confirm the live session matches what the YAMLs said: program path, GDB server, port, `cbuildRunFile` reference, and the `CMSIS target:` line (the panel's target-type@set). A mismatch means the user picked a different `configurationName` or target than the one you analysed.
 
 ### Quick checklist

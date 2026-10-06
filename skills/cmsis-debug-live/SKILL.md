@@ -8,6 +8,7 @@ allowed-tools:
   - get_recent_problems
   - check_target_connection
   - get_device_info
+  - discover_board_or_device
   - cmsis_action
   - flash
   - list_target_docs

@@ -759,6 +759,129 @@
           }
         },
         {
+          "name": "discover_board_or_device",
+          "description": "Find CMSIS board/device IDs and BSP/DFP packs. Catalog evidence, not hardware verification. Completeness unknown; no match does not prove no support. Literal names. Unknown optional fields: omit or use null; never guess.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "board",
+                  "device"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "Literal name, optionally Vendor::Name"
+              },
+              "vendor": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "revision": {
+                "description": "Exact board revision",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "match": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "exact",
+                      "contains"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "device": {
+                "description": "Verified fitted device",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "processor": {
+                "description": "Selected processor name, not core type",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "limit": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 25
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "timeoutMs": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 60000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "name"
+            ]
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
           "name": "get_device_info",
           "description": "Return information about the connected debug target: session name, debug type, program path, GDB path, GDB server, port, and CMSIS config details.",
           "inputSchema": {
@@ -1377,8 +1500,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 47922,
-          "sha256": "75e7a33c5027a7fda19b8e64d9b279f0f4abd79a1c07ed41c4a21f1e4b5e3606"
+          "bytes": 48127,
+          "sha256": "01d3cf5c2387c8fc01f9850907dec9ef7ed30f1ddb565423475201ebfec6d698"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -1503,7 +1626,7 @@
         },
         "add_logpoint": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"line\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: Invalid input: expected number, received undefined at line"
         },
         "remove_breakpoint": {
           "text": "Nothing to remove — no breakpoint is set at /nonexistent/main.c:1."
@@ -1609,7 +1732,10 @@
         },
         "lookup_register": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"peripheral\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"register\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: Invalid input: expected string, received undefined at peripheral\nInvalid input: expected string, received undefined at register"
+        },
+        "discover_board_or_device": {
+          "text": "{\"status\":\"unavailable\",\"evidence\":\"catalog\",\"scope\":\"returned candidates only; no physical hardware verification\",\"reason\":\"CMSIS Solution API v2 or its catalog query is unavailable; no support conclusion can be drawn.\",\"candidates\":[],\"totalCandidates\":0,\"truncated\":false,\"packs\":[],\"issues\":[]}"
         },
         "get_device_info": {
           "isError": true,
@@ -1646,25 +1772,25 @@
         },
         "get_frame_variables": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"frameId\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: Invalid input: expected number, received undefined at frameId"
         },
         "serial_capture": {
           "isError": true,
           "structuredContent": {
             "status": "error",
             "error_code": "INTERNAL",
-            "message": "Error: No such file or directory, cannot open /nonexistent/tty.none"
+            "message": "Opening /nonexistent/tty.none: Unknown error code 3"
           },
-          "text": "[INTERNAL] Error: No such file or directory, cannot open /nonexistent/tty.none"
+          "text": "[INTERNAL] Opening /nonexistent/tty.none: Unknown error code 3"
         },
         "serial_open": {
           "isError": true,
           "structuredContent": {
             "status": "error",
             "error_code": "INTERNAL",
-            "message": "Error: No such file or directory, cannot open /nonexistent/tty.none"
+            "message": "Opening /nonexistent/tty.none: Unknown error code 3"
           },
-          "text": "[INTERNAL] Error: No such file or directory, cannot open /nonexistent/tty.none"
+          "text": "[INTERNAL] Opening /nonexistent/tty.none: Unknown error code 3"
         },
         "serial_close": {
           "text": "No owned serial port was open."
@@ -1717,7 +1843,7 @@
           "text": "[INVALID_ARGUMENT] cbuild-run file not found: /nonexistent/x.cbuild-run.yml.\nPass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
         },
         "get_session_status": {
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nWorkspace: no folder is open in this VS Code window. Open the project with cmsis_action {action:'open_solution', path:'<folder or *.csolution.yml>'}. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board.\nExtensions: CMSIS Solution (Arm.cmsis-csolution) and CMSIS Debugger (Arm.vscode-cmsis-debugger) not installed, so cmsis_action and gdbtarget sessions cannot work here. Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window.\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): 41 calls · <size> returned · <n>s in tools · 0 timeouts · 27 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · read_peripheral_register <size> over 1 call"
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nWorkspace: no folder is open in this VS Code window. Open the project with cmsis_action {action:'open_solution', path:'<folder or *.csolution.yml>'}. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board.\nExtensions: CMSIS Solution (Arm.cmsis-csolution) and CMSIS Debugger (Arm.vscode-cmsis-debugger) not installed, so cmsis_action and gdbtarget sessions cannot work here. Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window.\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): 42 calls · <size> returned · <n>s in tools · 0 timeouts · 27 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · read_peripheral_register <size> over 1 call"
         },
         "get_recent_problems": {
           "structuredContent": {
@@ -2490,6 +2616,129 @@
           }
         },
         {
+          "name": "discover_board_or_device",
+          "description": "Find CMSIS board/device IDs and BSP/DFP packs. Catalog evidence, not hardware verification. Completeness unknown; no match does not prove no support. Literal names. Unknown optional fields: omit or use null; never guess.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "board",
+                  "device"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "Literal name, optionally Vendor::Name"
+              },
+              "vendor": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "revision": {
+                "description": "Exact board revision",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "match": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "exact",
+                      "contains"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "device": {
+                "description": "Verified fitted device",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "processor": {
+                "description": "Selected processor name, not core type",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "limit": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 25
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "timeoutMs": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 60000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "name"
+            ]
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
           "name": "get_device_info",
           "description": "Return information about the connected debug target: session name, debug type, program path, GDB path, GDB server, port, and CMSIS config details.",
           "inputSchema": {
@@ -2811,8 +3060,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 47922,
-          "sha256": "75e7a33c5027a7fda19b8e64d9b279f0f4abd79a1c07ed41c4a21f1e4b5e3606"
+          "bytes": 48127,
+          "sha256": "01d3cf5c2387c8fc01f9850907dec9ef7ed30f1ddb565423475201ebfec6d698"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -3580,6 +3829,129 @@
             "required": [
               "peripheral",
               "register"
+            ]
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "discover_board_or_device",
+          "description": "Find CMSIS board/device IDs and BSP/DFP packs. Catalog evidence, not hardware verification. Completeness unknown; no match does not prove no support. Literal names. Unknown optional fields: omit or use null; never guess.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "board",
+                  "device"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "Literal name, optionally Vendor::Name"
+              },
+              "vendor": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "revision": {
+                "description": "Exact board revision",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "match": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "exact",
+                      "contains"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "device": {
+                "description": "Verified fitted device",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "processor": {
+                "description": "Selected processor name, not core type",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "limit": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 25
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "timeoutMs": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 60000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "name"
             ]
           },
           "annotations": {
@@ -4688,8 +5060,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 47922,
-          "sha256": "75e7a33c5027a7fda19b8e64d9b279f0f4abd79a1c07ed41c4a21f1e4b5e3606"
+          "bytes": 48127,
+          "sha256": "01d3cf5c2387c8fc01f9850907dec9ef7ed30f1ddb565423475201ebfec6d698"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -4814,7 +5186,7 @@
         },
         "add_logpoint": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"line\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: Invalid input: expected number, received undefined at line"
         },
         "remove_breakpoint": {
           "text": "Nothing to remove — no breakpoint is set at /nonexistent/main.c:1."
@@ -4920,7 +5292,10 @@
         },
         "lookup_register": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"peripheral\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"register\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: Invalid input: expected string, received undefined at peripheral\nInvalid input: expected string, received undefined at register"
+        },
+        "discover_board_or_device": {
+          "text": "{\"status\":\"unavailable\",\"evidence\":\"catalog\",\"scope\":\"returned candidates only; no physical hardware verification\",\"reason\":\"CMSIS Solution API v2 or its catalog query is unavailable; no support conclusion can be drawn.\",\"candidates\":[],\"totalCandidates\":0,\"truncated\":false,\"packs\":[],\"issues\":[]}"
         },
         "get_device_info": {
           "isError": true,
@@ -4957,25 +5332,25 @@
         },
         "get_frame_variables": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"frameId\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: Invalid input: expected number, received undefined at frameId"
         },
         "serial_capture": {
           "isError": true,
           "structuredContent": {
             "status": "error",
             "error_code": "INTERNAL",
-            "message": "Error: No such file or directory, cannot open /nonexistent/tty.none"
+            "message": "Opening /nonexistent/tty.none: Unknown error code 3"
           },
-          "text": "[INTERNAL] Error: No such file or directory, cannot open /nonexistent/tty.none"
+          "text": "[INTERNAL] Opening /nonexistent/tty.none: Unknown error code 3"
         },
         "serial_open": {
           "isError": true,
           "structuredContent": {
             "status": "error",
             "error_code": "INTERNAL",
-            "message": "Error: No such file or directory, cannot open /nonexistent/tty.none"
+            "message": "Opening /nonexistent/tty.none: Unknown error code 3"
           },
-          "text": "[INTERNAL] Error: No such file or directory, cannot open /nonexistent/tty.none"
+          "text": "[INTERNAL] Opening /nonexistent/tty.none: Unknown error code 3"
         },
         "serial_close": {
           "text": "No owned serial port was open."
@@ -5012,15 +5387,15 @@
         },
         "search_target_docs": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool search_target_docs: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"query\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool search_target_docs: Invalid input: expected string, received undefined at query"
         },
         "get_peripheral_docs": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_peripheral_docs: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"peripheral\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_peripheral_docs: Invalid input: expected string, received undefined at peripheral"
         },
         "read_doc_pages": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool read_doc_pages: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"doc\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"pages\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool read_doc_pages: Invalid input: expected string, received undefined at doc\nInvalid input: expected string, received undefined at pages"
         },
         "list_build_artifacts": {
           "text": "No *.cbuild-run.yml found in the workspace — no build output yet. Build first: cmsis_action build (the Build button of the CMSIS Solution view) builds the active solution; the build writes out/<solution>+<target>.cbuild-run.yml and the images."
@@ -5058,7 +5433,7 @@
           "text": "[INVALID_ARGUMENT] cbuild-run file not found: /nonexistent/x.cbuild-run.yml.\nPass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
         },
         "get_session_status": {
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nWorkspace: no folder is open in this VS Code window. Open the project with cmsis_action {action:'open_solution', path:'<folder or *.csolution.yml>'}. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board.\nExtensions: CMSIS Solution (Arm.cmsis-csolution) and CMSIS Debugger (Arm.vscode-cmsis-debugger) not installed, so cmsis_action and gdbtarget sessions cannot work here. Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window.\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): 47 calls · <size> returned · <n>s in tools · 0 timeouts · 27 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · read_peripheral_register <size> over 1 call"
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nWorkspace: no folder is open in this VS Code window. Open the project with cmsis_action {action:'open_solution', path:'<folder or *.csolution.yml>'}. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board.\nExtensions: CMSIS Solution (Arm.cmsis-csolution) and CMSIS Debugger (Arm.vscode-cmsis-debugger) not installed, so cmsis_action and gdbtarget sessions cannot work here. Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window.\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): 48 calls · <size> returned · <n>s in tools · 0 timeouts · 27 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · read_peripheral_register <size> over 1 call"
         },
         "get_recent_problems": {
           "structuredContent": {
@@ -5835,6 +6210,129 @@
           }
         },
         {
+          "name": "discover_board_or_device",
+          "description": "Find CMSIS board/device IDs and BSP/DFP packs. Catalog evidence, not hardware verification. Completeness unknown; no match does not prove no support. Literal names. Unknown optional fields: omit or use null; never guess.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "board",
+                  "device"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "Literal name, optionally Vendor::Name"
+              },
+              "vendor": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "revision": {
+                "description": "Exact board revision",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "match": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "exact",
+                      "contains"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "device": {
+                "description": "Verified fitted device",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "processor": {
+                "description": "Selected processor name, not core type",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "limit": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 25
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "timeoutMs": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 60000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "name"
+            ]
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
           "name": "get_device_info",
           "description": "Return information about the connected debug target: session name, debug type, program path, GDB path, GDB server, port, and CMSIS config details.",
           "inputSchema": {
@@ -6507,8 +7005,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 47922,
-          "sha256": "75e7a33c5027a7fda19b8e64d9b279f0f4abd79a1c07ed41c4a21f1e4b5e3606"
+          "bytes": 48127,
+          "sha256": "01d3cf5c2387c8fc01f9850907dec9ef7ed30f1ddb565423475201ebfec6d698"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -6643,7 +7141,7 @@
         },
         "add_logpoint": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"line\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: Invalid input: expected number, received undefined at line"
         },
         "remove_breakpoint": {
           "isError": true,
@@ -6777,7 +7275,17 @@
         },
         "lookup_register": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"peripheral\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"register\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: Invalid input: expected string, received undefined at peripheral\nInvalid input: expected string, received undefined at register"
+        },
+        "discover_board_or_device": {
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "get_device_info": {
           "isError": true,
@@ -6821,7 +7329,7 @@
         },
         "get_frame_variables": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"frameId\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: Invalid input: expected number, received undefined at frameId"
         },
         "serial_capture": {
           "isError": true,
@@ -7740,6 +8248,129 @@
           }
         },
         {
+          "name": "discover_board_or_device",
+          "description": "Find CMSIS board/device IDs and BSP/DFP packs. Catalog evidence, not hardware verification. Completeness unknown; no match does not prove no support. Literal names. Unknown optional fields: omit or use null; never guess.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "board",
+                  "device"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "Literal name, optionally Vendor::Name"
+              },
+              "vendor": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "revision": {
+                "description": "Exact board revision",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "match": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "exact",
+                      "contains"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "device": {
+                "description": "Verified fitted device",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "processor": {
+                "description": "Selected processor name, not core type",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "limit": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 25
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "timeoutMs": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 60000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "name"
+            ]
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
           "name": "get_device_info",
           "description": "Return information about the connected debug target: session name, debug type, program path, GDB path, GDB server, port, and CMSIS config details.",
           "inputSchema": {
@@ -8412,8 +9043,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 47922,
-          "sha256": "75e7a33c5027a7fda19b8e64d9b279f0f4abd79a1c07ed41c4a21f1e4b5e3606"
+          "bytes": 48127,
+          "sha256": "01d3cf5c2387c8fc01f9850907dec9ef7ed30f1ddb565423475201ebfec6d698"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -8540,7 +9171,7 @@
         },
         "add_logpoint": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"line\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: Invalid input: expected number, received undefined at line"
         },
         "remove_breakpoint": {
           "isError": true,
@@ -8653,7 +9284,10 @@
         },
         "lookup_register": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"peripheral\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"register\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: Invalid input: expected string, received undefined at peripheral\nInvalid input: expected string, received undefined at register"
+        },
+        "discover_board_or_device": {
+          "text": "{\"status\":\"unavailable\",\"evidence\":\"catalog\",\"scope\":\"returned candidates only; no physical hardware verification\",\"reason\":\"CMSIS Solution API v2 or its catalog query is unavailable; no support conclusion can be drawn.\",\"candidates\":[],\"totalCandidates\":0,\"truncated\":false,\"packs\":[],\"issues\":[]}"
         },
         "get_device_info": {
           "isError": true,
@@ -8690,25 +9324,25 @@
         },
         "get_frame_variables": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"frameId\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: Invalid input: expected number, received undefined at frameId"
         },
         "serial_capture": {
           "isError": true,
           "structuredContent": {
             "status": "error",
             "error_code": "INTERNAL",
-            "message": "Error: No such file or directory, cannot open /nonexistent/tty.none"
+            "message": "Opening /nonexistent/tty.none: Unknown error code 3"
           },
-          "text": "[INTERNAL] Error: No such file or directory, cannot open /nonexistent/tty.none"
+          "text": "[INTERNAL] Opening /nonexistent/tty.none: Unknown error code 3"
         },
         "serial_open": {
           "isError": true,
           "structuredContent": {
             "status": "error",
             "error_code": "INTERNAL",
-            "message": "Error: No such file or directory, cannot open /nonexistent/tty.none"
+            "message": "Opening /nonexistent/tty.none: Unknown error code 3"
           },
-          "text": "[INTERNAL] Error: No such file or directory, cannot open /nonexistent/tty.none"
+          "text": "[INTERNAL] Opening /nonexistent/tty.none: Unknown error code 3"
         },
         "serial_close": {
           "text": "No owned serial port was open."
@@ -8761,7 +9395,7 @@
           "text": "[INVALID_ARGUMENT] cbuild-run file not found: /nonexistent/x.cbuild-run.yml.\nPass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
         },
         "get_session_status": {
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nWorkspace: no folder is open in this VS Code window. Open the project with cmsis_action {action:'open_solution', path:'<folder or *.csolution.yml>'}. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board.\nExtensions: CMSIS Solution (Arm.cmsis-csolution) and CMSIS Debugger (Arm.vscode-cmsis-debugger) not installed, so cmsis_action and gdbtarget sessions cannot work here. Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window.\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): 41 calls · <size> returned · <n>s in tools · 0 timeouts · 28 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · read_peripheral_register <size> over 1 call"
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nWorkspace: no folder is open in this VS Code window. Open the project with cmsis_action {action:'open_solution', path:'<folder or *.csolution.yml>'}. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board.\nExtensions: CMSIS Solution (Arm.cmsis-csolution) and CMSIS Debugger (Arm.vscode-cmsis-debugger) not installed, so cmsis_action and gdbtarget sessions cannot work here. Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window.\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): 42 calls · <size> returned · <n>s in tools · 0 timeouts · 28 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · start_debugging <size> over 1 call"
         },
         "get_recent_problems": {
           "structuredContent": {

@@ -27,7 +27,7 @@ prerequisites, steps and guardrails.
 
 1. No folder open or no solution yet: `/cmsis-bootstrap` first; it creates or opens the project and comes back here.
 2. `$check-cmsis-environment` (or `$check-zephyr-environment`) to confirm the toolchain before anything is created or built.
-3. `$identify-cmsis-board-support` (or `$identify-zephyr-board`) to resolve the hardware to exactly one verified identity and its BSP/DFP.
+3. `discover_board_or_device` when available for CMSIS catalog identities and BSP/DFP packs; `$identify-cmsis-board-support` for unresolved details or fallback (`$identify-zephyr-board` for Zephyr).
 4. `$add-cmsis-target` to extend the solution, then `$identify-cmsis-board-layer` for a packaged board layer — or `$start-zephyr-project` for a new west-integrated solution.
 5. `$add-board-layer` when no packaged layer fits: interview for the few open decisions, then author Board.clayer.yml with its startup, stdio and memory files — or integrate the DFP's configuration generator — and build to green.
 6. `$cmsis-debugger-setup` once the solution builds: set the debug adapter of the target set, let the CMSIS Solution extension write launch.json, and verify Load & Debug on the target.

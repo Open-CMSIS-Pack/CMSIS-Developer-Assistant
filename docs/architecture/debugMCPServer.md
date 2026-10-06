@@ -11,6 +11,11 @@ The MCP endpoint of the extension lives in two files:
 
 ## Why it is built this way
 
+The read-only `discover_board_or_device` tool delegates to the selected window's public
+CMSIS Solution v2 API. Its schema has a separate 1,400-byte allowance; transport
+tests continue to hold the preceding tool surface to its original budgets.
+See [board/device catalog discovery](deviceDiscovery.md) for its bounds and uncertainty model.
+
 Agents outside VS Code (Claude Code, Codex, Cursor, Cline and others) and
 Copilot inside it all reach the extension through one Streamable HTTP URL,
 `http://localhost:<serverPort>/mcp`, port 3001 unless configured otherwise.
@@ -354,8 +359,15 @@ whole guide is served and a warning is logged.
   `DELETE` and by expiry, and a session with an open stream or a recent
   request spared by the sweep
 - `test/transport/surface-snapshot.js` (`npm run test:surface`): initialize
-  result, tool list, resources and every tool's reply without a session,
-  compared with `test/transport/surface.snapshot.json`
+  result, tool list, resources and tool replies without a debug session,
+  compared with `test/transport/surface.snapshot.json` across five server
+  configurations: default, serial disabled, all tool groups enabled,
+  routing with no registered window, and routing to one simulated worker.
+  Serial-disabled mode captures the interface without invoking tools;
+  host/network-dependent `serial_list_ports` and `fetch_doc` calls are
+  skipped throughout. Variable values such as paths, timestamps and ports
+  are normalized before comparison. This is an MCP interface regression
+  check, not a live-catalog benchmark or hardware validation.
 - `test/transport/two-window-routing.js`: the server as router for two
   windows, the routed `tools/list` with its budget and the `window` argument,
   and after failover the old session id answered with 404

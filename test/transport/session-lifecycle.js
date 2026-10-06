@@ -213,9 +213,15 @@ async function main() {
     // routed list, which is what agents see. A regression must be attributable
     // to one tool, hence the per-description cap.
     const TOOLS_LIST_BUDGET_BYTES = 32_000;
+    const DISCOVERY_BUDGET_BYTES = 1_400;
     const DESCRIPTION_CAP_CHARS = 700;
     const toolsBytes = Buffer.byteLength(JSON.stringify(tools));
-    check(`tools/list stays under the ${TOOLS_LIST_BUDGET_BYTES} byte budget`, toolsBytes <= TOOLS_LIST_BUDGET_BYTES, `${toolsBytes} bytes`);
+    const withoutDiscoveryBytes = Buffer.byteLength(JSON.stringify(tools.filter(t => t.name !== 'discover_board_or_device')));
+    check('existing tools stay within their original byte budget', withoutDiscoveryBytes <= TOOLS_LIST_BUDGET_BYTES, `${withoutDiscoveryBytes} bytes`);
+    check('discovery has a separate bounded schema allowance', toolsBytes - withoutDiscoveryBytes <= DISCOVERY_BUDGET_BYTES,
+        `${toolsBytes - withoutDiscoveryBytes} additional bytes per tools/list`);
+    check(`tools/list stays under the ${TOOLS_LIST_BUDGET_BYTES + DISCOVERY_BUDGET_BYTES} byte budget`,
+        toolsBytes <= TOOLS_LIST_BUDGET_BYTES + DISCOVERY_BUDGET_BYTES, `${toolsBytes} bytes`);
     // The tool contract (#50) rides in the instructions and the first
     // get_session_status, never in a tool description; the check after the
     // reminder below compares the list before and after it.
@@ -359,6 +365,54 @@ async function main() {
         badOpen.isError === true && badOpen.structuredContent?.error_code === 'INVALID_ARGUMENT',
         (badOpen.content?.[0]?.text ?? '').split('\n')[0]);
 
+    // Read-only discovery: no workspace/session, only the public v2 catalog.
+    const originalExtension = stub.extensions.getExtension;
+    const originalCommand = stub.commands.executeCommand;
+    let mutations = 0;
+    const { DISCOVERY_FIXTURES, fixtureCatalog } = require(path.join(OUT, 'test', 'deviceDiscoveryFixtures.js'));
+    const discoveryCatalog = fixtureCatalog(DISCOVERY_FIXTURES[0]);
+    stub.commands.executeCommand = async () => { mutations++; throw new Error('discovery must not execute commands'); };
+    stub.extensions.getExtension = id => id === 'Arm.cmsis-csolution' ? {
+        activate: async () => ({ getApi: version => {
+            if (version !== 2) { throw new Error('only v2 supported'); }
+            return { ...discoveryCatalog.api,
+                createNewSolution: () => { mutations++; }, build: () => { mutations++; },
+            };
+        } }),
+    } : undefined;
+    try {
+        const found = await callTool('discover_board_or_device', { kind: 'board', name: 'Eval' }, 1001);
+        const discovery = JSON.parse(found.content[0].text);
+        check('discover_board_or_device resolves both packs without a workspace, session or mutation',
+            discovery.status === 'resolved' && discovery.bsp === 'Acme::Boards@1.0.0'
+                && discovery.dfp === 'Acme::Devices@1.0.0' && mutations === 0, JSON.stringify(discovery.packs));
+        const constrained = await callTool('discover_board_or_device', {
+            kind: 'board', name: 'Eval', revision: '*',
+        }, 1004);
+        check('explicit discovery filters remain literal, not silently discarded',
+            JSON.parse(constrained.content[0].text).status === 'unresolved');
+        const nullable = await callTool('discover_board_or_device', {
+            kind: 'board', name: 'Eval', vendor: null, revision: null, match: null,
+            device: null, processor: null, limit: null, timeoutMs: null,
+        }, 1005);
+        check('null optional fields recover the minimal discovery result after a constrained call',
+            nullable.isError !== true && JSON.stringify(JSON.parse(nullable.content[0].text)) === JSON.stringify(discovery));
+        const minimalAgain = await callTool('discover_board_or_device', { kind: 'board', name: 'Eval' }, 1006);
+        check('omitted discovery fields retain no filters from earlier calls',
+            JSON.stringify(JSON.parse(minimalAgain.content[0].text)) === JSON.stringify(discovery));
+        stub.extensions.getExtension = () => ({ activate: async () => ({ getApi: () => ({}) }) });
+        const missingApi = await callTool('discover_board_or_device', { kind: 'device', name: 'Chip1' }, 1002);
+        check('discovery reports an unsupported v2 capability without a support conclusion',
+            JSON.parse(missingApi.content[0].text).status === 'unavailable');
+        stub.extensions.getExtension = () => undefined;
+        const missingExtension = await callTool('discover_board_or_device', { kind: 'board', name: 'Eval' }, 1003);
+        check('discovery reports a missing extension without a support conclusion',
+            JSON.parse(missingExtension.content[0].text).status === 'unavailable');
+    } finally {
+        stub.extensions.getExtension = originalExtension;
+        stub.commands.executeCommand = originalCommand;
+    }
+
     // 5. REGRESSION: three consecutive get_threads on one session must all return.
     for (let i = 1; i <= 3; i++) {
         const call = await Promise.race([
@@ -389,7 +443,7 @@ async function main() {
         jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
     });
     const statusText = parseSse(status.body)?.result?.content?.[0]?.text ?? '';
-    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 15 calls/m.test(statusText),
+    check('get_session_status carries the tool stats', statusText.includes(`Tool stats (this session): ${statsJson.session.calls} calls`),
         statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
     check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 7,
         `${server.getMetrics().totals().calls} calls`);
@@ -663,8 +717,10 @@ async function main() {
     // additions. A regression must be attributable to one tool, hence the cap.
     const TOOLS_LIST_ALL_BUDGET_BYTES = 44_000;
     const ftoolsBytes = Buffer.byteLength(JSON.stringify(ftools));
-    check(`tools/list with every group on stays under the ${TOOLS_LIST_ALL_BUDGET_BYTES} byte budget`,
-        ftoolsBytes <= TOOLS_LIST_ALL_BUDGET_BYTES, `${ftoolsBytes} bytes`);
+    check(`tools/list with every group on stays under the ${TOOLS_LIST_ALL_BUDGET_BYTES + DISCOVERY_BUDGET_BYTES} byte budget`,
+        ftoolsBytes <= TOOLS_LIST_ALL_BUDGET_BYTES + DISCOVERY_BUDGET_BYTES, `${ftoolsBytes} bytes`);
+    check('existing tools with every group on retain their original budget',
+        Buffer.byteLength(JSON.stringify(ftools.filter(t => t.name !== 'discover_board_or_device'))) <= TOOLS_LIST_ALL_BUDGET_BYTES);
     const flongest = ftools.map((t) => ({ name: t.name, len: (t.description ?? '').length })).sort((a, b) => b.len - a.len)[0];
     check(`no documentation or build-artefact description exceeds ${DESCRIPTION_CAP_CHARS} chars`,
         flongest.len <= DESCRIPTION_CAP_CHARS, `${flongest.name} ${flongest.len}`);

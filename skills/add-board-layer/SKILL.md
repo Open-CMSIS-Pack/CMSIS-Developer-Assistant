@@ -98,6 +98,10 @@ and Dname suffixes are lookups (§2/§3), never multiple-choice questions.
 
 ## 2. Resolve the board and device identity — from the pdsc, never by guess
 
+Use `discover_board_or_device` when available for the board/device and BSP/DFP packs.
+Resolve any reported choice first; use the PDSC/documentation route below when
+the tool is unavailable or details remain unresolved.
+
 Pack root: `$CMSIS_PACK_ROOT` (default `~/.cache/arm/packs` on Linux and macOS,
 `%LOCALAPPDATA%\Arm\Packs` on Windows). Missing packs need no command from
 you: the CMSIS Solution extension downloads them when it loads the solution

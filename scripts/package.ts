@@ -192,7 +192,7 @@ if (!getOptionValue(argv, '--readme-path', '--readme-path')) {
     fs.mkdirSync(path.dirname(packagedReadme), { recursive: true });
     fs.writeFileSync(packagedReadme, buildPackagedReadme());
     // vsce's rewriting (and its https-only image check) would undo the inlining.
-    argv.push('--readme-path', path.relative(repoRoot, packagedReadme), '--no-rewrite-relative-links');
+    argv.push('--readme-path', path.relative(repoRoot, packagedReadme).split(path.sep).join('/'), '--no-rewrite-relative-links');
 }
 
 // package the extension for the target platform

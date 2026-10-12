@@ -3,7 +3,7 @@
 
 # CMSIS Developer Assistant
 
-![CMSIS Developer Assistant workflow](docs/cmsis-developer-assistant.png)
+![CMSIS Developer Assistant workflow](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/raw/main/docs/cmsis-developer-assistant.png)
 
 The CMSIS Developer Assistant gives an AI agent controlled access to the CMSIS build
 system, debugger, target registers, project documentation, and connected
@@ -30,7 +30,8 @@ iterate.
 - **Apply reusable expert workflows.** Use AI Skills for project setup, board
   layers, debugging, documentation lookups, and CI automation.
 
-> [!TIP]
+> &#128204; **TIP**
+>
 > **Working with Zephyr:** use a csolution project to describe the selectable
 > Zephyr applications, build configurations, and target hardware. Zephyr and
 > `west` still configure and build the application, while CMSIS adds the project,
@@ -107,14 +108,13 @@ CMSIS Developer Assistant supports these embedded development activities:
 
 Example prompts:
 
-- > Create a Blinky project for my board, build it, program the target, and
-  > stop at `main`.
+- > Which peripherals are used by this application?
+- > Create a board layer that separates peripheral interfaces from
+  > application logic.
 - > Find out why the application enters the HardFault handler and propose a
   > fix.
 - > Check whether the GPIO output toggles at the required rate and iterate
   > until the test passes.
-- > Add a board layer with UART standard I/O, then build and test it on
-  > hardware.
 
 ## How you stay in control
 
@@ -122,7 +122,7 @@ You set the goal, approve the specification, and decide when the result is
 ready. The lifecycle below shows how the agent handles the implementation loop
 while you retain the key review and approval points.
 
-![AI Supported Development Lifecycle](docs/ai-development-lifecycle.png)
+![AI Supported Development Lifecycle](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/raw/main/docs/ai-development-lifecycle.png)
 
 Following that lifecycle, a typical workflow is:
 
@@ -221,7 +221,7 @@ scoped to the selected target, the system is lightweight, privacy-preserving,
 and well suited to precise queries about devices, registers, bit fields, and
 other embedded-software terminology.
 
-> [!IMPORTANT]
+> &#8505;&#65039; **IMPORTANT**
 >
 > Many CMSIS Device Family Packs (DFPs) and Board Support Packs (BSPs) reference
 > manuals for their devices or boards. In some cases, the CMSIS Developer
@@ -233,7 +233,7 @@ other embedded-software terminology.
 
 The documentation tools are part of every agent's tool list by default.
 
-> [!WARNING]
+> &#9888;&#65039; **WARNING**
 >
 > Disabling the
 > [`cmsis-developer-assistant.packDocs.enabled`](https://code.visualstudio.com/docs/configure/settings#_extension-settings)

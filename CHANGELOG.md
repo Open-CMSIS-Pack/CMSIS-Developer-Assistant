@@ -4,6 +4,16 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.20] - 2026-10-12
+
+The README as VS Code renders it.
+
+### Fixed
+- **The README's pictures and notes render in VS Code.** The two diagrams are linked by fixed URLs under `https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/raw/main/docs/`, so the extension page and the Markdown preview load them wherever the file is shown; the relative paths left a broken image outside GitHub. The three GitHub alert blocks (`[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`), which VS Code prints as literal text, are plain blockquotes with an emoji and a bold label again, as before 2.5.19.
+
+### Changed
+- **The README's example prompts** open with the two questions an agent answers from a loaded project, "Which peripherals are used by this application?" and a board layer that separates peripheral interfaces from application logic, in place of the Blinky and UART board-layer prompts.
+
 ## [2.5.19] - 2026-10-10
 
 The fixes of a review of 2.5.16 and of tester feedback; 2.5.16 was tagged, not published.

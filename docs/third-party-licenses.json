@@ -8,7 +8,7 @@
     },
     {
         "name": "express",
-        "version": "5.2.1",
+        "version": "5.3.0",
         "spdx": "MIT",
         "url": "https://github.com/expressjs/express",
         "license": "https://github.com/expressjs/express/blob/master/LICENSE"

@@ -127,6 +127,7 @@
         "`$identify-cmsis-board-support` (or `$identify-zephyr-board`) to resolve the hardware to exactly one verified identity and its BSP/DFP.",
         "`$add-cmsis-target` to extend the solution, then `$identify-cmsis-board-layer` for a packaged board layer — or `$start-zephyr-project` for a new west-integrated solution.",
         "`$add-board-layer` when no packaged layer fits: interview for the few open decisions, then author Board.clayer.yml with its startup, stdio and memory files — or integrate the DFP's configuration generator — and build to green.",
+        "`$configure-cmsis-gitignore` after creating a solution or changing disposable output paths during conversion, target integration or layer integration; skip read-only discovery. Pass the selected solution and verified configuration or available build metadata, preserve required inputs, and accept a no-op when existing rules suffice. Report ignore validation separately from project validation; if the skill is unavailable or a required check is blocked or fails, report the blocker without claiming complete success.",
         "`$cmsis-debugger-setup` once the solution builds: set the debug adapter of the target set, let the CMSIS Solution extension write launch.json, and verify Load & Debug on the target."
       ]
     }

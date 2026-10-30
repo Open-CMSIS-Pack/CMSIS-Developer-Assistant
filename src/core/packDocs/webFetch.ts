@@ -50,6 +50,10 @@ export interface ResolveContext {
     maxBytes: number;
     /** Tests and loopback fixtures only: skip the private-address block. */
     allowPrivateHosts?: boolean;
+    /** Ends every request and the download early, as the time limit does: a download job that is disposed. */
+    signal?: AbortSignal;
+    /** Told the bytes received so far, and the length the server announced, as a PDF arrives. */
+    onProgress?: (bytes: number, total: number | undefined) => void;
 }
 
 /** Redirect hops followed before giving up. */
@@ -176,7 +180,8 @@ function headers(ctx: ResolveContext, accept: string, extra: Record<string, stri
 }
 
 function signal(ctx: ResolveContext): AbortSignal {
-    return AbortSignal.timeout(Math.max(100, ctx.timeoutMs));
+    const timeout = AbortSignal.timeout(Math.max(100, ctx.timeoutMs));
+    return ctx.signal ? AbortSignal.any([timeout, ctx.signal]) : timeout;
 }
 
 function describeError(e: unknown): string {
@@ -271,47 +276,77 @@ export const armResolver: DocResolver = {
 
 // ------------------------------------------------------------- direct PDF
 
+/**
+ * The same URL with one `.pdf` where it ends in `.pdf.pdf`, or undefined. A
+ * pack can name its book so (Keil::STM32F4xx_DFP 3.1.1 lists
+ * `…/datasheet/stm32f427vg.pdf.pdf`), and the vendor answers 404.
+ */
+export function singlePdfExtension(url: string): string | undefined {
+    try {
+        const parsed = new URL(url);
+        if (!/\.pdf\.pdf$/i.test(parsed.pathname)) {
+            return undefined;
+        }
+        parsed.pathname = parsed.pathname.slice(0, -'.pdf'.length);
+        return parsed.toString();
+    } catch {
+        return undefined;
+    }
+}
+
 export const directPdfResolver: DocResolver = {
     name: 'direct',
     matches: (doc) => !!doc.url && /^https?:\/\//i.test(doc.url),
     async resolve(doc, ctx) {
         const url = doc.url!;
-        const filename = path.basename(new URL(url).pathname) || 'document.pdf';
-        const ok = (): ResolvedDoc => ({ kind: 'pdf', downloadUrl: url, filename, title: doc.title });
-        try {
-            refuseIfBlocked(url, ctx);
-        } catch (e) {
-            return { error: describeError(e) };
+        const first = await resolveDirect(url, doc, ctx);
+        const single = 'error' in first && / answered HTTP 404$/.test(first.error) ? singlePdfExtension(url) : undefined;
+        if (single === undefined) {
+            return first;
         }
-        const t0 = Date.now();
-        try {
-            const head = await fetchGuarded(url, { method: 'HEAD', headers: headers(ctx, 'application/pdf,*/*'), signal: signal(ctx) }, ctx);
-            const type = (head.headers.get('content-type') ?? '').toLowerCase();
-            const length = Number(head.headers.get('content-length') ?? 0);
-            ctx.log.debug(`HEAD ${url} → ${head.status} ${type} ${length} in ${Date.now() - t0} ms`);
-            if (head.ok && length > ctx.maxBytes) { return { error: `${url} is ${(length / 1024 / 1024).toFixed(0)} MB, above the maxPdfMb limit` }; }
-            if (head.ok && type.includes('application/pdf')) { return ok(); }
-            if (head.ok && type.includes('text/html')) { return { error: `${url} is a web page, not a PDF — open the link in a browser and download the PDF into the workspace docs folder` }; }
-        } catch (e) {
-            if (e instanceof BlockedHostError) { return { error: e.message }; }
-            ctx.log.debug(`HEAD ${url} failed: ${describeError(e)}`);
-        }
-        // No usable HEAD: peek at the first bytes.
-        try {
-            const res = await fetchGuarded(url, { headers: headers(ctx, 'application/pdf,*/*', { Range: 'bytes=0-1023' }), signal: signal(ctx) }, ctx);
-            if (!res.ok) { return { error: `${url} answered HTTP ${res.status}` }; }
-            const type = (res.headers.get('content-type') ?? '').toLowerCase();
-            const buf = Buffer.from(await res.arrayBuffer());
-            if (buf.subarray(0, 5).toString('latin1') === '%PDF-') { return ok(); }
-            if (type.includes('text/html') || buf.subarray(0, 512).toString('latin1').toLowerCase().includes('<html')) {
-                return { error: `${url} is a web page, not a PDF — open the link in a browser and download the PDF into the workspace docs folder` };
-            }
-            return { error: `${url} is not a PDF (${type || 'unknown content type'})` };
-        } catch (e) {
-            return { error: `${url}: ${describeError(e)}` };
-        }
+        ctx.log.debug(`${url} answered 404; trying ${single}`);
+        const second = await resolveDirect(single, doc, ctx);
+        return 'error' in second ? first : second;
     },
 };
+
+/** A direct PDF link: HEAD first, else the first bytes of a ranged GET, decide whether it is a PDF the size limit allows. */
+async function resolveDirect(url: string, doc: DocRef, ctx: ResolveContext): Promise<ResolveResult> {
+    const filename = path.basename(new URL(url).pathname) || 'document.pdf';
+    const ok = (): ResolvedDoc => ({ kind: 'pdf', downloadUrl: url, filename, title: doc.title });
+    try {
+        refuseIfBlocked(url, ctx);
+    } catch (e) {
+        return { error: describeError(e) };
+    }
+    const t0 = Date.now();
+    try {
+        const head = await fetchGuarded(url, { method: 'HEAD', headers: headers(ctx, 'application/pdf,*/*'), signal: signal(ctx) }, ctx);
+        const type = (head.headers.get('content-type') ?? '').toLowerCase();
+        const length = Number(head.headers.get('content-length') ?? 0);
+        ctx.log.debug(`HEAD ${url} → ${head.status} ${type} ${length} in ${Date.now() - t0} ms`);
+        if (head.ok && length > ctx.maxBytes) { return { error: `${url} is ${(length / 1024 / 1024).toFixed(0)} MB, above the maxPdfMb limit` }; }
+        if (head.ok && type.includes('application/pdf')) { return ok(); }
+        if (head.ok && type.includes('text/html')) { return { error: `${url} is a web page, not a PDF — open the link in a browser and download the PDF into the workspace docs folder` }; }
+    } catch (e) {
+        if (e instanceof BlockedHostError) { return { error: e.message }; }
+        ctx.log.debug(`HEAD ${url} failed: ${describeError(e)}`);
+    }
+    // No usable HEAD: peek at the first bytes.
+    try {
+        const res = await fetchGuarded(url, { headers: headers(ctx, 'application/pdf,*/*', { Range: 'bytes=0-1023' }), signal: signal(ctx) }, ctx);
+        if (!res.ok) { return { error: `${url} answered HTTP ${res.status}` }; }
+        const type = (res.headers.get('content-type') ?? '').toLowerCase();
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.subarray(0, 5).toString('latin1') === '%PDF-') { return ok(); }
+        if (type.includes('text/html') || buf.subarray(0, 512).toString('latin1').toLowerCase().includes('<html')) {
+            return { error: `${url} is a web page, not a PDF — open the link in a browser and download the PDF into the workspace docs folder` };
+        }
+        return { error: `${url} is not a PDF (${type || 'unknown content type'})` };
+    } catch (e) {
+        return { error: `${url}: ${describeError(e)}` };
+    }
+}
 
 export const resolvers: DocResolver[] = [armResolver, directPdfResolver];
 
@@ -324,6 +359,9 @@ export async function downloadPdf(url: string, dest: string, ctx: ResolveContext
     const t0 = Date.now();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Math.max(100, ctx.timeoutMs));
+    const stop = (): void => controller.abort();
+    ctx.signal?.addEventListener('abort', stop, { once: true });
+    if (ctx.signal?.aborted) { controller.abort(); }
     const part = `${dest}.part`;
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     const out = fs.createWriteStream(part);
@@ -341,6 +379,8 @@ export async function downloadPdf(url: string, dest: string, ctx: ResolveContext
         if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
         const length = Number(res.headers.get('content-length') ?? 0);
         if (length > ctx.maxBytes) { throw new Error(`${(length / 1024 / 1024).toFixed(0)} MB is above the maxPdfMb limit`); }
+        const total = length > 0 ? length : undefined;
+        ctx.onProgress?.(0, total);
         if (!res.body) { throw new Error('empty response'); }
         for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
             if (first) {
@@ -351,6 +391,7 @@ export async function downloadPdf(url: string, dest: string, ctx: ResolveContext
             }
             bytes += chunk.length;
             if (bytes > ctx.maxBytes) { throw new Error(`download exceeded the maxPdfMb limit`); }
+            ctx.onProgress?.(bytes, total);
             hash.update(chunk);
             if (!out.write(chunk)) { await Promise.race([new Promise<void>(resolve => out.once('drain', resolve)), failed]); }
         }
@@ -372,9 +413,11 @@ export async function downloadPdf(url: string, dest: string, ctx: ResolveContext
             out.destroy();
         });
         try { fs.unlinkSync(part); } catch { /* nothing to clean */ }
-        throw new Error(`download of ${url} failed: ${describeError(e)}`);
+        const received = bytes > 0 ? ` after ${(bytes / 1024 / 1024).toFixed(1)} MB` : '';
+        throw new Error(`download of ${url} failed: ${ctx.signal?.aborted ? 'stopped' : describeError(e)}${received}`);
     } finally {
         clearTimeout(timer);
+        ctx.signal?.removeEventListener('abort', stop);
     }
 }
 

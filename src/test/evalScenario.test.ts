@@ -18,9 +18,10 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-    DEFAULT_SHELL_DENY_LIST, aggregateEvents, bypassRate, diffTotals, findBypasses, judge, restoreMcpServer, shellCommandOf,
-    upsertMcpServer, validateScenario, ScenarioSpec,
+    DEFAULT_SHELL_DENY_LIST, aggregateEvents, aggregateKimiStream, bypassRate, diffTotals, findBypasses, judge, kimiMcpEntry, restoreMcpServer,
+    shellCommandOf, sumKimiUsage, upsertMcpServer, validateScenario, ScenarioSpec,
 } from '../core/evalScenario';
+import { KIMI_TOOL_TIMEOUT_MS } from '../utils/agentConfigurationManager';
 
 /**
  * The evaluation runner spends AI credits and needs a target, so only its
@@ -122,19 +123,20 @@ suite('Evaluation scenario logic', () => {
         assert.deepStrictEqual(findBypasses(spec, agg), [], 'a cbuild-run file name in a shell command is not the cbuild command');
     });
 
-    test('the default deny list: the board, the build and the packs through their CLIs, pip install and curl to the control server', () => {
+    test('the default deny list: the board (the FVP too), the build and the packs through their CLIs, pip install and curl to the control server', () => {
         const denied = new RegExp(DEFAULT_SHELL_DENY_LIST, 'i');
         for (const command of [
             'pyocd list', 'python3 -m pip install pyocd', 'pip3 install --user pyocd', 'arm-none-eabi-gdb -batch -ex "x/4x 0x20000000" out/app.elf',
             'gdb-multiarch app.elf', 'JLinkExe -device STM32F756ZG', 'JLinkGDBServerCLExe -if SWD', 'openocd -f board.cfg',
             'cbuild Blinky.csolution.yml --packs', 'cpackget add ARM::CMSIS', 'curl -s -H "x-token: t" http://127.0.0.1:52345/op',
-            'curl localhost:3001/mcp',
+            'curl localhost:3001/mcp', 'bash .vscode/fvp.sh -f fvp_config.txt -a out/app.elf', 'docker rm -f cmsis-fvp-3333',
+            'docker run --rm --init --name cmsis-fvp-manual cmsis-fvp:11.32.23', 'FVP_Corstone_SSE-300_Ethos-U55 -a out/app.elf',
         ]) {
             assert.ok(denied.test(command), command);
         }
         for (const command of [
             'ls out', 'cat out/app.cbuild-run.yml', 'ls out/*.cbuild-idx.yml', 'git status', 'arm-none-eabi-size out/app.elf',
-            'curl https://example.com/data.json | grep localhost',
+            'curl https://example.com/data.json | grep localhost', 'docker ps', 'docker images', 'cat fvp_config.txt',
         ]) {
             assert.ok(!denied.test(command), command);
         }
@@ -146,6 +148,7 @@ suite('Evaluation scenario logic', () => {
         assert.strictEqual(shellCommandOf(call('powershell', { command: 'Get-ChildItem' })), 'Get-ChildItem');
         assert.strictEqual(shellCommandOf(call('write_bash', { sessionId: '1', input: 'pyocd list\n' })), 'pyocd list\n');
         assert.strictEqual(shellCommandOf(call('bash', '{"command":"ls -la"}')), 'ls -la', 'hook-style JSON text');
+        assert.strictEqual(shellCommandOf(call('Bash', { command: 'pyocd list' })), 'pyocd list', 'Kimi Code');
         assert.strictEqual(shellCommandOf(call('cmsis-developer-assistant-flash', { cbuildRunFile: 'x' })), undefined);
         assert.strictEqual(shellCommandOf(call('skill', { skill: 'cmsis-debug-live' })), undefined);
     });
@@ -201,5 +204,45 @@ suite('Evaluation scenario logic', () => {
         const replaced = upsertMcpServer({ mcpServers: { 'cmsis-developer-assistant': old, x: {} } }, 'cmsis-developer-assistant', entry);
         assert.deepStrictEqual(replaced.previous, old);
         assert.deepStrictEqual(restoreMcpServer(replaced.config, 'cmsis-developer-assistant', replaced.previous), { mcpServers: { 'cmsis-developer-assistant': old, x: {} } });
+    });
+
+    // --- Kimi Code ---------------------------------------------------------------------------------
+
+    const kimiSample = fs.readFileSync(path.join(repoRoot, 'src', 'test', 'fixtures', 'kimi-stream.sample.jsonl'), 'utf8')
+        .split('\n').filter(Boolean).map(l => JSON.parse(l));
+
+    test('a Kimi stream-json run: tool calls with their results, a turn per assistant message, the final answer and the session id', () => {
+        const agg = aggregateKimiStream(kimiSample);
+        assert.deepStrictEqual(agg.toolCalls.map(c => c.name),
+            ['Skill', 'mcp__cmsis-developer-assistant__get_session_status', 'mcp__cmsis-developer-assistant__diagnose_fault']);
+        assert.deepStrictEqual(agg.toolCalls[2].args, { levels: 3 });
+        assert.strictEqual(agg.toolCalls[2].argBytes, Buffer.byteLength('{"levels":3}'));
+        assert.strictEqual(agg.toolCalls[1].resultBytes, Buffer.byteLength('State: stopped\nSession: Arm-FVP@GDB (launch)\n'));
+        assert.strictEqual(agg.turns, 3);
+        assert.match(agg.finalAnswer, /^Root cause: DIVBYZERO/);
+        assert.strictEqual(agg.sessionId, 'session_0001');
+        assert.deepStrictEqual(agg.unknownEventTypes, ['system:?']);
+        assert.deepStrictEqual(judge(spec, agg, 60_000), { passed: true, reasons: [], infraError: false });
+        assert.deepStrictEqual(judge({ ...spec, expectedTools: ['diagnose_fault'] }, agg, 60_000).passed, true);
+    });
+
+    test('a Kimi Bash call to pyocd is a bypass, its arguments read from the JSON text', () => {
+        const agg = aggregateKimiStream([
+            { role: 'assistant', tool_calls: [{ id: 't1', function: { name: 'Bash', arguments: '{"command":"pyocd list","timeout":60}' } }] },
+            { role: 'assistant', content: 'Root cause: DIVBYZERO.' },
+        ]);
+        assert.deepStrictEqual(findBypasses(spec, agg), [{ tool: 'Bash', command: 'pyocd list', rule: 'default' }]);
+    });
+
+    test('Kimi token usage is the sum of the turn records of the session log', () => {
+        const usage = (inputOther: number, output: number, usageScope?: string) =>
+            ({ type: 'usage.record', model: 'kimi-code/k3', usage: { inputOther, output, inputCacheRead: 100 }, ...(usageScope ? { usageScope } : {}) });
+        assert.deepStrictEqual(sumKimiUsage([usage(10, 2, 'turn'), { type: 'turn.prompt' }, usage(5, 1), usage(1000, 1000, 'session')]),
+            { inputOther: 15, output: 3, inputCacheRead: 200 });
+        assert.strictEqual(sumKimiUsage([{ type: 'turn.prompt' }]), undefined);
+    });
+
+    test('the Kimi run gets the entry Configure Agent writes', () => {
+        assert.deepStrictEqual(kimiMcpEntry('http://localhost:3001/mcp'), { url: 'http://localhost:3001/mcp', toolTimeoutMs: KIMI_TOOL_TIMEOUT_MS });
     });
 });

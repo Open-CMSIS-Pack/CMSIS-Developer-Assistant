@@ -13,6 +13,8 @@
         "skipLibCheck": true,
         "sourceMap": true,
         "rootDir": ".",
+        // src/debuggingExecutor.ts reads the version from package.json.
+        "resolveJsonModule": true,
         "strict": true
     },
     "include": [

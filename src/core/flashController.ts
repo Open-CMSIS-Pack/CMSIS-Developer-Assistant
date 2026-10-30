@@ -24,6 +24,16 @@
  * `.cmsis/tools-environment.yml` names, else PATH. The CMSIS Debugger adds
  * its folder to PATH only for terminals and tasks, not for this process.
  *
+ * Which probe: the one CMSIS Solution's CMSIS Load task selects, `--probe`
+ * by the target's debug adapter and `--uid` by the probe ID the solution
+ * configures (`pyocdProbeType`, `pyocdLoadArgs`); pyOCD picks none itself.
+ *
+ * Whether it worked: pyOCD's exit status within the deadline, never the
+ * words of its log. The output explains the result (`parsePyocdLoadOutput`):
+ * a failure by its error lines and the probes pyOCD listed when several
+ * matched, a success by the warnings it logged, among them each data chunk
+ * of the image it could not add before it went on.
+ *
  * This module deliberately imports ONLY node builtins — no vscode — so the
  * parsing and process logic is testable outside the extension host.
  */
@@ -34,7 +44,7 @@ import * as path from 'path';
 
 /** Outcome of one `pyocd load` run. */
 export interface FlashResult {
-    /** True only on exit 0 AND no error-shaped output. */
+    /** True when pyOCD exited 0 before the deadline: its exit status decides, not the words of its log. */
     ok: boolean;
     exitCode: number | null;
     /** True when the process had to be killed at the deadline. */
@@ -47,8 +57,80 @@ export interface FlashResult {
     commandLine: string;
     /** Last ~12 non-empty output lines, for context on failure. */
     outputTail: string[];
-    /** Error-shaped lines (last ~8), for the failure summary. */
+    /** pyOCD's error lines (last ~8), as `parsePyocdLoadOutput` picks them: the failure summary; a success lists them with the warnings. */
     errorLines: string[];
+    /** pyOCD's warning log lines (last ~5), which a success lists: a warning never fails a run. */
+    warningLines: string[];
+    /** How many data chunks of the image pyOCD could not add ("Failed to add data chunk"), counted before `warningLines` is cut. */
+    droppedChunks: number;
+    /** The probes pyOCD listed instead of choosing one; empty when it listed none. */
+    probeChoices: ListedProbe[];
+}
+
+/** A debug probe as pyOCD lists it when it does not choose one. */
+export interface ListedProbe {
+    description: string;
+    uid: string;
+}
+
+/** ANSI colour codes: pyOCD writes them only to a terminal, or with `--color always` (pyocd/utility/color_log.py). */
+const ANSI_CODES = /\x1b\[[0-9;]*[A-Za-z]/g;
+/**
+ * A log line of the pyocd command, `0000412 E No target device available
+ * [load_cmd]`: milliseconds since the start, the initial of the level (C, E,
+ * W, I, D), the message, the module (`ColorFormatter.FORMAT`,
+ * pyocd/utility/color_log.py).
+ */
+const LOG_LINE = /^\d+ ([CEWID]) /;
+/**
+ * pyOCD's warning for a chunk of an image it cannot add to the programming
+ * (`FileProgrammer`, pyocd/flash/file_programmer.py): its address is in no
+ * memory region or in one that is not writable (pyocd/flash/loader.py), or
+ * it overlaps other data (pyocd/flash/builder.py). pyOCD goes on and exits 0.
+ */
+const DROPPED_CHUNK = /^\d+ W Failed to add data chunk: /;
+/** What pyOCD prints, not logs, when no probe is chosen (`ConnectHelper.choose_probe`, pyocd/core/helpers.py). */
+const NO_PROBE_CHOSEN = /^(?:No connected debug probes?\b|More than one debug probe matches\b)/;
+/** The first line of a Python traceback; the first line after it that is not indented names the exception. */
+const TRACEBACK = /^Traceback \(most recent call last\):/;
+/** `choose_probe` with a unique ID several probes match: this line, then `<description> | <unique ID>` for each. */
+const SEVERAL_MATCH = /^More than one debug probe matches unique ID /;
+const MATCH_ROW = /^(\S.*?) \| (\S+)$/;
+/** `choose_probe` without a unique ID and with several probes: a table of them (`_print_probe_list`), then a prompt. */
+const TABLE_HEADER = /^\s*#\s+Probe\/Board\s+Unique ID\s+Target$/;
+/** A probe's row: its number, the description, the unique ID and the target column, three spaces apart. */
+const TABLE_ROW = /^\s*\d+\s+(\S.*?)\s{3,}(\S+)\s{3,}\S/;
+const PROMPT = /^Enter the number of the debug probe/;
+
+/** The probes pyOCD listed instead of choosing one: after "More than one debug probe matches", or in its table before the prompt. */
+function listedProbes(lines: readonly string[]): ListedProbe[] {
+    const probes: ListedProbe[] = [];
+    const several = lines.findIndex((line) => SEVERAL_MATCH.test(line));
+    if (several >= 0) {
+        for (const line of lines.slice(several + 1)) {
+            const row = MATCH_ROW.exec(line);
+            if (!row) {
+                break;
+            }
+            probes.push({ description: row[1], uid: row[2] });
+        }
+        return probes;
+    }
+    const header = lines.findIndex((line) => TABLE_HEADER.test(line));
+    if (header < 0) {
+        return probes;
+    }
+    for (const line of lines.slice(header + 1)) {
+        if (PROMPT.test(line)) {
+            break;
+        }
+        // Rows without a number carry a probe's board, or an access error.
+        const row = TABLE_ROW.exec(line);
+        if (row) {
+            probes.push({ description: row[1], uid: row[2] });
+        }
+    }
+    return probes;
 }
 
 /**
@@ -57,27 +139,115 @@ export interface FlashResult {
  * at %.02f kB/s" on completion; chip-erase runs say "Erased chip, ...").
  * Pure — unit-tested. Older/newer pyOCD versions may phrase differently, so
  * callers must treat null fields as "unknown", never as zero.
+ *
+ * Error lines are pyOCD's error and critical log lines, the first and the
+ * last line of a traceback, and its words when no probe is chosen. Info and
+ * debug lines (`Loading <path>`, whatever the path) and warnings are none.
+ * Warning lines are its warning log lines, and `droppedChunks` counts those
+ * that say it could not add a data chunk of the image.
  */
 export function parsePyocdLoadOutput(stdout: string, stderr: string): {
     programmedBytes: number | null;
     kbps: number | null;
     errorLines: string[];
+    warningLines: string[];
+    droppedChunks: number;
     tail: string[];
+    probeChoices: ListedProbe[];
 } {
     const text = `${stdout}\n${stderr}`;
     const bytesMatch = text.match(/programmed (\d+) bytes/i);
     const rateMatch = text.match(/at ([\d.]+) kB\/s/i);
-    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
-    const errorLines = lines
-        .filter(l => /error|traceback|failed|exception|no probe|no target|not connected/i.test(l))
-        .filter(l => !/\b0 errors?\b/i.test(l)) // benign "0 errors" summaries are not failures
-        .slice(-8);
+    const lines = text.split(/\r?\n/).map((line) => line.replace(ANSI_CODES, '').trimEnd()).filter((line) => line.trim().length > 0);
+    const errorLines: string[] = [];
+    const warningLines: string[] = [];
+    let droppedChunks = 0;
+    let inTraceback = false;
+    for (const line of lines) {
+        if (inTraceback) {
+            // The frames and their source lines are indented; the exception is not.
+            if (/^\s/.test(line)) {
+                continue;
+            }
+            inTraceback = false;
+            errorLines.push(line);
+        } else if (TRACEBACK.test(line)) {
+            inTraceback = true;
+            errorLines.push(line);
+        } else {
+            const level = LOG_LINE.exec(line)?.[1];
+            if (level === 'E' || level === 'C' || NO_PROBE_CHOSEN.test(line)) {
+                errorLines.push(line);
+            } else if (level === 'W') {
+                warningLines.push(line);
+                if (DROPPED_CHUNK.test(line)) {
+                    droppedChunks += 1;
+                }
+            }
+        }
+    }
     return {
         programmedBytes: bytesMatch ? parseInt(bytesMatch[1], 10) : null,
         kbps: rateMatch ? parseFloat(rateMatch[1]) : null,
-        errorLines,
+        errorLines: errorLines.slice(-8),
+        warningLines: warningLines.slice(-5),
+        droppedChunks,
         tail: lines.slice(-12),
+        probeChoices: listedProbes(lines),
     };
+}
+
+/** The probe a `pyocd load` selects: the options of CMSIS Solution's CMSIS Load task. */
+export interface ProbeSelection {
+    /** `--probe`: the pyOCD probe type of the target's debug adapter, such as `cmsisdap:`. */
+    type?: string;
+    /** `--uid`: the unique ID of the probe the solution configures; pyOCD matches any probe whose ID contains it. */
+    uid?: string;
+    /** Where `uid` came from: the cbuild-run file's `debugger:` node, or the setting `cmsis-csolution.probe-id`. */
+    uidFrom?: 'cbuild-run' | 'setting';
+}
+
+/**
+ * The debug adapters of CMSIS Solution 1.72.0 (templates/debug/debug-adapters.yml,
+ * names and aliases) whose probe type is known, with pyOCD's name for it:
+ * the `--probe` of the CMSIS Load task of CMSIS-DAP-pyOCD.adapter.json and
+ * STLink-pyOCD.adapter.json, and the probe the J-Link Server (JLinkExe
+ * `-USB`) and Arm Debugger adapters (`connectionType`) connect to.
+ */
+const ADAPTER_PROBE_TYPES: ReadonlyArray<readonly [string, readonly string[]]> = [
+    ['cmsisdap:', ['CMSIS-DAP@pyOCD', 'CMSIS-DAP', 'DAP-Link', 'ULINKplus@pyOCD', 'ULINKplus', 'MCU-Link@pyOCD', 'MCU-Link',
+        'Nu-Link@pyOCD', 'Nu-Link', 'Nu-Link-Pro', 'PICkit@pyOCD', 'PICkit Basic', 'KitProg3@pyOCD', 'KitProg3',
+        'RPiDebugProbe@pyOCD', 'RaspberryPiDebugProbe', 'RPiDebugProbe', 'CMSIS-DAP@Arm-Debugger', 'CMSIS-DAP@armdbg']],
+    ['stlink:', ['ST-Link@pyOCD', 'ST-LINK', 'ST-Link@Arm-Debugger', 'ST-Link@armdbg']],
+    ['jlink:', ['J-Link Server', 'J-Link', 'JLink Server']],
+];
+
+/**
+ * The pyOCD probe type (`cmsisdap:`, `stlink:`, `jlink:`) of the debug
+ * adapter a cbuild-run file's `debugger:` names, in any case; undefined for
+ * an adapter without one (Arm-FVP, Keil uVision, one the user added), with
+ * which pyOCD looks at every probe.
+ */
+export function pyocdProbeType(adapterName: string | undefined): string | undefined {
+    const wanted = adapterName?.trim().toLowerCase();
+    if (!wanted) {
+        return undefined;
+    }
+    return ADAPTER_PROBE_TYPES.find(([, names]) => names.some((name) => name.toLowerCase() === wanted))?.[0];
+}
+
+/**
+ * The arguments of `pyocd load`: the CMSIS Load task's (`--probe <type>`,
+ * then `--uid <id>`, which pyOCD takes as the same option, the last one
+ * given winning) and `--no-wait`.
+ */
+export function pyocdLoadArgs(cbuildRunFile: string, probe: ProbeSelection = {}): string[] {
+    return [
+        'load', '--no-wait',
+        ...(probe.type ? ['--probe', probe.type] : []),
+        ...(probe.uid ? ['--uid', probe.uid] : []),
+        '--cbuild-run', cbuildRunFile,
+    ];
 }
 
 /** Where a pyOCD executable was found, in the words the flash result uses. */
@@ -222,18 +392,22 @@ export async function probePyocd(bin = 'pyocd', timeoutMs = 5_000): Promise<stri
 
 /**
  * Program all images listed under `output:` in a cbuild-run file via pyOCD
- * (`bin`, as `resolvePyocd` found it; `pyocd` from PATH by default).
- * spawn without a shell — no quoting or injection surface. The process is
- * SIGTERMed at the deadline (SIGKILL 2 s later) so a wedged probe cannot
- * hang the tool call.
+ * (`bin`, as `resolvePyocd` found it; `pyocd` from PATH by default), on the
+ * probe `probe` selects (`pyocdLoadArgs`).
+ * spawn without a shell — no quoting or injection surface. `--no-wait`:
+ * without a free probe pyOCD would wait for one until killed (#81); it ends
+ * at once with "No connected debug probes" instead. stdin is closed, so
+ * pyOCD's question which of several probes to take ends at once too. The
+ * process is SIGTERMed at the deadline (SIGKILL 2 s later) so a wedged probe
+ * cannot hang the tool call.
  */
 export async function flashWithPyocd(
     cbuildRunFile: string,
     timeoutMs: number,
-    deps: { spawn?: typeof spawn; killGraceMs?: number; bin?: string } = {},
+    deps: { spawn?: typeof spawn; killGraceMs?: number; bin?: string; probe?: ProbeSelection } = {},
 ): Promise<FlashResult> {
     const bin = deps.bin ?? 'pyocd';
-    const args = ['load', '--cbuild-run', cbuildRunFile];
+    const args = pyocdLoadArgs(cbuildRunFile, deps.probe);
     const commandLine = commandText(bin, args);
     const spawnFn = deps.spawn ?? spawn;
     const killGraceMs = deps.killGraceMs ?? 2_000;
@@ -241,6 +415,7 @@ export async function flashWithPyocd(
         let stdout = '';
         let stderr = '';
         let timedOut = false;
+        let spawnError: string | undefined;
         const child = spawnFn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
         // Cap captured output so a chatty run cannot grow unbounded.
@@ -262,20 +437,25 @@ export async function flashWithPyocd(
             clearTimeout(killTimer);
             const parsed = parsePyocdLoadOutput(stdout, stderr);
             resolve({
-                ok: !timedOut && exitCode === 0 && parsed.errorLines.length === 0,
+                ok: !timedOut && exitCode === 0,
                 exitCode,
                 timedOut,
                 programmedBytes: parsed.programmedBytes,
                 kbps: parsed.kbps,
                 commandLine,
                 outputTail: parsed.tail,
-                errorLines: parsed.errorLines,
+                // The spawn failure is this module's line, not one of pyOCD's.
+                errorLines: spawnError ? [...parsed.errorLines, spawnError].slice(-8) : parsed.errorLines,
+                warningLines: parsed.warningLines,
+                droppedChunks: parsed.droppedChunks,
+                probeChoices: parsed.probeChoices,
             });
         };
         child.on('error', (err) => {
             // spawn failure (e.g. ENOENT despite probePyocd) — surface as a
             // failed run rather than throwing.
-            stderr += `\nspawn error: ${err.message}`;
+            spawnError = `spawn error: ${err.message}`;
+            stderr += `\n${spawnError}`;
             finish(1);
         });
         child.on('close', (code) => finish(code));

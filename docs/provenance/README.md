@@ -1,5 +1,7 @@
 # Rewrite of the DebugMCP-derived code (issue #53)
 
+> **Frozen evidence.** The files under specs/ describe the contract used for each independent rewrite, including bugs deliberately preserved at that time. They are retained unchanged and may differ from 2.7.0. Use the [architecture pages](../architecture/debugMCPServer.md) for current behavior; updating the specs to match later code would erase their purpose.
+
 This folder records how the files that still derived from [microsoft/DebugMCP](https://github.com/microsoft/DebugMCP) (MIT) were replaced by independently written code. It is the evidence for dropping the Microsoft copyright line from each file.
 
 ## Method

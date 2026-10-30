@@ -201,6 +201,18 @@ suite('buildInfo/elf', () => {
         assert.throws(() => readElf(be), /big-endian/);
     });
 
+    test('a function from 0x80000000 up keeps a positive address once its Thumb bit is cleared (Alif MRAM, external flash)', () => {
+        const file = path.join(dir, 'high.elf');
+        fs.writeFileSync(file, buildElf32({
+            sections: [{ name: '.text', type: SHT_PROGBITS, flags: SHF_ALLOC | SHF_EXECINSTR, addr: 0x80000000, data: Buffer.alloc(0x40, 0xbf) }],
+            symbols: [{ name: 'main', value: 0x80000011, size: 0x20, type: STT_FUNC, bind: STB_GLOBAL, shndx: 1 }],
+            segments: [{ vaddr: 0x80000000, paddr: 0x80000000, filesz: 0x40, memsz: 0x40, flags: 5 }],
+        }));
+        const main = readElf(file).symbols.find(s => s.name === 'main')!;
+        assert.strictEqual(main.value, 0x80000010);
+        assert.deepStrictEqual(symbolAt([main], 0x80000014), { symbol: main, offset: 4, exact: true });
+    });
+
     test('mapping symbols', () => {
         for (const s of ['$t', '$d', '$a', '$t.3', '$d.realdata', '$x']) { assert.ok(isMappingSymbol(s), s); }
         for (const s of ['$Sub$$main', 'main', '$$Super', '__stack$']) { assert.ok(!isMappingSymbol(s), s); }

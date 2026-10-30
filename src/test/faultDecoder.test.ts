@@ -15,7 +15,7 @@
  */
 
 import * as assert from 'assert';
-import { decodeFault, decodeFaultRegisters, faultRegistersFromBlock, FaultRegisters } from '../core/faultDecoder';
+import { decodeFault, decodeFaultRegisters, FaultRegisters } from '../core/faultDecoder';
 
 /**
  * get_fault_info's text is what agents (and the skill) have learnt to read;
@@ -72,12 +72,5 @@ suite('Fault decoder', () => {
         assert.strictEqual(decodeFaultRegisters(regs()),
             '=== Cortex-M Fault Analysis ===\n\nHFSR  = 0x00000000\n\nMMFSR = 0x00\n\nBFSR  = 0x00\n\nUFSR  = 0x0000\n\nDFSR  = 0x00000000\n\nNo fault flags set. Target may not be in a fault handler.\n');
         assert.match(decodeFaultRegisters(regs({ AFSR: 0x5 })), /AFSR  = 0x00000005 \(implementation-defined\)/);
-    });
-
-    test('the six registers come out of one 24-byte block in SCS order', () => {
-        const buf = Buffer.alloc(24);
-        [0x8200, 0x40000000, 0x1, 0x11, 0x40005400, 0x0].forEach((v, i) => buf.writeUInt32LE(v, i * 4));
-        assert.deepStrictEqual(faultRegistersFromBlock(buf), { CFSR: 0x8200, HFSR: 0x40000000, DFSR: 1, MMFAR: 0x11, BFAR: 0x40005400, AFSR: 0 });
-        assert.throws(() => faultRegistersFromBlock(Buffer.alloc(20)), /24/);
     });
 });

@@ -18,16 +18,23 @@
  * The `flash` tool: pick the `*.cbuild-run.yml` to program and run
  * `pyocd load` on it, reporting bytes, rate and the failure lines instead of
  * pointing at an output channel. The process handling and the pyOCD lookup
- * live in `src/core/flashController.ts`.
+ * live in `src/core/flashController.ts`. pyOCD's exit status decides; a
+ * success lists the warnings pyOCD logged, and is ⚠️ when it could not add
+ * part of the image, since the target then does not hold the image as built.
  *
  * Refused while a debug session, a CMSIS Run task, a Load or Erase, or
  * another `flash` holds the probe (#46), since programming then wedges the
  * probe or waits for it forever. The pyOCD is the one the CMSIS tasks use:
- * the CMSIS Debugger's bundled one first (#45). Refusals and failures reject
- * with a `ToolError`; a pyOCD run that was killed at the budget answers with
- * status `timeout` (#11). The budget may run to 600 s (#12) and is counted
- * from the call, so the file and pyOCD lookups come out of it. Without a
- * folder open and without a named file the refusal is `NO_WORKSPACE`.
+ * the CMSIS Debugger's bundled one first (#45). The probe is the one
+ * CMSIS Solution's CMSIS Load task selects: `--probe` by the debug adapter
+ * the cbuild-run file names, `--uid` by its probe ID or the setting
+ * `cmsis-csolution.probe-id`; several probes and none selected is
+ * `TASK_FAILED` naming them, since pyOCD then chooses none. Refusals and
+ * failures reject with a `ToolError`; a pyOCD run that was killed at the
+ * budget answers with status `timeout` (#11). The budget may run to 600 s
+ * (#12) and is counted from the call, so the file and pyOCD lookups come
+ * out of it. Without a folder open and without a named file the refusal is
+ * `NO_WORKSPACE`.
  */
 
 import * as vscode from 'vscode';
@@ -36,8 +43,10 @@ import * as path from 'path';
 import { parse } from 'jsonc-parser';
 import type { IDebuggingExecutor } from '../debuggingExecutor';
 import { guardProbe } from '../core/cmsisTasks';
-import { fileExists, FlashResult, flashWithPyocd, probePyocd, PyocdCandidate, resolvePyocd } from '../core/flashController';
-import { parseCbuildRun } from '../core/packDocs/cbuildRun';
+import {
+    fileExists, FlashResult, flashWithPyocd, ProbeSelection, probePyocd, PyocdCandidate, pyocdProbeType, resolvePyocd,
+} from '../core/flashController';
+import { cbuildRunDebugger, cbuildRunProbeId, parseCbuildRun } from '../core/packDocs/cbuildRun';
 import { noWorkspaceRefusal } from '../core/bootstrapState';
 import { ToolError, ToolText } from '../core/toolResult';
 import { LONG_LIMIT_CAP_MS } from './fence';
@@ -84,8 +93,10 @@ async function cbuildRunFromLaunchJson(folder: vscode.WorkspaceFolder): Promise<
 
 /**
  * The cbuild-run file to program: the explicit argument (relative to the
- * first workspace folder), else launch.json's `cmsis.cbuildRunFile`, else the
- * only `out/**` match. Only the first workspace folder is consulted.
+ * first workspace folder), else the one of the CMSIS Solution extension's
+ * active target when that file exists, else launch.json's
+ * `cmsis.cbuildRunFile`, else the only `out/**` match. Only the first
+ * workspace folder is consulted.
  */
 async function chooseCbuildRun(requested: string | undefined, host: HandlerHost): Promise<CbuildRunChoice> {
     const folder = host.workspaceFolders()[0];
@@ -100,6 +111,10 @@ async function chooseCbuildRun(requested: string | undefined, host: HandlerHost)
     }
     if (!folder) {
         return { noWorkspace: true };
+    }
+    const active = await host.activeCbuildRunFile();
+    if (active && fileExists(active)) {
+        return { file: active };
     }
     const fromLaunch = await cbuildRunFromLaunchJson(folder);
     if (fromLaunch) {
@@ -180,8 +195,102 @@ async function findPyocd(cbuildRunFile: string, host: HandlerHost): Promise<{ fo
     return { unusable };
 }
 
-/** The outcome of a pyOCD run: success as text, a killed run as status `timeout`, a failed one as `TASK_FAILED`. */
-function describeFlash(result: FlashResult, budgetMs: number, version: string): ToolText {
+/**
+ * The probe to program, selected as CMSIS Solution 1.72.0 selects it for
+ * its CMSIS tasks: the probe type of the debug adapter the cbuild-run
+ * file's `debugger:` names, and the probe ID of that node (csolution writes
+ * the target set's there), else of the setting `cmsis-csolution.probe-id`.
+ */
+function probeSelection(cbuildRunFile: string, host: HandlerHost): ProbeSelection {
+    let content = '';
+    try {
+        content = fs.readFileSync(cbuildRunFile, 'utf8');
+    } catch {
+        // Unreadable here: pyOCD reports it, and no selection comes from it.
+    }
+    const type = pyocdProbeType(cbuildRunDebugger(content));
+    const listed = cbuildRunProbeId(content);
+    if (listed) {
+        return { type, uid: listed, uidFrom: 'cbuild-run' };
+    }
+    const configured = host.solutionProbeId();
+    return configured ? { type, uid: configured, uidFrom: 'setting' } : { type };
+}
+
+/** The probe ID with where it came from, as the results quote it. */
+function probeIdText(probe: ProbeSelection): string {
+    const from = probe.uidFrom === 'cbuild-run' ? 'the probe-id of the cbuild-run file\'s debugger' : 'the setting cmsis-csolution.probe-id';
+    return `'${probe.uid}' (${from})`;
+}
+
+/** Where the user sets the probe ID: the place this one came from; the setting when there is none. */
+function probeIdPlace(probe: ProbeSelection): string {
+    return probe.uidFrom === 'cbuild-run'
+        ? 'probe-id under debugger: of the target set in the csolution, which cmsis_action build writes into the cbuild-run file'
+        : 'the setting cmsis-csolution.probe-id';
+}
+
+/** pyOCD's answer with `--no-wait` when it finds no free probe. */
+const NO_PROBE = /No (?:connected|available) debug probe/i;
+
+/** What a probe pyOCD cannot see means (#81): a serial port of the board does not prove that its probe is reachable. */
+const NO_PROBE_HINT = 'pyOCD sees no free debug probe. Another task or session may hold it: cmsis_action {action:\'status\'} lists '
+    + 'this window\'s CMSIS tasks, stop_run or stop_debugging frees it. Otherwise the board is not connected or its probe lacks the USB '
+    + 'driver: ask the user to check the cable and the driver — a serial port in serial_list_ports does not prove that the probe is reachable. '
+    + 'Do not retry until one of these changed.';
+
+/** `NO_PROBE_HINT`, or with a probe ID: then that probe may be gone, or the ID names another one. */
+function noProbeHint(probe: ProbeSelection): string {
+    if (!probe.uid) {
+        return NO_PROBE_HINT;
+    }
+    return `pyOCD sees no free debug probe whose unique ID contains ${probeIdText(probe)}. Another task or session may hold it: `
+        + 'cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks, stop_run or stop_debugging frees it. Otherwise that probe is '
+        + `not connected or lacks its USB driver, or the ID names another one: ask the user to check the cable, the driver and ${probeIdPlace(probe)} `
+        + '— a serial port in serial_list_ports does not prove that the probe is reachable. Do not retry until one of these changed.';
+}
+
+/** pyOCD listed several probes for the selection and chose none: the refusal names them and where the user picks one. */
+function severalProbes(result: FlashResult, probe: ProbeSelection): ToolError {
+    const scope = probe.uid ? ` whose unique ID contains ${probeIdText(probe)}` : probe.type ? ` of the type ${probe.type.replace(/:$/, '')}` : '';
+    return new ToolError('TASK_FAILED',
+        `❌ Flash FAILED (exit ${result.exitCode ?? 'unknown'}) — \`${result.commandLine}\`\n`
+            + `pyOCD found ${result.probeChoices.length} debug probes${scope} and chose none:\n  `
+            + result.probeChoices.map((listed) => `${listed.uid} (${listed.description})`).join('\n  '),
+        `Ask the user which of them is connected to the board to program, and to set its unique ID in ${probeIdPlace(probe)}; `
+            + 'CMSIS Solution\'s Load, Run and Debug select the probe by it as well. Then call flash again; do not choose a probe yourself.');
+}
+
+/**
+ * A run that exited 0: ✅ with what pyOCD warned of, or ⚠️ when it could not
+ * add data chunks of the image, which it then leaves out or overlaps, so
+ * that the target does not hold the image as built.
+ */
+function describeSuccess(result: FlashResult, version: string): string {
+    const amount = result.programmedBytes !== null ? ` — programmed ${result.programmedBytes} bytes` : '';
+    const rate = result.kbps !== null ? ` at ${result.kbps} kB/s` : '';
+    const run = `${amount}${rate} (pyOCD ${version}: \`${result.commandLine}\`).`;
+    const next = 'Use cmsis_action attach or load_and_debug to start a debug session.';
+    const warned = [...result.errorLines, ...result.warningLines];
+    if (warned.length === 0) {
+        return `✅ Flash succeeded${run} ${next}`;
+    }
+    const list = `\npyOCD warned:\n  ${warned.join('\n  ')}\n`;
+    if (result.droppedChunks === 0) {
+        return `✅ Flash succeeded${run}${list}${next}`;
+    }
+    const chunks = result.droppedChunks === 1 ? 'a data chunk' : `${result.droppedChunks} data chunks`;
+    return `⚠️ Flash exited 0, but pyOCD could not add ${chunks} of the image${run}${list}`
+        + 'So the target does not hold the image as built. Check which sections load at the addresses pyOCD names, for example with '
+        + `get_section_layout or lookup_symbol {address}, before you debug it. ${next}`;
+}
+
+/**
+ * The outcome of a pyOCD run: success as text (`describeSuccess`), a killed
+ * run as status `timeout`, a failed one as `TASK_FAILED`, with the probes
+ * pyOCD listed when it chose none.
+ */
+function describeFlash(result: FlashResult, budgetMs: number, version: string, probe: ProbeSelection): ToolText {
     if (result.timedOut) {
         return {
             text: `Flash timed out after ${Math.round(budgetMs / 1000)} s — the pyOCD process was killed.\n`
@@ -191,16 +300,17 @@ function describeFlash(result: FlashResult, budgetMs: number, version: string): 
         };
     }
     if (result.ok) {
-        const amount = result.programmedBytes !== null ? ` — programmed ${result.programmedBytes} bytes` : '';
-        const rate = result.kbps !== null ? ` at ${result.kbps} kB/s` : '';
-        return `✅ Flash succeeded${amount}${rate} (pyOCD ${version}: \`${result.commandLine}\`). `
-            + 'Use cmsis_action attach or load_and_debug to start a debug session.';
+        return describeSuccess(result, version);
+    }
+    if (result.probeChoices.length > 1) {
+        throw severalProbes(result, probe);
     }
     const errors = result.errorLines.length > 0 ? `Errors:\n  ${result.errorLines.join('\n  ')}\n` : '';
+    const noProbe = result.outputTail.some((line) => NO_PROBE.test(line));
     throw new ToolError('TASK_FAILED',
         `❌ Flash FAILED (exit ${result.exitCode ?? 'unknown'}) — \`${result.commandLine}\`\n`
             + `${errors}Output tail:\n  ${tailBlock(result.outputTail)}`,
-        'This is a terminal result — fix the cause and re-run flash.');
+        noProbe ? noProbeHint(probe) : 'This is a terminal result — fix the cause and re-run flash.');
 }
 
 /** The wait of a `flash` call: `timeoutMs` when positive (at most 600 s), else 60 s. */
@@ -243,11 +353,12 @@ export async function runFlash(
             'Install or enable the CMSIS Debugger extension, or use cmsis_action load, which flashes through the CMSIS Solution '
                 + 'extension. Do not install pyOCD yourself.');
     }
+    const probe = probeSelection(choice.file, host);
     const release = tracker.beginFlash();
     try {
         const budgetMs = Math.max(deadline - host.now() - FENCE_MARGIN_MS, 1_000);
-        const result = await flashWithPyocd(choice.file, budgetMs, { bin: pyocd.found.bin });
-        return describeFlash(result, budgetMs, `${pyocd.found.version} from ${pyocd.found.from}`);
+        const result = await flashWithPyocd(choice.file, budgetMs, { bin: pyocd.found.bin, probe });
+        return describeFlash(result, budgetMs, `${pyocd.found.version} from ${pyocd.found.from}`, probe);
     } finally {
         release();
     }

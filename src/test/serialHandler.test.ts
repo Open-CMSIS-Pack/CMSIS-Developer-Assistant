@@ -15,17 +15,19 @@
  */
 
 import * as assert from 'assert';
-import { SerialPortMock } from 'serialport';
+import { SerialPort, SerialPortMock } from 'serialport';
 import { runInCallContext } from '../core/callContext';
 import type { ProblemInput } from '../core/problemJournal';
 import { CAPTURE_HALF_BYTES, CaptureRecord, captureDurationMs, untilPattern } from '../core/serialCapture';
 import { PORT_HELD_HINT, SerialController } from '../core/serialController';
-import { SerialMonitorBridge } from '../core/serialMonitorBridge';
+import { BridgeExtension, SerialMonitorBridge } from '../core/serialMonitorBridge';
 import { programmingNote, renderSerialHold, serialSessionLine } from '../core/serialText';
 import { ToolError, ToolReply, ToolText, textOf } from '../core/toolResult';
 import { SerialHandler } from '../serialHandler';
 import { SerialStatus, releaseSerialPort } from '../serialStatus';
-import { FakeSerialMonitor, ManualTime, MockSerial, PATH_FIXTURES, ScriptedPort, T0, fakeSerialMonitor, mockSerial } from './serialFixtures';
+import {
+    CONSUMER, FakeMonitorOptions, FakeSerialMonitor, ManualTime, MockSerial, PATH_FIXTURES, ScriptedPort, T0, fakeSerialMonitor, mockSerial,
+} from './serialFixtures';
 
 const SESSION_A = 'aaaaaaaa-1111-4111-8111-111111111111';
 const SESSION_B = 'bbbbbbbb-2222-4222-8222-222222222222';
@@ -35,7 +37,11 @@ function asSession<T>(sessionId: string, work: () => Promise<T>): Promise<T> {
     return runInCallContext({ callId: `${sessionId.slice(0, 8)}-1`, sessionId }, work);
 }
 
-/** A handler over mock ports, a hand-moved clock, a Serial Monitor with a data event, and an idle limit the test sets. */
+/**
+ * A handler over mock ports, a hand-moved clock, a Serial Monitor (by default
+ * one whose API has a data event) with the tests' extension context, and an
+ * idle limit the test sets.
+ */
 interface World {
     serial: MockSerial;
     monitor: FakeSerialMonitor;
@@ -47,12 +53,13 @@ interface World {
     setIdle(seconds: number): void;
 }
 
-function world(): World {
+function world(options: FakeMonitorOptions = {}): World {
     const time = new ManualTime();
     const serial = mockSerial(time);
-    const monitor = fakeSerialMonitor();
+    const monitor = fakeSerialMonitor(options);
     const bridgeJournal: ProblemInput[] = [];
-    const bridge = new SerialMonitorBridge({ lookup: () => monitor.extension, timers: time, journal: (problem) => bridgeJournal.push(problem) });
+    const deps = { lookup: () => monitor.extension, consumer: CONSUMER, timers: time, journal: (problem: ProblemInput) => bridgeJournal.push(problem) };
+    const bridge = new SerialMonitorBridge(deps);
     let idle = 300;
     const handler = new SerialHandler(serial.controller, { bridge, idleCloseSeconds: () => idle });
     return { serial, monitor, bridge, handler, bridgeJournal, setIdle: (seconds) => { idle = seconds; } };
@@ -180,6 +187,96 @@ suite('SerialHandler release rules (#49)', () => {
             assert.strictEqual(await w.handler.handleRead({ from: 'monitor' }), 'Serial RX (monitor): <no data>');
             assert.strictEqual(w.bridgeJournal.at(-1)?.message, 'Serial Monitor subscription ended: the MCP session that subscribed ended');
         });
+    });
+});
+
+/** A handler whose bridge finds `extension` (no Serial Monitor when undefined) and is handed `consumer`. */
+function handlerOver(extension: BridgeExtension | undefined, consumer: typeof CONSUMER | undefined): SerialHandler {
+    const deps = { lookup: () => extension, consumer };
+    return new SerialHandler(mockSerial().controller, { bridge: new SerialMonitorBridge(deps), idleCloseSeconds: () => 300 });
+}
+
+/** The start of every refused `serial_subscribe_monitor`. */
+const NOT_SUBSCRIBED = 'Could not subscribe to Serial Monitor data: ';
+
+/**
+ * The Serial Monitor's API as `ms-vscode.vscode-serial-monitor` hands it out:
+ * its exports hold `getApi(version, context)`, the API is a class instance,
+ * and the API of 0.13 has no data event. The bridge asks for version 0 with
+ * the extension's context, once; `serial_status` lists the API's methods, a
+ * subscription is refused with the reason, and a data event of the API is
+ * subscribed when a build has one. `serial_list_ports` does not ask the API.
+ */
+suite('the Serial Monitor\'s API: getApi(version, context)', () => {
+    test('the bridge asks getApi for version 0 with the extension context, once, and subscribes to the data event of the API', async () => {
+        const w = world();
+        assert.match(await asSession(SESSION_A, () => w.handler.handleSubscribeMonitor()), /^Subscribed to MS Serial Monitor data via 'onDidReceiveData'\./);
+        w.monitor.emit('boot ok\n');
+        assert.strictEqual(await w.handler.handleRead({ from: 'monitor' }), 'Serial RX (monitor): 8 byte(s)\n--- text ---\nboot ok\n');
+        await w.handler.handleStatus();
+        assert.deepStrictEqual(w.monitor.requests, [{ version: 0, consumer: CONSUMER }]);
+    });
+
+    test('the API of 0.13 has no data event: the subscription is refused with what to do, serial_status lists its methods', async () => {
+        const w = world({ dataEvent: false });
+        assert.strictEqual(await w.handler.handleSubscribeMonitor(), `${NOT_SUBSCRIBED}The Serial Monitor's API (version 0) has no data event: `
+            + 'it lists ports and starts or stops monitoring, but does not pass on what it receives. Ask the user to stop monitoring '
+            + 'the port in the Serial Monitor, then read it with serial_capture or serial_open.');
+        assert.ok(!w.monitor.listening());
+        assert.deepStrictEqual((await w.handler.handleStatus()).split('\n').slice(1), [
+            'Serial Monitor bridge: extension installed, activated, data-subscription unavailable in this build, not subscribed',
+            '  API keys: listAvailablePorts, startMonitoringPort, stopMonitoringPort, startMonitoringTCPConnection, '
+            + 'stopMonitoringTCPConnection, clearOutput, dispose',
+        ]);
+    });
+
+    test('an inactive Serial Monitor is activated once, for the subscription; serial_status leaves it inactive', async () => {
+        const w = world({ active: false, dataEvent: false });
+        assert.match(await w.handler.handleStatus(), /Serial Monitor bridge: extension installed, inactive, /);
+        assert.deepStrictEqual([w.monitor.activations(), w.monitor.requests.length], [0, 0]);
+        await w.handler.handleSubscribeMonitor();
+        await w.handler.handleSubscribeMonitor();
+        assert.deepStrictEqual([w.monitor.activations(), w.monitor.requests], [1, [{ version: 0, consumer: CONSUMER }]]);
+    });
+
+    test('a refusal says why the Serial Monitor gave no API; without a context it is neither activated nor asked', async () => {
+        assert.strictEqual(await handlerOver(undefined, CONSUMER).handleSubscribeMonitor(),
+            `${NOT_SUBSCRIBED}Extension 'ms-vscode.vscode-serial-monitor' is not installed or failed to activate.`);
+        const failed: BridgeExtension = { isActive: true, exports: undefined, activate: async () => undefined };
+        assert.strictEqual(await handlerOver(failed, CONSUMER).handleSubscribeMonitor(),
+            `${NOT_SUBSCRIBED}Extension 'ms-vscode.vscode-serial-monitor' exports no getApi(version, context): `
+            + 'it failed to activate, or this build has no API.');
+        const later = fakeSerialMonitor({ apiVersion: 1 });
+        assert.strictEqual(await handlerOver(later.extension, CONSUMER).handleSubscribeMonitor(),
+            `${NOT_SUBSCRIBED}The Serial Monitor refused API version 0: Invalid Serial Monitor API version.`);
+        const inactive = fakeSerialMonitor({ active: false });
+        assert.strictEqual(await handlerOver(inactive.extension, undefined).handleSubscribeMonitor(),
+            `${NOT_SUBSCRIBED}The Serial Monitor bridge has no extension context yet; try again once the extension has activated.`);
+        assert.deepStrictEqual([inactive.activations(), inactive.requests.length], [0, 0]);
+    });
+
+    test('serial_list_ports lists what serialport finds, friendly name and serial number included, and leaves the Serial Monitor alone', async () => {
+        const w = world({ active: false });
+        const windows = {
+            path: 'COM7', friendlyName: 'USB Serial Device (COM7)', manufacturer: 'Microsoft', serialNumber: '0240000034544e45',
+            pnpId: 'USB\\VID_0D28&PID_0204&MI_01\\0240000034544e45', locationId: undefined, vendorId: '0D28', productId: '0204',
+        };
+        const mac = {
+            path: '/dev/cu.usbmodem1102', manufacturer: 'ARM', serialNumber: '0240000034544e45',
+            pnpId: undefined, locationId: '01100000', vendorId: '0d28', productId: '0204',
+        };
+        const list = SerialPort.list;
+        SerialPort.list = async () => [windows, mac];
+        try {
+            assert.strictEqual(await w.handler.handleListPorts(), [
+                'Available serial ports (2, via serialport):',
+                '  COM7  — USB Serial Device (COM7) / Microsoft / 0240000034544e45 [VID:PID 0D28:0204]',
+                '  /dev/cu.usbmodem1102  — ARM / 0240000034544e45 [VID:PID 0d28:0204]',
+            ].join('\n'));
+        } finally {
+            SerialPort.list = list;
+        }
+        assert.deepStrictEqual([w.monitor.activations(), w.monitor.requests.length], [0, 0], 'the Serial Monitor was left alone');
     });
 });
 
@@ -363,7 +460,7 @@ suite('the human handle and what agents are told (#49)', () => {
         assert.strictEqual(serialSessionLine(idle.controller, SESSION_B), 'Serial: COM7 open (another MCP session (aaaaaaaa), idle 0 s of 300 s)');
         idle.time.advanceSeconds(42);
         assert.strictEqual(serialSessionLine(idle.controller, SESSION_A), 'Serial: COM7 open (this session, idle 42 s of 300 s)');
-        idle.controller.sessionEnded(SESSION_A);
+        await idle.controller.sessionEnded(SESSION_A);
         assert.strictEqual(serialSessionLine(idle.controller, SESSION_A),
             'Serial: COM7 released at 10:42:49: the MCP session that opened it ended');
         await idle.controller.close();
@@ -445,5 +542,52 @@ suite('the human handle and what agents are told (#49)', () => {
         } finally {
             item.dispose();
         }
+    });
+});
+
+/**
+ * Calls that arrive while `serial_open` is still opening the port, from
+ * another MCP session or as the session ends: each waits for the open and
+ * then answers as it would once the port was open. Mock ports, whose open
+ * ends on the next tick.
+ */
+suite('serial calls while serial_open is in flight', () => {
+    setup(() => SerialPortMock.binding.reset());
+    teardown(() => SerialPortMock.binding.reset());
+
+    test('serial_close closes the port once it is open, and says so', async () => {
+        const w = world();
+        SerialPortMock.binding.createPort('COM7');
+        const opened = asSession(SESSION_A, () => w.handler.handleOpen({ path: 'COM7' }));
+        const closed = asSession(SESSION_B, () => w.handler.handleClose());
+        assert.match(await opened, /^Owned serial port opened: COM7 @ 115200 baud\. /);
+        assert.strictEqual(await closed, 'Owned serial port closed.');
+        assert.ok(!w.serial.controller.isOpen() && w.serial.ports.every((port) => !port.isOpen), 'no port stays open');
+        assert.strictEqual(w.serial.time.armed(), 0, 'nor its idle timer');
+    });
+
+    test('the end of the session that is opening the port releases it once it is open', async () => {
+        const w = world();
+        SerialPortMock.binding.createPort('COM7');
+        const opened = asSession(SESSION_A, () => w.handler.handleOpen({ path: 'COM7', releaseOn: 'debug-session-end' }));
+        const ended = w.handler.sessionEnded(SESSION_A);
+        assert.match(await opened, /^Owned serial port opened: COM7 @ 115200 baud\. /);
+        assert.strictEqual(await ended, 'MCP session aaaaaaaa ended: released COM7.');
+        assert.strictEqual(w.serial.controller.status().lastRelease?.reason, 'owner-gone');
+    });
+
+    test('serial_capture is refused as when the port was open already, and opens nothing', async () => {
+        const w = world();
+        SerialPortMock.binding.createPort('COM7');
+        SerialPortMock.binding.createPort('COM8');
+        const opened = asSession(SESSION_A, () => w.handler.handleOpen({ path: 'COM7' }));
+        const capture = asSession(SESSION_B, () => w.handler.handleCapture({ path: 'COM8', durationMs: 1_000 }));
+        await opened;
+        await assert.rejects(capture, (failure: unknown) =>
+            failure instanceof ToolError && failure.code === 'PORT_HELD'
+                && failure.message === 'COM7 is open in this window (held by another MCP session (aaaaaaaa)), so serial_capture cannot take the port.'
+                && failure.hint === 'serial_read {waitMs} reads the open port; serial_close it to use serial_capture.');
+        assert.deepStrictEqual(w.serial.ports.map((port) => port.path), ['COM7']);
+        assert.strictEqual(w.serial.controller.hold()?.owner, SESSION_A);
     });
 });

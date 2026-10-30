@@ -43,14 +43,17 @@ suite('Agent skill installer', () => {
     let rootA: string;
     let rootB: string;
 
+    /** Every entry installed, as a release that installs the whole catalog would. */
+    const allInstalled = (c: SkillCatalog): SkillCatalog => ({ ...c, skills: c.skills.map(skill => ({ ...skill, installed: true })) });
+
     const catalog: SkillCatalog = {
         schemaVersion: 1,
         source: { repository: 'r', sha: 'feedface', sourcePath: 'p' },
         skills: [
-            { name: 'cmsis-debug-live', description: 'bundled', category: 'debug', kind: 'skill', source: 'bundled', path: 'skills/cmsis-debug-live', dependsOn: [], invocable: true },
-            { name: 'cmsis-help', description: 'bundled help', category: 'help', kind: 'skill', source: 'bundled', path: 'skills/cmsis-help', dependsOn: [], invocable: true },
-            { name: 'r-pack', description: 'router', category: 'pack', kind: 'router', source: 'generated', path: 'skills/r-pack', dependsOn: ['gen'], invocable: true },
-            { name: 'gen', description: 'gen', category: 'pack', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/gen', dependsOn: [], invocable: false },
+            { name: 'cmsis-debug-live', description: 'bundled', category: 'debug', kind: 'skill', source: 'bundled', path: 'skills/cmsis-debug-live', dependsOn: [], invocable: true, installed: false },
+            { name: 'cmsis-help', description: 'bundled help', category: 'help', kind: 'skill', source: 'bundled', path: 'skills/cmsis-help', dependsOn: [], invocable: true, installed: true },
+            { name: 'r-pack', description: 'router', category: 'pack', kind: 'router', source: 'generated', path: 'skills/r-pack', dependsOn: ['gen'], invocable: true, installed: false },
+            { name: 'gen', description: 'gen', category: 'pack', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/gen', dependsOn: [], invocable: false, installed: false },
         ],
     };
 
@@ -83,6 +86,25 @@ suite('Agent skill installer', () => {
 
     teardown(() => {
         fs.rmSync(tmp, { recursive: true, force: true });
+    });
+
+    test('a help-only catalog removes obsolete managed skills without their source directories', async () => {
+        const previous = installSet(allInstalled(catalog));
+        await installer().sync(homeRoots(), catalog, previous.visible, previous.hidden);
+        writeSkill(path.join(rootA, 'personal-workflow'), 'personal-workflow');
+        const current: SkillCatalog = { schemaVersion: 1, skills: catalog.skills.filter(skill => skill.name === 'cmsis-help') };
+        for (const skill of catalog.skills.filter(skill => skill.name !== 'cmsis-help')) {
+            fs.rmSync(path.join(extensionPath, skill.path), { recursive: true, force: true });
+        }
+        const report = await installer().sync(homeRoots(), current, ['cmsis-help'], []);
+        assert.deepStrictEqual(report.failed, []);
+        for (const root of [rootA, rootB]) {
+            assert.ok(fs.existsSync(path.join(root, 'cmsis-help', SKILL_MARKER_FILE)));
+            for (const name of ['cmsis-debug-live', 'r-pack', 'gen']) {
+                assert.ok(!fs.existsSync(path.join(root, name)), name);
+            }
+        }
+        assert.ok(fs.existsSync(path.join(rootA, 'personal-workflow', 'SKILL.md')));
     });
 
     test('installs the explicit picks into every root with a marker', async () => {
@@ -151,14 +173,14 @@ suite('Agent skill installer', () => {
     });
 
     test('a skill dropped from the catalog in a later release is removed from every root on the next sync', async () => {
-        const whole = installSet(catalog);
+        const whole = installSet(allInstalled(catalog));
         await installer().sync(homeRoots(), catalog, whole.visible, whole.hidden);
         assert.ok(fs.existsSync(path.join(rootA, 'r-pack', 'SKILL.md')));
         assert.strictEqual(readMarker(rootA, 'gen').hidden, true);
         writeSkill(path.join(rootA, 'my-own-skill'), 'my-own-skill');
 
         const slimmer: SkillCatalog = { ...catalog, skills: catalog.skills.filter(entry => entry.category !== 'pack') };
-        const remaining = installSet(slimmer);
+        const remaining = installSet(allInstalled(slimmer));
         const report = await installer().sync(homeRoots(), slimmer, remaining.visible, remaining.hidden);
 
         for (const root of [rootA, rootB]) {
@@ -211,7 +233,7 @@ suite('Agent skill installer', () => {
     });
 
     test('a missing bundled skill is reported, not thrown', async () => {
-        const broken: SkillCatalog = { ...catalog, skills: [...catalog.skills, { name: 'ghost', description: '', category: 'devops', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/ghost', dependsOn: [], invocable: true }] };
+        const broken: SkillCatalog = { ...catalog, skills: [...catalog.skills, { name: 'ghost', description: '', category: 'devops', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/ghost', dependsOn: [], invocable: true, installed: false }] };
         const report = await installer().sync(homeRoots(), broken, ['ghost', 'gen'], []);
         assert.strictEqual(report.failed.filter(f => f.name === 'ghost').length, 2);
         assert.ok(fs.existsSync(path.join(rootA, 'gen', 'SKILL.md')), 'other skills still install');
@@ -272,7 +294,7 @@ suite('Agent skill installer', () => {
             writeSkill(path.join(root, 'gen'), 'gen');
             fs.writeFileSync(path.join(root, 'gen', SKILL_MARKER_FILE), JSON.stringify({ name: 'gen' }));
         }
-        const whole = installSet(catalog);
+        const whole = installSet(allInstalled(catalog));
         const report = await installer().sync({ install: [rootA], sweepOnly: [agents, claude] }, catalog, whole.visible, whole.hidden);
         assert.deepStrictEqual(report.removed.map(r => r.root).sort(), [agents, claude].sort());
         assert.ok(!fs.existsSync(path.join(agents, 'gen')) && !fs.existsSync(path.join(claude, 'gen')));

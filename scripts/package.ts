@@ -24,6 +24,8 @@ import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 import { parse as parseSemver } from 'semver';
 
+import { assertPinnedIndex } from '../src/core/knowledge/coreIndexLock';
+
 const argv = process.argv.slice(2);
 
 function getOptionValue(args: string[], longName: string, shortName: string): string | undefined {
@@ -130,6 +132,18 @@ if (isOddMinorVersion(version) && !argv.includes('--pre-release')) {
     argv.push('--pre-release');
 }
 
+const repoRoot = path.resolve(__dirname, '..');
+
+// The core knowledge index must be the one the lock pins (resources/knowledge/core.lock.json):
+// a VSIX without it has knowledge tools that refuse every call. `--index-unpinned` lets a
+// developer's rebuilt index through, loudly; a missing index never passes. Our flag, not vsce's.
+const indexUnpinned = argv.includes('--index-unpinned');
+if (indexUnpinned) {
+    argv.splice(argv.indexOf('--index-unpinned'), 1);
+}
+const { lock, state, sources } = assertPinnedIndex(repoRoot, { allowUnpinned: indexUnpinned });
+console.log(`Core knowledge index: ${state.kind} ${lock.version} (${lock.units} units, sha256 ${lock.sha256.slice(0, 12)}…); SOURCES.md: ${sources.kind}`);
+
 // Ship the README's images inside the VSIX.
 //
 // vsce rewrites relative README links to absolute URLs under package.json's
@@ -141,7 +155,6 @@ if (isOddMinorVersion(version) && !argv.includes('--pre-release')) {
 // packaged readme is generated here: relative images become data: URIs,
 // other relative links are rewritten the way vsce would have, and README.md in
 // the repository keeps its plain relative paths so GitHub renders it as-is.
-const repoRoot = path.resolve(__dirname, '..');
 const inlineImageExtensions: Record<string, string> = {
     '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
 };

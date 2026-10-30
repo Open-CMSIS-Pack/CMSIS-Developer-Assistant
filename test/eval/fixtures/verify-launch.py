@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Replay cdt-gdb-adapter's launch path against the project's launch.json.
 
-Run from the workspace folder:
+Run from the built workspace folder, using this helper in the repository:
 
-    python3 .claude/skills/fvp-debug-setup/templates/verify-launch.py \
+    python3 /path/to/CMSIS-Developer-Assistant/test/eval/fixtures/verify-launch.py \
         [--config "Arm-FVP@GDB (launch)"] [--gdb arm-none-eabi-gdb]
 
-This is the only verification that proves the setup works, because it exercises
-the readiness handshake -- starting the model and attaching GDB by hand skips
-exactly the part that breaks (see SKILL.md section 5).
+This checks the adapter's readiness handshake, which a manual model start and
+GDB attachment do not exercise. For the setup procedure, use knowledge_get
+with id "proc-fvp-debug-setup".
 """
 import argparse
 import json
@@ -100,7 +100,20 @@ try:
 except subprocess.TimeoutExpired:
     proc.kill()
 
-left = subprocess.run(["docker", "ps", "--format", "{{.Names}}"],
-                      capture_output=True, text=True).stdout.split()
-print("containers left after teardown:", left or "none")
+left = []
+fixture_shim = os.path.join(os.getcwd(), ".vscode", "fvp.sh")
+if sys.platform == "darwin" and os.path.realpath(server) == os.path.realpath(fixture_shim):
+    # The fixture shim labels its Docker container with the shell's PWD. Bash
+    # preserves a logical PWD only when it names the actual working directory.
+    workspace = os.environ.get("PWD", os.getcwd())
+    try:
+        if not os.path.samefile(workspace, os.getcwd()):
+            workspace = os.getcwd()
+    except OSError:
+        workspace = os.getcwd()
+    left = subprocess.run(
+        ["docker", "ps", "--filter", f"label=cmsis.fvp.folder={workspace}", "--format", "{{.Names}}"],
+        capture_output=True, text=True, check=True,
+    ).stdout.split()
+    print("fixture containers left after teardown:", left or "none")
 sys.exit(0 if "Temporary breakpoint" in r.stdout and not left else 1)

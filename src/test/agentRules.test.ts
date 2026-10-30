@@ -38,6 +38,7 @@ import {
     RuleFileSystem,
     RuleLog,
     RuleRecordStore,
+    RuleRefreshUi,
     RuleStepDeps,
     RuleStepUi,
     refreshRecordedRules,
@@ -52,7 +53,8 @@ import { beginMarker, endMarker } from '../utils/markerBlock';
  * directory. The step's promises: a change the user does not confirm writes
  * nothing, a file several agents share is written once, taking the rules out
  * leaves the file as it was (or no file, when it was made for them), and
- * activation only ever updates a block that is already there.
+ * activation only ever updates a block that is already there, and only
+ * after the user asked to review the update and confirmed it.
  */
 
 const ROOT = path.resolve(path.sep, 'fake-disk');
@@ -175,6 +177,24 @@ function scriptedUser(
 }
 
 /** Accept the picker as it opens. */
+/** The user at activation: whether to review the offered updates, and the answer to each preview. */
+function refreshUser(review: boolean, confirm: (change: RuleChange) => boolean): RuleRefreshUi & { offers: RuleChange[][]; previewed: RuleChange[] } {
+    const offers: RuleChange[][] = [];
+    const previewed: RuleChange[] = [];
+    return {
+        offers,
+        previewed,
+        offer: async (changes) => {
+            offers.push([...changes]);
+            return review;
+        },
+        confirm: async (change) => {
+            previewed.push(change);
+            return confirm(change);
+        },
+    };
+}
+
 const keepChecked = (choices: readonly RuleChoice[]): ReadonlySet<string> =>
     new Set(choices.filter((choice) => choice.checked).map((choice) => choice.target.file));
 const always = (): boolean => true;
@@ -198,20 +218,23 @@ suite('Tool rules in agents\' rule files', () => {
 
     // --- which file each agent reads ------------------------------------------------------
 
-    test('the user files of Claude Code, Codex, Copilot CLI and Antigravity are offered and preselected', () => {
-        const offered = targets(new FakeDisk(), ['claude-code', 'codex', 'copilot-cli', 'antigravity'], { folders: [] });
+    test('the user files of Claude Code, Codex, Copilot CLI, Antigravity and Kimi Code are offered and preselected', () => {
+        const offered = targets(new FakeDisk(), ['claude-code', 'codex', 'copilot-cli', 'antigravity', 'kimi-code'], { folders: [] });
         assert.deepStrictEqual(offered.map((target) => [target.file, target.scope, target.form, target.agents, target.preselect]), [
             [at(HOME, '.claude', 'CLAUDE.md'), 'user', 'block', ['claude-code'], true],
             [at(HOME, '.codex', 'AGENTS.md'), 'user', 'block', ['codex'], true],
             [at(HOME, '.copilot', 'copilot-instructions.md'), 'user', 'block', ['copilot-cli'], true],
             [at(HOME, '.gemini', 'AGENTS.md'), 'user', 'block', ['antigravity'], true],
+            [at(HOME, '.kimi-code', 'AGENTS.md'), 'user', 'block', ['kimi-code'], true],
         ]);
     });
 
-    test('CLAUDE_CONFIG_DIR, CODEX_HOME and COPILOT_HOME move the user files', () => {
-        const env = { CLAUDE_CONFIG_DIR: at(ROOT, 'claude'), CODEX_HOME: at(ROOT, 'codex'), COPILOT_HOME: at(ROOT, 'copilot') };
-        const files = targets(new FakeDisk(), ['claude-code', 'codex', 'copilot-cli'], { folders: [], env }).map((target) => target.file);
-        assert.deepStrictEqual(files, [at(ROOT, 'claude', 'CLAUDE.md'), at(ROOT, 'codex', 'AGENTS.md'), at(ROOT, 'copilot', 'copilot-instructions.md')]);
+    test('CLAUDE_CONFIG_DIR, CODEX_HOME, COPILOT_HOME and KIMI_CODE_HOME move the user files', () => {
+        const env = { CLAUDE_CONFIG_DIR: at(ROOT, 'claude'), CODEX_HOME: at(ROOT, 'codex'), COPILOT_HOME: at(ROOT, 'copilot'), KIMI_CODE_HOME: at(ROOT, 'kimi') };
+        const files = targets(new FakeDisk(), ['claude-code', 'codex', 'copilot-cli', 'kimi-code'], { folders: [], env }).map((target) => target.file);
+        assert.deepStrictEqual(files, [
+            at(ROOT, 'claude', 'CLAUDE.md'), at(ROOT, 'codex', 'AGENTS.md'), at(ROOT, 'copilot', 'copilot-instructions.md'), at(ROOT, 'kimi', 'AGENTS.md'),
+        ]);
     });
 
     test('Copilot Chat, Cursor, Cline and Roo Code get a workspace file only, and none is preselected', () => {
@@ -226,11 +249,11 @@ suite('Tool rules in agents\' rule files', () => {
     });
 
     test('a workspace AGENTS.md that several agents read is one target naming them all', () => {
-        const offered = targets(new FakeDisk(), ['codex', 'copilot-cli', 'copilot-chat', 'antigravity', 'claude-code'], { folders: [FOLDER] })
+        const offered = targets(new FakeDisk(), ['codex', 'kimi-code', 'copilot-cli', 'copilot-chat', 'antigravity', 'claude-code'], { folders: [FOLDER] })
             .filter((target) => target.scope === 'workspace');
         assert.strictEqual(offered.length, 1);
         assert.strictEqual(offered[0].file, at(WS, 'AGENTS.md'));
-        assert.deepStrictEqual(offered[0].agents, ['claude-code', 'codex', 'copilot-cli', 'antigravity', 'copilot-chat']);
+        assert.deepStrictEqual(offered[0].agents, ['claude-code', 'codex', 'copilot-cli', 'antigravity', 'kimi-code', 'copilot-chat']);
     });
 
     test('Claude Code keeps to a project CLAUDE.md, and never creates one that would hide AGENTS.md', () => {
@@ -429,7 +452,11 @@ suite('Tool rules in agents\' rule files', () => {
 
     // --- activation --------------------------------------------------------------------------------
 
-    test('activation updates a recorded, stale block in place and never creates one', async () => {
+    /** A stale, a current, a gone and an emptied record, and a stale file nobody recorded. */
+    function activationDisk(): {
+        disk: FakeDisk; store: MemoryStore; stale: string; current: string; gone: string; blockDeleted: string; notOurs: string;
+        around: (inner: string) => string;
+    } {
         const stale = at(HOME, '.codex', 'AGENTS.md');
         const current = at(HOME, '.claude', 'CLAUDE.md');
         const gone = at(HOME, '.copilot', 'copilot-instructions.md');
@@ -444,15 +471,63 @@ suite('Tool rules in agents\' rule files', () => {
         });
         const record = (file: string): RuleFileRecord => ({ file, scope: 'user', form: 'block', agents: ['codex'], created: false, createdDirs: [] });
         const store = new MemoryStore([record(stale), record(current), record(gone), record(blockDeleted)]);
+        return { disk, store, stale, current, gone, blockDeleted, notOurs, around };
+    }
+
+    test('activation updates a recorded, stale block in place after review and confirmation, and never creates one', async () => {
+        const { disk, store, stale, current, gone, blockDeleted, notOurs, around } = activationDisk();
         const log = keptLog();
-        const report = await refreshRecordedRules(RULES, deps(disk, store, log));
-        assert.deepStrictEqual(report, { updated: [stale], forgotten: [gone, blockDeleted], failed: [] });
+        const user = refreshUser(true, always);
+        const report = await refreshRecordedRules(RULES, user, deps(disk, store, log));
+        assert.deepStrictEqual(report, { updated: [stale], postponed: [], forgotten: [gone, blockDeleted], failed: [] });
+        assert.deepStrictEqual(user.offers.map((changes) => changes.map((change) => [change.target.file, change.kind])), [[[stale, 'update']]],
+            'one offer, for the stale block only');
+        assert.strictEqual(user.previewed[0].after, around(block()), 'the preview shows the updated file');
         assert.strictEqual(disk.files.get(stale), around(block()), 'updated in place; the text around it and CRLF stay');
         assert.deepStrictEqual(disk.writes, [stale], 'only the stale block is written');
         assert.ok(!disk.files.has(gone), 'a missing file is not created');
         assert.strictEqual(disk.files.get(blockDeleted), '# The user took the block out\n', 'a deleted block is not written back');
         assert.strictEqual(disk.files.get(notOurs), `${block(OLD_RULES)}\n`, 'an unrecorded file is not touched');
-        assert.deepStrictEqual(store.records.map((kept) => kept.file), [stale, current]);
+        assert.deepStrictEqual(store.records.map((kept) => kept.file).sort(), [current, stale].sort());
         assert.ok(log.lines.some((line) => line.includes(stale) && line.includes('updated')), 'the update is logged');
+    });
+
+    test('activation writes nothing when the review is not taken up or the update is declined', async () => {
+        for (const [review, confirm] of [[false, always], [true, never]] as const) {
+            const { disk, store, stale, current, gone, blockDeleted, around } = activationDisk();
+            const log = keptLog();
+            const user = refreshUser(review, confirm);
+            const report = await refreshRecordedRules(RULES, user, deps(disk, store, log));
+            assert.deepStrictEqual(report, { updated: [], postponed: [stale], forgotten: [gone, blockDeleted], failed: [] });
+            assert.strictEqual(user.previewed.length, review ? 1 : 0, 'a preview only after Review');
+            assert.deepStrictEqual(disk.writes, [], 'no file is written');
+            assert.strictEqual(disk.files.get(stale), around(block(OLD_RULES)), 'the stale block stays');
+            assert.deepStrictEqual(store.records.map((kept) => kept.file), [stale, current], 'the stale record is kept for the setup step');
+        }
+    });
+
+    test('activation does not ask while every recorded block is current', async () => {
+        const current = at(HOME, '.claude', 'CLAUDE.md');
+        const disk = new FakeDisk({ [current]: `${block()}\n` });
+        const store = new MemoryStore([{ file: current, scope: 'user', form: 'block', agents: ['claude-code'], created: false, createdDirs: [] }]);
+        const user = refreshUser(true, always);
+        const report = await refreshRecordedRules(RULES, user, deps(disk, store));
+        assert.deepStrictEqual(report, { updated: [], postponed: [], forgotten: [], failed: [] });
+        assert.deepStrictEqual(user.offers, [], 'no offer');
+        assert.deepStrictEqual(disk.writes, []);
+    });
+
+    test('a block the user deletes while the update is offered is not written back', async () => {
+        const { disk, store, stale, around } = activationDisk();
+        const user = refreshUser(true, always);
+        const offer = user.offer;
+        user.offer = async (changes) => {
+            disk.files.set(stale, around('# The block is gone'));
+            return offer(changes);
+        };
+        const report = await refreshRecordedRules(RULES, user, deps(disk, store));
+        assert.deepStrictEqual(report.updated, []);
+        assert.deepStrictEqual(report.postponed, [stale]);
+        assert.deepStrictEqual(disk.writes, [], 'nothing is written');
     });
 });

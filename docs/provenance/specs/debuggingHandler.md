@@ -236,8 +236,8 @@ Applied to a register string after trimming:
 
 1. Empty or `<?>`: unchanged.
 2. Starts with `[` (decoded flags such as `[ Z C GE=0 ]`): unchanged.
-3. Starts with `0x` or `0X`: keep the leading run of `0x` (lower-case x) followed by hex digits, which drops a trailing annotation such as `<main+12>`. With `0X` the run does not match and the trimmed text is returned unchanged (known bug KB14).
-4. Anything else is parsed like `parseInt(text, 10)`: leading digits, trailing text ignored. A non-negative result becomes `0x` + (value mod 2^32) in lower-case hex, zero-padded to 8 digits. NaN or a negative value: unchanged.
+3. Starts with `0x` or `0X`: keep the leading run of hex digits as `0x` + digits, which drops a trailing annotation such as `<main+12>`.
+4. Anything else is parsed like `parseInt(text, 10)`: leading digits, trailing text ignored. A non-negative result becomes `0x` + (value mod 2^32) in lower-case hex, zero-padded to 8 digits; a negative result down to -2^31 is read as its 32-bit two's complement (GDB prints registers typed `int` — lr, xpsr, r0–r12 on pyOCD's and J-Link's target descriptions — as signed decimals, so EXC_RETURN 0xfffffff9 arrives as `-7`). NaN or a value below -2^31: unchanged.
 
 The numeric register value used by `diagnose_fault` is undefined when the string is missing or starts with `<`. Otherwise it is normalised; if the result is not exactly `0x` followed by hex digits it is undefined, else it is the unsigned 32-bit number.
 
@@ -957,7 +957,7 @@ Each item is **preserve (fixed separately later)**. The rewrite reproduces it ex
 - **KB11: Late command failures are dropped.** A `cmsis-csolution.*` command that rejects after the 4 s kick-off is ignored; the call reports as if the command had been issued.
 - **KB12: `remove_breakpoint` without a model entry.** It returns `RM1` and does not clear a GDB-native breakpoint that exists at that line.
 - **KB13: `read_memory` header and address.** `MEM1` states the requested length, not the bytes returned. The address is parsed for display only after the read and always as hex, so a decimal address is shown as a different hex address, and a malformed one fails with a `BigInt` error through the fence.
-- **KB14: Register normalisation edge cases.** A `0X…` value is returned with its annotation. The decimal parse accepts leading digits of mixed text. Negative decimals are returned unchanged.
+- **KB14: Register normalisation edge cases.** The decimal parse accepts leading digits of mixed text. (The `0X…` and negative-decimal cases were fixed for 2.7.0: a `0X…` value drops its annotation like `0x…`, and a negative decimal is the register's two's complement, so `diagnose_fault` decodes the exception frame when GDB prints LR as `-7`.)
 - **KB15: `list_breakpoints` numbering.** Breakpoint kinds other than source and function breakpoints print nothing but still use an index, which leaves gaps.
 - **KB16: the switch refusal also blocks `detach` and `stop_run`.** Under a live debug session, a `target` that differs from the active one is refused (`CA4`) for every action, including `detach` and `stop_run`.
 - **KB17: Unknown action detected late.** An unknown `action` (possible only over the control channel) is detected only after the solution and target checks, and possibly after a target switch.

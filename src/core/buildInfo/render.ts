@@ -353,6 +353,8 @@ export interface DiagnosticsRenderInput {
     candidates?: string[];
     root?: string;
     maxChars?: number;
+    /** The target's newest image when it was linked after the log was written: the log is of an earlier build. */
+    newerImage?: { path: string; mtimeMs: number };
 }
 
 function diagLine(d: Diagnostic, logFile: string): string {
@@ -365,9 +367,14 @@ export function renderDiagnostics(input: DiagnosticsRenderInput): string {
     const lines: string[] = [];
     if (input.ctxLine) { lines.push(input.ctxLine); }
     lines.push(`Build log: ${rel(s.file, input.root)} · ${formatBytes(s.sizeBytes)} · ${when(s.mtimeMs)} · ${s.lines} lines`);
+    const stale = input.newerImage !== undefined && input.newerImage.mtimeMs > s.mtimeMs;
+    if (stale && input.newerImage) {
+        lines.push(`Older than the image: ${rel(input.newerImage.path, input.root)} was linked ${when(input.newerImage.mtimeMs)}, after this log — `
+            + 'the log is of an earlier build, and a later one linked the image (cmsis_action status has the last result).');
+    }
     if (s.contexts.length) { lines.push(`  contexts: ${s.contexts.join(', ')}`); }
     if (s.compilerLine) { lines.push(`  ${s.compilerLine}`); }
-    lines.push(`Status: ${s.ok === false ? 'FAILED' : s.ok ? 'ok' : 'unknown'}${s.status ? ` — ${s.status}` : ''}; ${s.errors} error(s), ${s.warnings} warning(s), ${s.notes} note(s)`);
+    lines.push(`Status${stale ? ' of that build' : ''}: ${s.ok === false ? 'FAILED' : s.ok ? 'ok' : 'unknown'}${s.status ? ` — ${s.status}` : ''}; ${s.errors} error(s), ${s.warnings} warning(s), ${s.notes} note(s)`);
     if (s.failedSteps.length) {
         const { shown, hidden } = truncateList(s.failedSteps, 5);
         lines.push(`Failed steps: ${shown.join(', ')}${hidden ? ` … ${hidden} more` : ''}`);

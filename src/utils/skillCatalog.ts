@@ -26,10 +26,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * The upstream category directories (`generic-mcu-skills/skills/<category>/`)
- * plus the extension's own. Only the categories `scripts/skills.config.json`
- * names are vendored; a category without skills in the catalog gets no
- * router and no help section.
+ * The categories of the knowledge index's procedures: the upstream category
+ * directories of Open-CMSIS-Pack/cmsis-skills (`generic-mcu-skills/skills/<category>/`)
+ * plus the extension's own help.
  */
 export type SkillCategory = 'project' | 'bring-up' | 'debug' | 'pack' | 'ethos-u' | 'devops' | 'help';
 
@@ -48,10 +47,11 @@ export const SKILL_CATEGORY_LABELS: Readonly<Record<SkillCategory, string>> = {
 };
 
 /**
- * Where a skill comes from. `bundled`: the extension's own entry points, a
- * slash command each. `extension`: the extension's own skills reached through
- * an entry point or a hand-over (`$name`), installed hidden. `cmsis-skills`:
- * vendored from Open-CMSIS-Pack/cmsis-skills. `generated`: a category router.
+ * Where a skill comes from. `bundled`: the extension's own entry points.
+ * `extension`: the extension's own skills reached through a hand-over
+ * (`$name`). The shipped catalog holds only these two; the installer also
+ * understands `cmsis-skills` (vendored upstream) and `generated` (a category
+ * router), which catalogs of 2.5 carried.
  */
 export type SkillSource = 'cmsis-skills' | 'bundled' | 'generated' | 'extension';
 
@@ -64,7 +64,7 @@ export interface SkillCatalogEntry {
     /** Routers are the per-category entry points; skills are the workers. */
     kind: 'skill' | 'router';
     source: SkillSource;
-    /** Directory relative to the extension root, e.g. `skills/cmsis-skills/debug-knowledge`. */
+    /** Directory relative to the extension root, e.g. `skills/cmsis-help`. */
     path: string;
     /** From `agents/openai.yaml` `interface.display_name`, when present. */
     displayName?: string;
@@ -72,6 +72,11 @@ export interface SkillCatalogEntry {
     shortDescription?: string;
     /** Other catalog skills this one refers to with the `$name` sigil; for routers, every member. */
     dependsOn: string[];
+    /**
+     * Installed by the extension (the `installed` list of the config; today
+     * `cmsis-help` alone). `false`: a unit of the knowledge index only.
+     */
+    installed: boolean;
     /**
      * Installed visible, as a slash command: the extension's own skills, the
      * routers, and a skill of a category without a router. The members of a
@@ -84,7 +89,8 @@ export interface SkillCatalogEntry {
 
 export interface SkillCatalog {
     schemaVersion: 1;
-    source: {
+    /** The upstream commit of vendored `cmsis-skills` entries; absent since 2.7.0, which vendors none. */
+    source?: {
         repository: string;
         sha: string;
         sourcePath: string;
@@ -108,8 +114,8 @@ export function parseSkillCatalog(json: string): SkillCatalog {
     if (parsed.schemaVersion !== 1) {
         throw new Error(`Unsupported skill catalog schemaVersion ${String(parsed.schemaVersion)}`);
     }
-    if (!parsed.source || typeof parsed.source.sha !== 'string' || !Array.isArray(parsed.skills)) {
-        throw new Error('Malformed skill catalog: missing source or skills');
+    if (!Array.isArray(parsed.skills) || (parsed.source !== undefined && typeof parsed.source.sha !== 'string')) {
+        throw new Error('Malformed skill catalog: missing skills, or a source without a sha');
     }
     return parsed as SkillCatalog;
 }
@@ -127,14 +133,16 @@ export interface InstallSet {
 }
 
 /**
- * Every catalog skill is installed; `invocable` decides whether it shows up
- * in the `/` menu. There is no selection: the catalog is the set, and the
- * next sync after an upgrade brings existing installations in line with it.
+ * The installed entries of the catalog; `invocable` decides whether one shows
+ * up in the `/` menu. There is no selection: the catalog decides, and the next
+ * sync after an upgrade brings existing installations in line with it.
+ * Whatever else an earlier version installed is removed by the sweep.
  */
 export function installSet(catalog: SkillCatalog): InstallSet {
+    const installed = catalog.skills.filter(entry => entry.installed);
     return {
-        visible: catalog.skills.filter(entry => entry.invocable).map(entry => entry.name),
-        hidden: catalog.skills.filter(entry => !entry.invocable).map(entry => entry.name),
+        visible: installed.filter(entry => entry.invocable).map(entry => entry.name),
+        hidden: installed.filter(entry => !entry.invocable).map(entry => entry.name),
     };
 }
 

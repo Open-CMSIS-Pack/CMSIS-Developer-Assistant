@@ -1,4 +1,0 @@
-interface:
-  display_name: "CMSIS: Create Csolution GitHub Action"
-  short_description: "Create build or FVP-test CI for a CMSIS solution"
-  default_prompt: "Create a GitHub Actions workflow that builds or tests the currently loaded CMSIS solution."

@@ -22,22 +22,32 @@
  * extension's `.vscode/cmsis.json` selection so a re-activated solution comes
  * up on the requested target.
  *
- * The cmsis.json layout mirrors what the CMSIS Solution extension (1.70)
- * writes itself:
+ * The cmsis.json layout mirrors what the CMSIS Solution extension (1.72.0,
+ * `CmsisSettingsJsonFile`) reads and writes itself:
  *
  *   { "targetSet": { "<solutionDisplayName>": {
  *         "activeTargetType": "<type>",
  *         "<type>": <index into that type's target-set list>   // optional
  *   } } }
  *
- * where `<solutionDisplayName>` is the csolution path relative to the
- * workspace folder with both extensions stripped, forward slashes.
+ * in the `.vscode/cmsis.json` of the workspace's first folder, whichever
+ * folder holds the solution. `<solutionDisplayName>` is the csolution path
+ * relative to that folder with both extensions stripped, forward slashes.
+ * The extension looks the key up as a dotted path, split at every `.`, so
+ * a name with dots nests: `../fw/app`, the name of a solution in a second
+ * folder, is `targetSet` → `""` → `""` → `"/fw/app"`.
  *
  * No `vscode` import here so the logic is unit-testable outside the host.
  */
 
 import * as path from 'path';
+import { CORE_SCHEMA, load, mergeTag, realMapTag } from 'js-yaml';
 import { applyEdits, modify } from 'jsonc-parser';
+
+const MAX_CSOLUTION_BYTES = 1024 * 1024;
+const MAX_TARGET_NAMES = 10000;
+const MAX_TARGET_NAME_LENGTH = 1024;
+const TARGET_SCHEMA = CORE_SCHEMA.withTags(mergeTag, realMapTag);
 
 /** A target reference as the agent passes it: `MPS3` or `HP@debug`. */
 export interface TargetRef {
@@ -87,44 +97,57 @@ export function targetMatches(active: string | undefined, wanted: TargetRef): bo
 }
 
 /**
- * The target-types a csolution declares, with their target-set names, from a
- * line scan of the YAML (the repo carries no YAML parser; the csolution
- * schema keeps `target-types:` a flat list so a scan is enough).
+ * The target-types a csolution declares and the names of their target-sets,
+ * in file order. A real YAML parser handles block/flow collections, escapes,
+ * aliases and merge keys alike; maps remain Maps so a key cannot become an
+ * object prototype property. Only the target selection's shape is checked,
+ * not the whole CMSIS schema. Missing/null set names retain their unnamed
+ * place in the extension's target-set index.
+ *
+ * Invalid YAML, unsupported tags or target shapes, and resource-limit
+ * violations throw with a reason. They must never look like an empty list
+ * of declared targets. The input, parser depth/aliases/merge work, and the
+ * extracted names are bounded before an activation or selection write.
  */
 export function listTargetTypes(csolutionText: string): TargetTypeInfo[] {
-    const types: TargetTypeInfo[] = [];
-    const lines = csolutionText.split(/\r?\n/);
-    let blockIndent = -1;
-    let inSets = false;
-
-    for (const raw of lines) {
-        const line = raw.replace(/\s+#.*$/, '').replace(/^\s*#.*$/, '');
-        if (!line.trim()) { continue; }
-        const indent = line.length - line.trimStart().length;
-
-        if (blockIndent < 0) {
-            if (/^\s*target-types:\s*$/.test(line)) { blockIndent = indent; }
-            continue;
-        }
-        if (indent <= blockIndent) { break; } // left the target-types block
-
-        const typeMatch = /^\s*-\s*type:\s*(.+?)\s*$/.exec(line);
-        if (typeMatch) {
-            types.push({ name: unquote(typeMatch[1]), sets: [] });
-            inSets = false;
-            continue;
-        }
-        const current = types[types.length - 1];
-        if (!current) { continue; }
-        if (/^\s*target-set:\s*$/.test(line)) { inSets = true; continue; }
-        // `- set:` list items only occur under target-set:; a set's own keys
-        // (debugger:, images:) and the type's other keys are skipped.
-        const setMatch = /^\s*-\s*set:\s*(.*?)\s*$/.exec(line);
-        if (inSets && setMatch) {
-            current.sets.push(unquote(setMatch[1]));
-        }
+    if (Buffer.byteLength(csolutionText, 'utf8') > MAX_CSOLUTION_BYTES) {
+        throw new Error(`Cannot read csolution targets: YAML exceeds the ${MAX_CSOLUTION_BYTES}-byte limit.`);
     }
-    return types;
+    let document: unknown;
+    try {
+        document = load(csolutionText, {
+            schema: TARGET_SCHEMA,
+            maxDepth: 64,
+            maxAliases: 100,
+            maxTotalMergeKeys: 10000,
+        });
+    } catch (caught) {
+        const reason = caught instanceof Error ? caught.message : String(caught);
+        throw new Error(`Cannot read csolution targets: invalid or unsupported YAML (${reason}).`);
+    }
+    const root = targetMapping(document, 'document');
+    const solution = targetMapping(root.get('solution'), 'solution');
+    if (!solution.has('target-types')) {
+        return [];
+    }
+    const types = targetSequence(solution.get('target-types'), 'solution.target-types');
+    let names = types.length;
+    checkTargetNameCount(names);
+    return types.map((value, index) => {
+        const at = `solution.target-types[${index}]`;
+        const type = targetMapping(value, at);
+        const name = targetName(type.get('type'), `${at}.type`, false);
+        const sets = type.has('target-set') ? targetSequence(type.get('target-set'), `${at}.target-set`) : [];
+        names += sets.length;
+        checkTargetNameCount(names);
+        return {
+            name,
+            sets: sets.map((entry, setIndex) => {
+                const setAt = `${at}.target-set[${setIndex}]`;
+                return targetName(targetMapping(entry, setAt).get('set'), `${setAt}.set`, true);
+            }),
+        };
+    });
 }
 
 /** The choices to offer when a request does not resolve: `MPS3, HE@debug, HE@release`. */
@@ -162,7 +185,7 @@ export function resolveTargetSelection(types: TargetTypeInfo[], wanted: TargetRe
     return { ok: true, type: type.name, set: wanted.set, setIndex: index, name: formatTargetName(type.name, wanted.set) };
 }
 
-/** The key the extension files a solution under in cmsis.json. */
+/** The key the extension files a solution under in cmsis.json; `workspaceFolder` is the workspace's first folder. */
 export function solutionDisplayName(workspaceFolder: string, solutionPath: string): string {
     const relative = path.relative(workspaceFolder, solutionPath);
     const stripped = relative.replace(/\.[^./\\]+$/, '').replace(/\.[^./\\]+$/, '');
@@ -171,7 +194,8 @@ export function solutionDisplayName(workspaceFolder: string, solutionPath: strin
 
 /**
  * Return cmsis.json text with the solution's active target-type set (and the
- * set index when one was named). Existing content — other solutions, other
+ * set index when one was named), under the key path the extension reads:
+ * `displayName` split at every `.`. Existing content — other solutions, other
  * keys, comments — is preserved; formatting follows the extension (4 spaces).
  */
 export function applyTargetSelection(
@@ -181,18 +205,53 @@ export function applyTargetSelection(
     setIndex: number | undefined,
 ): string {
     const formattingOptions = { insertSpaces: true, tabSize: 4, eol: '\n' };
+    const selection = ['targetSet', ...displayName.split('.')];
     let text = cmsisJsonText.trim() ? cmsisJsonText : '{}';
-    text = applyEdits(text, modify(text, ['targetSet', displayName, 'activeTargetType'], type, { formattingOptions }));
+    text = applyEdits(text, modify(text, [...selection, 'activeTargetType'], type, { formattingOptions }));
     if (setIndex !== undefined) {
-        text = applyEdits(text, modify(text, ['targetSet', displayName, type], setIndex, { formattingOptions }));
+        text = applyEdits(text, modify(text, [...selection, type], setIndex, { formattingOptions }));
     }
     return text.endsWith('\n') ? text : `${text}\n`;
 }
 
-function unquote(value: string): string {
-    const v = value.trim();
-    if (v.length >= 2 && ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'")))) {
-        return v.slice(1, -1);
+/** Require the YAML mapping at a selection path, without coercing scalar/collection types. */
+function targetMapping(value: unknown, at: string): Map<unknown, unknown> {
+    if (!(value instanceof Map)) {
+        throw new Error(`Cannot read csolution targets: ${at} must be a mapping.`);
     }
-    return v;
+    for (const key of value.keys()) {
+        if (typeof key !== 'string') {
+            throw new Error(`Cannot read csolution targets: ${at} contains a non-string mapping key; only string keys are supported.`);
+        }
+    }
+    return value;
+}
+
+/** Require a sequence so target-set indexes match the owner's sequence exactly. */
+function targetSequence(value: unknown, at: string): unknown[] {
+    if (!Array.isArray(value)) {
+        throw new Error(`Cannot read csolution targets: ${at} must be a sequence.`);
+    }
+    return value;
+}
+
+/** Read one name without turning a YAML number, boolean or object into an invented string. */
+function targetName(value: unknown, at: string, unnamed: boolean): string {
+    if (unnamed && (value === null || value === undefined)) {
+        return '';
+    }
+    if (typeof value !== 'string' || (!unnamed && value.trim() === '')) {
+        throw new Error(`Cannot read csolution targets: ${at} must be ${unnamed ? 'a string or null' : 'a non-empty string'}; quote scalar names when needed.`);
+    }
+    if (value.length > MAX_TARGET_NAME_LENGTH) {
+        throw new Error(`Cannot read csolution targets: ${at} exceeds the ${MAX_TARGET_NAME_LENGTH}-character name limit.`);
+    }
+    return value;
+}
+
+/** Bound extracted alias-backed choices as well as the source/parser work. */
+function checkTargetNameCount(count: number): void {
+    if (count > MAX_TARGET_NAMES) {
+        throw new Error(`Cannot read csolution targets: more than ${MAX_TARGET_NAMES} target-type and target-set names.`);
+    }
 }

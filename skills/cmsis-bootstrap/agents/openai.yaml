@@ -1,4 +1,0 @@
-interface:
-  display_name: "CMSIS: Start from an Empty Window"
-  short_description: "Go from an empty VS Code window to a CMSIS solution that builds and debugs"
-  default_prompt: "Use $cmsis-bootstrap to set up a new CMSIS project for my board and get it building."

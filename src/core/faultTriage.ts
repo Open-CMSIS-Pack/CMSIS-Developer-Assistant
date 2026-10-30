@@ -29,34 +29,155 @@ import { StackFrame } from '../debugState';
 
 const hex8 = (n: number) => `0x${(n >>> 0).toString(16).padStart(8, '0')}`;
 
+// EXC_RETURN, as CMSIS core_cm33.h defines EXC_RETURN_* (Armv8-M ARM D1.2.96).
+// Every Armv6-M and Armv7-M value has bits 6, 5 and 0 set; without the
+// Security Extension, Armv8-M clears S and ES. Both keep the frame on the
+// current MSP or PSP with nothing below R0.
+const EXC_RETURN_PREFIX = 0xFF;
+/** The frame is on the Secure stack. */
+const EXC_RETURN_S = 1 << 6;
+/** Clear: the additional state context is already on the stack. */
+const EXC_RETURN_DCRS = 1 << 5;
+/** Clear: an FP-extended frame. */
+const EXC_RETURN_FTYPE = 1 << 4;
+/** Set: the exception was taken from Thread mode. */
+const EXC_RETURN_MODE = 1 << 3;
+/** Set: the process stack, as CONTROL.SPSEL of the Security state ES names. */
+const EXC_RETURN_SPSEL = 1 << 2;
+/** Set: the exception was taken to Secure state. */
+const EXC_RETURN_ES = 1 << 0;
+/** CONTROL.SPSEL: Thread mode runs on the process stack. */
+const CONTROL_SPSEL = 1 << 1;
+/** Integrity signature, reserved word and R4–R11 between SP and the stacked R0 (Armv8-M ARM B3.19). */
+const ADDITIONAL_STATE_CONTEXT_BYTES = 0x28;
+/** EXC_INTEGRITY_SIGNATURE of core_cm33.h; bit 0 is EXC_RETURN.FType, which is always one without an FPU. */
+const INTEGRITY_SIGNATURE = 0xFEFA125A;
+
+/** A stack pointer of the core; the suffixed ones are the banked registers of the Security Extension. */
+export type StackPointerName = 'MSP' | 'PSP' | 'MSP_S' | 'PSP_S' | 'MSP_NS' | 'PSP_NS';
+
 export interface ExceptionFrameSelection {
     /** LR holds an EXC_RETURN value, i.e. the core is halted inside a handler. */
     isExcReturn: boolean;
-    source: 'PSP' | 'MSP' | null;
+    /**
+     * The stack the frame is on: MSP or PSP of the Security state the core
+     * is in, or the other state's banked one.
+     */
+    source: StackPointerName | null;
     sp: number | null;
     /** FP-extended frame (26 words) rather than the basic 8. */
     extended: boolean;
+    /** Bytes from SP to the stacked R0: 0x28 when the additional state context lies below it, else 0. */
+    stateOffset: number;
+    /** Why sp is null when the frame is on the other Security state's stack. */
+    note?: string;
 }
 
-/** EXC_RETURN: bit 2 selects PSP, bit 4 clear means an FP-extended frame. */
-export function selectExceptionFrame(lr: number | undefined, msp: number | undefined, psp: number | undefined): ExceptionFrameSelection {
-    if (lr === undefined || (lr >>> 28) !== 0xF) {
-        return { isExcReturn: false, source: null, sp: null, extended: false };
+/** What an EXC_RETURN value says about the frame. */
+interface ExcReturnFields {
+    /** S: the frame is on a Secure stack. */
+    secureStack: boolean;
+    /** ES: the handler runs in Secure state. */
+    secureException: boolean;
+    /** Mode: the exception was taken from Thread mode. */
+    thread: boolean;
+    /** SPSEL: the process stack of the handler's Security state. */
+    spsel: boolean;
+    /** FType clear: FP-extended. */
+    extended: boolean;
+    /** Bytes from SP to the stacked R0. */
+    stateOffset: number;
+}
+
+/** The fields of an EXC_RETURN value, or null when LR holds none (FNC_RETURN included). */
+function decodeExcReturn(lr: number | undefined): ExcReturnFields | null {
+    if (lr === undefined || (lr >>> 24) !== EXC_RETURN_PREFIX) {
+        return null;
     }
-    const usesPsp = (lr & (1 << 2)) !== 0;
-    const sp = usesPsp ? psp : msp;
-    return { isExcReturn: true, source: usesPsp ? 'PSP' : 'MSP', sp: sp ?? null, extended: (lr & (1 << 4)) === 0 };
+    const secureStack = (lr & EXC_RETURN_S) !== 0;
+    const secureException = (lr & EXC_RETURN_ES) !== 0;
+    // PopStack pops the additional state context when S is 1 and ES or DCRS is 0.
+    const additional = secureStack && (!secureException || (lr & EXC_RETURN_DCRS) === 0);
+    return {
+        secureStack,
+        secureException,
+        thread: (lr & EXC_RETURN_MODE) !== 0,
+        spsel: (lr & EXC_RETURN_SPSEL) !== 0,
+        extended: (lr & EXC_RETURN_FTYPE) === 0,
+        stateOffset: additional ? ADDITIONAL_STATE_CONTEXT_BYTES : 0,
+    };
+}
+
+/**
+ * The banked registers (GDB names) that locate a frame on the stack of the
+ * Security state the core is not in: [] unless EXC_RETURN's S and ES differ.
+ */
+export function bankedStackRegisters(lr: number | undefined): string[] {
+    const exc = decodeExcReturn(lr);
+    if (!exc || exc.secureStack === exc.secureException) {
+        return [];
+    }
+    const suffix = exc.secureStack ? '_s' : '_ns';
+    return exc.thread ? [`msp${suffix}`, `psp${suffix}`, `control${suffix}`] : [`msp${suffix}`];
+}
+
+/**
+ * EXC_RETURN: bit 2 selects PSP, bit 4 clear means an FP-extended frame. On
+ * Armv8-M with the Security Extension, S (bit 6) names the stack's Security
+ * state; when it is not the handler's (ES, bit 0), the frame is on that
+ * state's banked MSP, or in Thread mode on the stack its CONTROL.SPSEL
+ * selects (Armv8-M ARM B3.22). `banked` holds what bankedStackRegisters()
+ * names, by GDB name.
+ */
+export function selectExceptionFrame(lr: number | undefined, msp: number | undefined, psp: number | undefined,
+    banked: Readonly<Record<string, number | undefined>> = {}): ExceptionFrameSelection {
+    const exc = decodeExcReturn(lr);
+    if (!exc) {
+        return { isExcReturn: false, source: null, sp: null, extended: false, stateOffset: 0 };
+    }
+    const layout = { isExcReturn: true, extended: exc.extended, stateOffset: exc.stateOffset };
+    if (exc.secureStack === exc.secureException) {
+        // The core is in the frame's Security state, whose MSP and PSP these are.
+        return { ...layout, source: exc.spsel ? 'PSP' : 'MSP', sp: (exc.spsel ? psp : msp) ?? null };
+    }
+    const suffix = exc.secureStack ? '_s' : '_ns';
+    const bank = suffix.toUpperCase();
+    const unreported = `which the GDB server did not report — MSP and PSP are the ${exc.secureStack ? 'Non-secure' : 'Secure'} state's `
+        + `(EXC_RETURN ${hex8(lr ?? 0)})`;
+    // Handler mode stacks on MSP. In Thread mode the frame's state's CONTROL.SPSEL decides: EXC_RETURN.SPSEL is the handler's.
+    const control = exc.thread ? banked[`control${suffix}`] : 0;
+    if (control === undefined) {
+        return { ...layout, source: null, sp: null, note: `on MSP${bank} or PSP${bank}, as CONTROL${bank} selects, ${unreported}` };
+    }
+    const name = `${(control & CONTROL_SPSEL) !== 0 ? 'psp' : 'msp'}${suffix}`;
+    const source = name.toUpperCase() as StackPointerName;
+    const sp = banked[name] ?? null;
+    return sp !== null ? { ...layout, source, sp } : { ...layout, source, sp, note: `on ${source}, ${unreported}` };
+}
+
+/** The integrity signature a frame with the additional state context starts with. */
+function expectedSignature(extended: boolean): number {
+    return (INTEGRITY_SIGNATURE | (extended ? 0 : 1)) >>> 0;
 }
 
 export interface StackedFrame {
     r0: number; r1: number; r2: number; r3: number; r12: number; lr: number; pc: number; xpsr: number;
+    /** The word at SP when the additional state context lies below R0. */
+    signature?: number;
 }
 
-/** The basic exception frame: R0–R3, R12, LR, PC, xPSR, little-endian. */
-export function parseStackedFrame(buf: Buffer): StackedFrame | null {
-    if (buf.length < 32) { return null; }
-    const w = (i: number) => buf.readUInt32LE(i * 4);
-    return { r0: w(0), r1: w(1), r2: w(2), r3: w(3), r12: w(4), lr: w(5), pc: w(6), xpsr: w(7) };
+/**
+ * The state context: R0–R3, R12, LR, PC, xPSR, little-endian, `stateOffset`
+ * bytes above SP. An FP context follows it and moves none of these words.
+ */
+export function parseStackedFrame(buf: Buffer, stateOffset: number = 0): StackedFrame | null {
+    if (buf.length < stateOffset + 32) { return null; }
+    const w = (i: number) => buf.readUInt32LE(stateOffset + i * 4);
+    const frame: StackedFrame = { r0: w(0), r1: w(1), r2: w(2), r3: w(3), r12: w(4), lr: w(5), pc: w(6), xpsr: w(7) };
+    if (stateOffset > 0) {
+        frame.signature = buf.readUInt32LE(0);
+    }
+    return frame;
 }
 
 export interface AddressInfo {
@@ -121,8 +242,9 @@ export function hypothesize(input: TriageInput): Hypothesis[] {
     const pcHex = pcInfo ? hex8(pcInfo.addr) : '<PC>';
 
     if (has('STKOF') || has('STKERR') || has('MSTKERR')) {
-        const lim = selection.source === 'PSP' ? regs.psplim : regs.msplim;
-        const spNow = selection.source === 'PSP' ? regs.psp : regs.msp;
+        // The limits read are the current Security state's; a frame on the other state's stack has none here.
+        const lim = selection.source === 'PSP' ? regs.psplim : selection.source === 'MSP' ? regs.msplim : undefined;
+        const spNow = selection.sp ?? undefined;
         const below = lim !== undefined && spNow !== undefined && spNow < lim ? ` (${selection.source} ${hex8(spNow)} is below its limit ${hex8(lim)})` : '';
         out.push({
             text: `Stack overflow: the exception frame could not be pushed${below}. Deep recursion, a large local array, or an RTOS task stack that is too small.`,
@@ -240,6 +362,10 @@ export interface DiagnosisInput extends TriageInput {
     lockup?: boolean;
 }
 
+/** The exception numbers of the fault handlers: HardFault, MemManage, BusFault, UsageFault, SecureFault. */
+const FIRST_FAULT_EXCEPTION = 3;
+const LAST_FAULT_EXCEPTION = 7;
+
 const IPSR_NAMES: Record<number, string> = { 2: 'NMI', 3: 'HardFault', 4: 'MemManage', 5: 'BusFault', 6: 'UsageFault', 7: 'SecureFault', 11: 'SVCall', 12: 'DebugMonitor', 14: 'PendSV', 15: 'SysTick' };
 
 /** The diagnose_fault report; at most ~40 lines. */
@@ -260,6 +386,11 @@ export function renderDiagnosis(input: DiagnosisInput): string {
                 lines.push(`  #${i} ${f.name} @ ${f.source ?? '<no source>'}:${f.line ?? '?'}`);
             }
         }
+        if (ipsr !== undefined && ipsr >= FIRST_FAULT_EXCEPTION && ipsr <= LAST_FAULT_EXCEPTION) {
+            lines.push(`The fault status reads clear (CFSR and HFSR 0), yet the ${IPSR_NAMES[ipsr]} handler is active: the handler cleared it, or the debug server does not report it.`);
+            lines.push('Next: get_call_stack for where the exception came from.');
+            return lines.join('\n');
+        }
         lines.push('The target is not in a fault: CFSR and HFSR are clear. If it faulted earlier, the flags were cleared by a reset or by the handler.');
         lines.push('Next: get_call_stack for where it stopped; wait_for_stop after continue_execution to catch the fault when it happens.');
         return lines.join('\n');
@@ -274,7 +405,12 @@ export function renderDiagnosis(input: DiagnosisInput): string {
     }
 
     if (frame && selection.sp !== null) {
-        lines.push(`Exception frame: ${selection.source} @ ${hex8(selection.sp)}${selection.extended ? ', FP-extended' : ''} (EXC_RETURN ${hex8(regs.lr ?? 0)})`);
+        const below = selection.stateOffset ? `, R0 at +0x${selection.stateOffset.toString(16)} after the integrity signature and R4–R11` : '';
+        lines.push(`Exception frame: ${selection.source} @ ${hex8(selection.sp)}${selection.extended ? ', FP-extended' : ''}${below} (EXC_RETURN ${hex8(regs.lr ?? 0)})`);
+        const expected = expectedSignature(selection.extended);
+        if (frame.signature !== undefined && frame.signature !== expected) {
+            lines.push(`  Integrity signature ${hex8(frame.signature)} is not ${hex8(expected)}: the stack was overwritten, or the frame is not where EXC_RETURN says`);
+        }
         lines.push(`  R0=${hex8(frame.r0)} R1=${hex8(frame.r1)} R2=${hex8(frame.r2)} R3=${hex8(frame.r3)} R12=${hex8(frame.r12)}`);
         const precise = decoded.flags.some(f => ['PRECISERR', 'DACCVIOL', 'IACCVIOL', 'IBUSERR', 'UNDEFINSTR', 'INVSTATE', 'UNALIGNED', 'DIVBYZERO', 'NOCP'].includes(f.name));
         lines.push(`  PC=${hex8(frame.pc)} ${precise ? '← faulting instruction' : '(imprecise: the fault happened before this)'}  LR=${hex8(frame.lr)} (caller)  xPSR=${hex8(frame.xpsr)}`);

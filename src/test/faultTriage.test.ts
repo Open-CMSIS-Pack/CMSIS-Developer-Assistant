@@ -20,7 +20,7 @@ import * as path from 'path';
 import { decodeFault, FaultRegisters } from '../core/faultDecoder';
 import { parseSvdXml } from '../core/svdParser';
 import {
-    classifyAddress, hypothesize, parseStackedFrame, renderDiagnosis, selectExceptionFrame, DiagnosisInput,
+    bankedStackRegisters, classifyAddress, hypothesize, parseStackedFrame, renderDiagnosis, selectExceptionFrame, DiagnosisInput,
 } from '../core/faultTriage';
 
 /**
@@ -36,14 +36,73 @@ suite('Fault triage', () => {
         ({ CFSR: 0, HFSR: 0, DFSR: 0, MMFAR: 0, BFAR: 0, AFSR: 0, ...over });
 
     test('EXC_RETURN selects the stack and the frame layout', () => {
-        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFFD, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'PSP', sp: 0x2000ff00, extended: false });
-        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFF9, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'MSP', sp: 0x20000f00, extended: false });
-        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFF1, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'MSP', sp: 0x20000f00, extended: false });
-        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFED, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'PSP', sp: 0x2000ff00, extended: true });
-        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFE9, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'MSP', sp: 0x20000f00, extended: true });
-        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFE1, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'MSP', sp: 0x20000f00, extended: true });
-        assert.deepStrictEqual(selectExceptionFrame(0x08001235, 0x20000f00, 0x2000ff00), { isExcReturn: false, source: null, sp: null, extended: false });
-        assert.deepStrictEqual(selectExceptionFrame(undefined, 1, 2), { isExcReturn: false, source: null, sp: null, extended: false });
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFFD, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'PSP', sp: 0x2000ff00, extended: false, stateOffset: 0 });
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFF9, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'MSP', sp: 0x20000f00, extended: false, stateOffset: 0 });
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFF1, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'MSP', sp: 0x20000f00, extended: false, stateOffset: 0 });
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFED, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'PSP', sp: 0x2000ff00, extended: true, stateOffset: 0 });
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFE9, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'MSP', sp: 0x20000f00, extended: true, stateOffset: 0 });
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFE1, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'MSP', sp: 0x20000f00, extended: true, stateOffset: 0 });
+        assert.deepStrictEqual(selectExceptionFrame(0x08001235, 0x20000f00, 0x2000ff00), { isExcReturn: false, source: null, sp: null, extended: false, stateOffset: 0 });
+        assert.deepStrictEqual(selectExceptionFrame(undefined, 1, 2), { isExcReturn: false, source: null, sp: null, extended: false, stateOffset: 0 });
+        // Armv6-M and Armv7-M set S, DCRS and ES: nothing banked is read for them.
+        for (const lr of [0xFFFFFFF1, 0xFFFFFFF9, 0xFFFFFFFD, 0xFFFFFFE1, 0xFFFFFFE9, 0xFFFFFFED]) {
+            assert.deepStrictEqual(bankedStackRegisters(lr), [], lr.toString(16));
+        }
+        // FNC_RETURN, the return payload of a Secure call into Non-secure code, is not an EXC_RETURN.
+        assert.deepStrictEqual(selectExceptionFrame(0xFEFFFFFF, 0x20000f00, 0x2000ff00), { isExcReturn: false, source: null, sp: null, extended: false, stateOffset: 0 });
+    });
+
+    test('Armv8-M without the Security Extension: S and ES read zero, the frame is on MSP or PSP', () => {
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFBC, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'PSP', sp: 0x2000ff00, extended: false, stateOffset: 0 });
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFB8, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'MSP', sp: 0x20000f00, extended: false, stateOffset: 0 });
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFB0, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'MSP', sp: 0x20000f00, extended: false, stateOffset: 0 });
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFAC, 0x20000f00, 0x2000ff00), { isExcReturn: true, source: 'PSP', sp: 0x2000ff00, extended: true, stateOffset: 0 });
+        assert.deepStrictEqual(bankedStackRegisters(0xFFFFFFBC), []);
+    });
+
+    test('TrustZone: DCRS clear puts the integrity signature and R4–R11 below R0', () => {
+        // Secure handler, Secure background (S = ES = 1) with the additional state context on PSP_S, the current PSP.
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFDD, 0x30000f00, 0x3000ff00), { isExcReturn: true, source: 'PSP', sp: 0x3000ff00, extended: false, stateOffset: 0x28 });
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFCD, 0x30000f00, 0x3000ff00), { isExcReturn: true, source: 'PSP', sp: 0x3000ff00, extended: true, stateOffset: 0x28 });
+        assert.deepStrictEqual(bankedStackRegisters(0xFFFFFFDD), []);
+        // DCRS clear on a Non-secure stack adds nothing: PopStack unstacks the additional state context only from a Secure stack.
+        assert.strictEqual(selectExceptionFrame(0xFFFFFF9C, 0x20000f00, 0x2000ff00).stateOffset, 0);
+    });
+
+    test('TrustZone: a frame on the other Security state\'s stack is read from that state\'s banked stack pointer', () => {
+        const banked = { msp_s: 0x30000f00, psp_s: 0x3000ff00, msp_ns: 0x20000e00, psp_ns: 0x2000fe00 };
+        // Non-secure handler, Secure background (S = 1, ES = 0): the additional state context is always there, and
+        // CONTROL_S.SPSEL, not EXC_RETURN bit 2 (the Non-secure state's), picks the process stack.
+        assert.deepStrictEqual(bankedStackRegisters(0xFFFFFFF8), ['msp_s', 'psp_s', 'control_s']);
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFF8, 0x20000f00, 0x2000ff00, { ...banked, control_s: 0x2 }),
+            { isExcReturn: true, source: 'PSP_S', sp: 0x3000ff00, extended: false, stateOffset: 0x28 });
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFFC, 0x20000f00, 0x2000ff00, { ...banked, control_s: 0x1 }),
+            { isExcReturn: true, source: 'MSP_S', sp: 0x30000f00, extended: false, stateOffset: 0x28 });
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFE8, 0x20000f00, 0x2000ff00, { ...banked, control_s: 0x6 }),
+            { isExcReturn: true, source: 'PSP_S', sp: 0x3000ff00, extended: true, stateOffset: 0x28 });
+        // Secure handler, Non-secure background (S = 0, ES = 1), e.g. a SecureFault in Non-secure code: no additional state context.
+        assert.deepStrictEqual(bankedStackRegisters(0xFFFFFFB9), ['msp_ns', 'psp_ns', 'control_ns']);
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFB9, 0x30000f00, 0x3000ff00, { ...banked, control_ns: 0x2 }),
+            { isExcReturn: true, source: 'PSP_NS', sp: 0x2000fe00, extended: false, stateOffset: 0 });
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFAD, 0x30000f00, 0x3000ff00, { ...banked, control_ns: 0x0 }),
+            { isExcReturn: true, source: 'MSP_NS', sp: 0x20000e00, extended: true, stateOffset: 0 });
+        // From Handler mode the frame is on the banked MSP, whatever CONTROL says.
+        assert.deepStrictEqual(bankedStackRegisters(0xFFFFFFB1), ['msp_ns']);
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFB1, 0x30000f00, 0x3000ff00, banked),
+            { isExcReturn: true, source: 'MSP_NS', sp: 0x20000e00, extended: false, stateOffset: 0 });
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFF0, 0x20000f00, 0x2000ff00, banked),
+            { isExcReturn: true, source: 'MSP_S', sp: 0x30000f00, extended: false, stateOffset: 0x28 });
+    });
+
+    test('TrustZone: a banked register the GDB server does not report leaves the frame unread, and says why', () => {
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFB9, 0x30000f00, 0x3000ff00), {
+            isExcReturn: true, source: null, sp: null, extended: false, stateOffset: 0,
+            note: 'on MSP_NS or PSP_NS, as CONTROL_NS selects, which the GDB server did not report — MSP and PSP are the Secure state\'s (EXC_RETURN 0xffffffb9)',
+        });
+        assert.deepStrictEqual(selectExceptionFrame(0xFFFFFFF8, 0x20000f00, 0x2000ff00, { msp_s: 0x30000f00, control_s: 0x2 }), {
+            isExcReturn: true, source: 'PSP_S', sp: null, extended: false, stateOffset: 0x28,
+            note: 'on PSP_S, which the GDB server did not report — MSP and PSP are the Non-secure state\'s (EXC_RETURN 0xfffffff8)',
+        });
     });
 
     test('the basic frame is eight little-endian words', () => {
@@ -51,6 +110,16 @@ suite('Fault triage', () => {
         [1, 2, 3, 4, 12, 0x08001235, 0x08004000, 0x21000003].forEach((v, i) => buf.writeUInt32LE(v, i * 4));
         assert.deepStrictEqual(parseStackedFrame(buf), { r0: 1, r1: 2, r2: 3, r3: 4, r12: 12, lr: 0x08001235, pc: 0x08004000, xpsr: 0x21000003 });
         assert.strictEqual(parseStackedFrame(Buffer.alloc(16)), null);
+    });
+
+    test('behind the additional state context, R0 is at +0x28 and the signature at SP', () => {
+        const buf = Buffer.alloc(0x48);
+        buf.writeUInt32LE(0xFEFA125B, 0);
+        [4, 5, 6, 7, 8, 9, 10, 11].forEach((v, i) => buf.writeUInt32LE(v, 8 + i * 4));
+        [1, 2, 3, 4, 12, 0x10001235, 0x10004000, 0x21000003].forEach((v, i) => buf.writeUInt32LE(v, 0x28 + i * 4));
+        assert.deepStrictEqual(parseStackedFrame(buf, 0x28),
+            { r0: 1, r1: 2, r2: 3, r3: 4, r12: 12, lr: 0x10001235, pc: 0x10004000, xpsr: 0x21000003, signature: 0xFEFA125B });
+        assert.strictEqual(parseStackedFrame(buf.subarray(0, 0x40), 0x28), null);
     });
 
     test('addresses are classified by the SVD first, then the system map', () => {
@@ -65,7 +134,7 @@ suite('Fault triage', () => {
     const input = (over: Partial<DiagnosisInput>): DiagnosisInput => ({
         decoded: decodeFault(regs()),
         frame: null,
-        selection: { isExcReturn: false, source: null, sp: null, extended: false },
+        selection: { isExcReturn: false, source: null, sp: null, extended: false, stateOffset: 0 },
         regs: {},
         frames: [],
         skipped: [],
@@ -81,7 +150,7 @@ suite('Fault triage', () => {
             ['Null-pointer dereference']);
         assert.deepStrictEqual(fire({ decoded: decodeFault(regs({ CFSR: 0x0400 })), pcInfo: classifyAddress(0x08001000, device) }),
             ['Imprecise bus error']);
-        assert.deepStrictEqual(fire({ decoded: decodeFault(regs({ CFSR: 0x00100000 })), selection: { isExcReturn: true, source: 'PSP', sp: 0x2000f000, extended: false }, regs: { psp: 0x2000f000, psplim: 0x20010000 } })[0],
+        assert.deepStrictEqual(fire({ decoded: decodeFault(regs({ CFSR: 0x00100000 })), selection: { isExcReturn: true, source: 'PSP', sp: 0x2000f000, extended: false, stateOffset: 0 }, regs: { psp: 0x2000f000, psplim: 0x20010000 } })[0],
             'Stack overflow');
         assert.deepStrictEqual(fire({ decoded: decodeFault(regs({ CFSR: 0x00010000 })), pcInfo: classifyAddress(0x08001000, device) }),
             ['Undefined instruction at 0x08001000']);
@@ -99,7 +168,7 @@ suite('Fault triage', () => {
     test('the stack-overflow hypothesis names the crossed limit', () => {
         const [h] = hypothesize(input({
             decoded: decodeFault(regs({ CFSR: 0x00100000 })),
-            selection: { isExcReturn: true, source: 'PSP', sp: 0x2000f000, extended: false },
+            selection: { isExcReturn: true, source: 'PSP', sp: 0x2000f000, extended: false, stateOffset: 0 },
             regs: { psp: 0x2000f000, psplim: 0x20010000 },
         }));
         assert.match(h.text, /PSP 0x2000f000 is below its limit 0x20010000/);
@@ -111,7 +180,7 @@ suite('Fault triage', () => {
         const out = renderDiagnosis(input({
             decoded: decodeFault(regs({ CFSR: 0x8200, HFSR: 0x40000000, BFAR: 0x40005400 })),
             frame: parseStackedFrame(buf),
-            selection: { isExcReturn: true, source: 'PSP', sp: 0x2000ff00, extended: false },
+            selection: { isExcReturn: true, source: 'PSP', sp: 0x2000ff00, extended: false, stateOffset: 0 },
             regs: { pc: 0x0800000c, sp: 0x2000ff00, lr: 0xFFFFFFFD, xpsr: 0x3, msp: 0x20000f00, psp: 0x2000ff00 },
             faultAddress: classifyAddress(0x40005400, device),
             pcInfo: classifyAddress(0x08004000, device),
@@ -131,6 +200,43 @@ suite('Fault triage', () => {
         assert.match(out, /\nNext: read_peripheral_register on the clock-enable register/);
     });
 
+    test('a TrustZone frame names its banked stack and where R0 is, and checks the integrity signature', () => {
+        const stacked = (signature: number): Buffer => {
+            const buf = Buffer.alloc(0x48);
+            buf.writeUInt32LE(signature, 0);
+            [0, 0x40005400, 0, 0, 0, 0x10001235, 0x10004000, 0x21000000].forEach((v, i) => buf.writeUInt32LE(v, 0x28 + i * 4));
+            return buf;
+        };
+        const diagnose = (signature: number, lr: number): string[] => renderDiagnosis(input({
+            decoded: decodeFault(regs({ CFSR: 0x8200, HFSR: 0x40000000, BFAR: 0x40005400 })),
+            frame: parseStackedFrame(stacked(signature), 0x28),
+            selection: selectExceptionFrame(lr, 0x20000f00, 0x2000ff00, { msp_s: 0x30000f00, psp_s: 0x3000ff00, control_s: 0x2 }),
+            regs: { pc: 0x0800000c, sp: 0x20000f00, lr, xpsr: 0x3, msp: 0x20000f00, psp: 0x2000ff00 },
+            faultAddress: classifyAddress(0x40005400, device),
+            stopReason: 'exception',
+        })).split('\n');
+        const lines = diagnose(0xFEFA125B, 0xFFFFFFF8);
+        assert.strictEqual(lines[4], 'Exception frame: PSP_S @ 0x3000ff00, R0 at +0x28 after the integrity signature and R4–R11 (EXC_RETURN 0xfffffff8)');
+        assert.match(lines[6], /^ {2}PC=0x10004000 ← faulting instruction {2}LR=0x10001235 \(caller\) {2}xPSR=0x21000000$/);
+        assert.strictEqual(diagnose(0xFEFA125A, 0xFFFFFFE8)[4],
+            'Exception frame: PSP_S @ 0x3000ff00, FP-extended, R0 at +0x28 after the integrity signature and R4–R11 (EXC_RETURN 0xffffffe8)');
+        assert.strictEqual(diagnose(0, 0xFFFFFFF8)[5],
+            '  Integrity signature 0x00000000 is not 0xfefa125b: the stack was overwritten, or the frame is not where EXC_RETURN says');
+        assert.strictEqual(diagnose(0xFEFA125B, 0xFFFFFFE8)[5],
+            '  Integrity signature 0xfefa125b is not 0xfefa125a: the stack was overwritten, or the frame is not where EXC_RETURN says');
+    });
+
+    test('the stack-overflow hypothesis compares the frame\'s own stack with its limit', () => {
+        const overflow = (over: Partial<DiagnosisInput>): string => hypothesize(input({ decoded: decodeFault(regs({ CFSR: 0x00100000 })), ...over }))[0].text;
+        assert.match(overflow({ selection: selectExceptionFrame(0xFFFFFFF9, 0x20000f00, 0x2000ff00), regs: { msp: 0x20000f00, msplim: 0x20001000 } }),
+            /\(MSP 0x20000f00 is below its limit 0x20001000\)/);
+        // The limits read belong to the state the core is in, not to a banked stack of the other one.
+        assert.doesNotMatch(overflow({
+            selection: selectExceptionFrame(0xFFFFFFB1, 0x20000f00, 0x2000ff00, { msp_ns: 0x2000fe00 }),
+            regs: { msp: 0x20000f00, msplim: 0x20001000 },
+        }), /below its limit/);
+    });
+
     test('with no fault flags the report is a short stop context', () => {
         const out = renderDiagnosis(input({ stopReason: 'breakpoint', regs: { pc: 0x08000100, xpsr: 0 }, frames: [{ name: 'main', source: 'main.c', line: 10 }] }));
         const lines = out.split('\n');
@@ -138,6 +244,20 @@ suite('Fault triage', () => {
         assert.strictEqual(lines[0], '=== No fault flags set ===');
         assert.strictEqual(lines[1], 'Stop: breakpoint, thread mode, PC 0x08000100');
         assert.match(out, /Next: get_call_stack/);
+        assert.match(out, /The target is not in a fault: CFSR and HFSR are clear/);
+    });
+
+    test('with no fault flags but a fault handler active, the report does not say the target is not in a fault', () => {
+        for (const [xpsr, handler] of [[0x61000003, 'HardFault'], [0x01000004, 'MemManage'], [0x01000007, 'SecureFault']] as const) {
+            const out = renderDiagnosis(input({ stopReason: 'breakpoint', regs: { pc: 0x1000219e, xpsr } }));
+            assert.doesNotMatch(out, /not in a fault/);
+            assert.ok(out.includes(`The fault status reads clear (CFSR and HFSR 0), yet the ${handler} handler is active: `
+                + 'the handler cleared it, or the debug server does not report it.'), out);
+            assert.match(out, /Next: get_call_stack for where the exception came from\.$/);
+        }
+        for (const xpsr of [0x01000002, 0x0100000b, 0x01000010]) {
+            assert.match(renderDiagnosis(input({ regs: { xpsr } })), /The target is not in a fault/, `exception ${xpsr & 0x1ff} is no fault handler`);
+        }
     });
 
     test('a missing frame and skipped sections are stated, not hidden', () => {

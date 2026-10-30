@@ -18,7 +18,7 @@
  * Onboarding of AI agents onto the CMSIS Developer Assistant.
  *
  * - Registers this extension's MCP server in the home-directory configuration
- *   files of eight agents (seven JSON files and Codex's TOML file), and
+ *   files of nine agents (eight JSON files and Codex's TOML file), and
  *   migrates the entries earlier releases wrote there.
  * - Runs the two-step setup: which agents to register (the CMSIS skills are
  *   installed into the personal skills directories at the same time), and
@@ -41,6 +41,7 @@
  */
 
 import * as vscode from 'vscode';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -63,12 +64,14 @@ import {
     RuleChoice,
     RuleLog,
     RuleRecordStore,
+    RuleRefreshUi,
     RuleStepDeps,
     RuleStepReport,
     RuleStepUi,
     refreshRecordedRules,
     runRuleStep,
 } from './agentRuleFiles';
+import { LONG_LIMIT_CAP_MS } from '../handler/fence';
 import { writeFileAtomic } from './atomicFile';
 import { rewriteJsonFile } from './jsonFileRewrite';
 import { logger } from './logger';
@@ -106,12 +109,16 @@ export type AgentInfo =
 /** Every field any of the JSON entry shapes uses; each agent gets a subset (see `ENTRY_SHAPES`). */
 export interface MCPServerConfig {
     type?: string;
+    /** Kimi Code's name for `type`; an entry with `url` and without it is Streamable HTTP. */
+    transport?: string;
     url?: string;
     command?: string;
     args?: string[];
     autoApprove?: string[];
     disabled?: boolean;
     timeout?: number;
+    /** Kimi Code: how long one tool call may take, in ms. */
+    toolTimeoutMs?: number;
     tools?: string[];
 }
 
@@ -130,6 +137,8 @@ const SETTINGS_SECTION = 'cmsis-developer-assistant';
 const SETUP_ANSWERED_KEY = 'cmsis-developer-assistant.popupShown.v5';
 /** globalState of releases before 2.5.15: when the monthly skills prompt was last shown. Cleared, never read. */
 const LEGACY_SKILLS_PROMPT_KEY = 'cmsis-developer-assistant.skillsPrompt.lastShownAt';
+/** globalState: the digest of the rules whose update activation last offered, so that each version is offered once. */
+const RULES_UPDATE_OFFERED_KEY = 'cmsis-developer-assistant.agentRules.updateOffered';
 
 const PRODUCT = 'CMSIS Developer Assistant';
 const SETUP_TITLE = `${PRODUCT} Setup`;
@@ -139,6 +148,8 @@ const OPEN_FILE_BUTTON = 'View File';
 const RULES_PREVIEW_SCHEME = 'cmsis-developer-assistant-rules';
 const WRITE_BUTTON = 'Write';
 const REMOVE_BUTTON = 'Remove';
+const REVIEW_BUTTON = 'Review';
+const NOT_NOW_BUTTON = 'Not Now';
 /** Every rule-file message goes to the output channel. */
 const RULE_LOG: RuleLog = {
     info: (message) => logger.info(message),
@@ -201,6 +212,7 @@ function supportedAgents(): AgentInfo[] {
         viaJson('copilot-cli', 'GitHub Copilot CLI', path.join(process.env.COPILOT_HOME || below(homeRoot, '.copilot'), 'mcp-config.json')),
         viaJson('cursor', 'Cursor', below(homeRoot, '.cursor/mcp.json')),
         codex,
+        viaJson('kimi-code', 'Kimi Code', path.join(process.env.KIMI_CODE_HOME || below(homeRoot, '.kimi-code'), 'mcp.json')),
         viaJson('claude-code', 'Claude Code', path.join(homeRoot, '.claude.json')),
         viaJson('claude-desktop', 'Claude Desktop', below(appData, 'Claude/claude_desktop_config.json')),
     ];
@@ -212,6 +224,14 @@ function agentsWithFiles(): AgentInfo[] {
 }
 
 /**
+ * Kimi Code ends a tool call after 60 s unless the entry says otherwise
+ * (`toolTimeoutMs`, https://moonshotai.github.io/kimi-code/en/customization/mcp,
+ * checked 2026-10-25). `cmsis_action` and `flash` may wait 600 s, and their
+ * reply needs a moment after that.
+ */
+export const KIMI_TOOL_TIMEOUT_MS = LONG_LIMIT_CAP_MS + 30_000;
+
+/**
  * Entry shapes of the JSON agents that do not take the default one. The key
  * order is part of the bytes written.
  */
@@ -221,6 +241,9 @@ const ENTRY_SHAPES: Readonly<Record<string, (url: string) => MCPServerConfig>> =
     // the fields of the default shape are not in its schema (https://cursor.com/docs/context/mcp).
     'cursor': (url) => ({ url }),
     'claude-code': (url) => ({ type: 'http', url }),
+    // Kimi Code reads an entry with `url` and no `transport` as Streamable HTTP. One entry
+    // its schema rejects disables every server of the file, so nothing else goes in.
+    'kimi-code': (url) => ({ url, toolTimeoutMs: KIMI_TOOL_TIMEOUT_MS }),
     // Claude Desktop starts stdio servers only; mcp-remote bridges to the HTTP endpoint.
     'claude-desktop': (url) => ({ command: 'npx', args: ['-y', 'mcp-remote', url] }),
 };
@@ -364,14 +387,19 @@ interface EntryMigration {
     changed: boolean;
     /** The change is one the user is told about; a pure endpoint refresh is not. */
     reported: boolean;
+    /** Keys of other entries for this server that were removed (`dropDuplicates`). */
+    duplicates: string[];
 }
 
 /**
  * Bring one servers object up to date, in place. The pre-rename key moves to
  * ours (an entry already under ours wins). An entry on the SSE transport, on
  * another transport than `wanted`, or at another endpoint is replaced by a
- * copy of `wanted` that keeps only its `autoApprove` list. Recomputed from the
- * parsed file on every attempt, so it has no effect outside `servers`.
+ * copy of `wanted` that keeps only its `autoApprove` list. An entry that is
+ * current but lacks the `toolTimeoutMs` of `wanted` gets it, and keeps the
+ * rest: without it, Kimi Code ends every call after 60 s. Other entries for
+ * this server next to ours are removed (`dropDuplicates`). Recomputed from
+ * the parsed file on every attempt, so it has no effect outside `servers`.
  */
 function migrateServers(servers: unknown, wanted: MCPServerConfig): EntryMigration {
     const table = servers as Record<string, unknown> | null | undefined;
@@ -385,9 +413,10 @@ function migrateServers(servers: unknown, wanted: MCPServerConfig): EntryMigrati
     }
     const present = (table ? table[SERVER_KEY] : undefined) as MCPServerConfig | undefined;
     if (!table || !present) {
-        return { changed: renamed, reported: renamed };
+        return { changed: renamed, reported: renamed, duplicates: [] };
     }
-    const onSse = present.type === 'sse' || (typeof present.url === 'string' && present.url.endsWith('/sse'));
+    const duplicates = dropDuplicates(table, wanted);
+    const onSse = present.type === 'sse' || present.transport === 'sse' || (typeof present.url === 'string' && present.url.endsWith('/sse'));
     const otherTransport = wanted.type !== undefined && present.type !== undefined && wanted.type !== present.type;
     const movedUrl = typeof present.url === 'string' && wanted.url !== undefined && present.url !== wanted.url;
     const movedArgs = Array.isArray(present.args) && wanted.args !== undefined
@@ -400,12 +429,93 @@ function migrateServers(servers: unknown, wanted: MCPServerConfig): EntryMigrati
         }
         table[SERVER_KEY] = fresh;
     }
-    return { changed: replace || renamed, reported: onSse || otherTransport || renamed };
+    const noToolTimeout = !replace && wanted.toolTimeoutMs !== undefined && isJsonObject(present) && present.toolTimeoutMs === undefined;
+    if (noToolTimeout) {
+        present.toolTimeoutMs = wanted.toolTimeoutMs;
+    }
+    const deduplicated = duplicates.length > 0;
+    return {
+        changed: replace || renamed || noToolTimeout || deduplicated,
+        reported: onSse || otherTransport || renamed || noToolTimeout || deduplicated,
+        duplicates,
+    };
 }
 
 /** A JSON object, not an array or null. */
 function isJsonObject(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** The host names an entry may use for this machine's loopback address. */
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
+/** The routes of this server: `/mcp`, and `/sse` of releases before 2.1. */
+const SERVER_ROUTES: ReadonlySet<string> = new Set(['/mcp', '/sse']);
+
+/** The URL an entry reaches its server by: `url`, or the URL argument of a bridge such as mcp-remote. */
+function entryUrl(entry: Record<string, unknown>): string | undefined {
+    if (typeof entry.url === 'string') {
+        return entry.url;
+    }
+    if (Array.isArray(entry.args)) {
+        return entry.args.find((arg): arg is string => typeof arg === 'string' && /^https?:\/\//i.test(arg));
+    }
+    return undefined;
+}
+
+/** The port of a loopback URL on one of this server's routes; undefined for any other URL. */
+function serverPortOf(url: string | undefined): string | undefined {
+    if (url === undefined) {
+        return undefined;
+    }
+    let parsed: URL;
+    try {
+        parsed = new URL(url);
+    } catch {
+        return undefined;
+    }
+    if (!LOOPBACK_HOSTS.has(parsed.hostname) || !SERVER_ROUTES.has(parsed.pathname.replace(/\/+$/, ''))) {
+        return undefined;
+    }
+    return parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+}
+
+/**
+ * Remove, in place, every entry other than ours that reaches this server: a
+ * loopback URL on the port of `wanted`, at `/mcp` or `/sse`. An entry the
+ * user wrote by hand under a name of its own ("CMSIS Developer Assistant")
+ * next to ours made Kimi Code list every tool twice, and its model called
+ * the hand-written one, which lacked `toolTimeoutMs`. An entry on another
+ * port is another server and stays. Where `wanted` has an `autoApprove`
+ * list, a removed entry's list is merged into ours. Returns the removed keys.
+ */
+function dropDuplicates(table: Record<string, unknown>, wanted: MCPServerConfig): string[] {
+    const port = serverPortOf(entryUrl(wanted as Record<string, unknown>));
+    const ours = table[SERVER_KEY];
+    if (port === undefined || !isJsonObject(ours)) {
+        return [];
+    }
+    const removed: string[] = [];
+    for (const key of Object.keys(table)) {
+        const other = table[key];
+        if (key === SERVER_KEY || !isJsonObject(other) || serverPortOf(entryUrl(other)) !== port) {
+            continue;
+        }
+        if (wanted.autoApprove !== undefined && Array.isArray(other.autoApprove)) {
+            const merged = new Set([...(Array.isArray(ours.autoApprove) ? ours.autoApprove : []), ...other.autoApprove]);
+            ours.autoApprove = [...merged];
+        }
+        delete table[key];
+        removed.push(key);
+    }
+    return removed;
+}
+
+/** "the entry 'A'", "the entries 'A' and 'B'": the keys `dropDuplicates` removed, for a message. */
+function duplicatePhrase(keys: readonly string[]): string {
+    const quoted = keys.map((key) => `'${key}'`);
+    return quoted.length === 1
+        ? `the entry ${quoted[0]}`
+        : `the entries ${quoted.slice(0, -1).join(', ')} and ${quoted[quoted.length - 1]}`;
 }
 
 /**
@@ -458,15 +568,19 @@ async function moveCursorEntry(cursor: JsonAgentInfo, oldPath: string, entry: MC
     return true;
 }
 
-/** Migrate one JSON agent file. True when it was written with a change worth reporting. */
-async function migrateJsonAgent(agent: JsonAgentInfo, wanted: MCPServerConfig): Promise<boolean> {
-    let reported = false;
+/**
+ * Migrate one JSON agent file. `reported` when it was written with a change
+ * worth reporting; `duplicates`, the keys of the other entries for this
+ * server it lost.
+ */
+async function migrateJsonAgent(agent: JsonAgentInfo, wanted: MCPServerConfig): Promise<{ reported: boolean; duplicates: string[] }> {
+    let step: EntryMigration = { changed: false, reported: false, duplicates: [] };
     const outcome = await rewriteJsonFile(agent.configPath, (tree) => {
-        const step = migrateServers(tree[agent.mcpServerFieldName], wanted);
-        reported = step.reported;
+        step = migrateServers(tree[agent.mcpServerFieldName], wanted);
         return step.changed;
     });
-    return outcome === 'written' && reported;
+    const written = outcome === 'written';
+    return { reported: written && step.reported, duplicates: written ? step.duplicates : [] };
 }
 
 /**
@@ -570,9 +684,11 @@ export class AgentConfigurationManager {
     }
 
     /**
-     * At activation: update, in place, every recorded rules block whose text
-     * is not the current tool contract's, and log it. Never creates a block
-     * or a file; does nothing while `agentRules.install` is `never`.
+     * At activation: offer, once per version of the rules, to update every
+     * recorded rules block whose text is not the current tool contract's,
+     * and update each one the user confirms after its preview. Never creates
+     * a block or a file; does nothing while `agentRules.install` is `never`.
+     * Resolves only once the user has answered; activation does not await it.
      */
     async refreshAgentRules(): Promise<void> {
         const recorded = this.ruleRecords().read().length;
@@ -587,16 +703,23 @@ export class AgentConfigurationManager {
         if (rules === undefined) {
             return;
         }
-        const report = await refreshRecordedRules(rules, this.ruleDeps());
-        if (report.updated.length > 0 || report.forgotten.length > 0) {
-            logger.info(`Tool rules at activation: ${report.updated.length} file(s) updated, ${report.forgotten.length} forgotten`);
+        const ui: RuleRefreshUi = {
+            offer: (changes) => this.offerRuleUpdate(changes, rules),
+            confirm: (change) => this.previewRuleChange(change),
+        };
+        const report = await refreshRecordedRules(rules, ui, this.ruleDeps());
+        if (report.updated.length > 0 || report.postponed.length > 0 || report.forgotten.length > 0) {
+            logger.info(`Tool rules at activation: ${report.updated.length} file(s) updated, `
+                + `${report.postponed.length} left outdated, ${report.forgotten.length} forgotten`);
         }
+        this.reportRuleStep({ dismissed: false, applied: report.updated.map((file) => ({ file, kind: 'update' })), declined: [], failed: [] });
     }
 
-    /** Make the first-run setup due again. */
+    /** Make the first-run setup due again, and the offer of the current rules update. */
     async resetPopupState(): Promise<void> {
         await this.ctx.globalState.update(SETUP_ANSWERED_KEY, false);
         await this.ctx.globalState.update(LEGACY_SKILLS_PROMPT_KEY, undefined);
+        await this.ctx.globalState.update(RULES_UPDATE_OFFERED_KEY, undefined);
     }
 
     /**
@@ -696,10 +819,11 @@ export class AgentConfigurationManager {
     private async configureAgents(queue: AgentInfo[]): Promise<void> {
         for (const agent of queue) {
             try {
-                if (!(await this.registerServer(agent))) {
+                const registered = await this.registerServer(agent);
+                if (registered === false) {
                     continue;
                 }
-                const configured = `✅ Registered the ${PRODUCT} MCP server with ${agent.displayName}.`;
+                const configured = `✅ Registered the ${PRODUCT} MCP server with ${agent.displayName}.${registered}`;
                 if (await vscode.window.showInformationMessage(configured, OPEN_FILE_BUTTON) === OPEN_FILE_BUTTON) {
                     const written = vscode.Uri.file(agent.configPath);
                     await vscode.commands.executeCommand('vscode.open', written);
@@ -713,12 +837,15 @@ export class AgentConfigurationManager {
 
     /**
      * Write this server's entry into one agent's file, creating the file and
-     * its directory when needed. An existing entry is replaced whole. False
-     * when it did not work out; the user has been told why.
+     * its directory when needed. An existing entry is replaced whole, and
+     * other entries for this server are removed (`dropDuplicates`). The
+     * sentence the success toast adds about removed entries ('' when there
+     * were none); false when it did not work out, and the user has been told why.
      */
-    private async registerServer(agent: AgentInfo): Promise<boolean> {
+    private async registerServer(agent: AgentInfo): Promise<string | false> {
         const file = agent.configPath;
         const url = this.endpointUrl();
+        let duplicates: string[] = [];
         try {
             await ensureParentDir(file);
             const fileExists = fs.existsSync(file);
@@ -731,7 +858,11 @@ export class AgentConfigurationManager {
                 if (!fileExists) {
                     // Nothing to keep: 2-space JSON without a final newline, like the rewrite below.
                     await writeFileAtomic(file, JSON.stringify({ [field]: { [SERVER_KEY]: entry } }, null, 2));
-                } else if (await rewriteJsonFile(file, (tree) => placeEntry(tree, field, entry)) === 'unparseable') {
+                } else if (await rewriteJsonFile(file, (tree) => {
+                    placeEntry(tree, field, entry);
+                    duplicates = dropDuplicates(tree[field] as Record<string, unknown>, entry);
+                    return true;
+                }) === 'unparseable') {
                     logger.warn(`Left ${file} alone: it is not a JSON object`);
                     void notifyError(
                         `Cannot configure ${agent.displayName}: ${file} exists but is not valid JSON. Please fix or remove the file and try again.`);
@@ -739,7 +870,11 @@ export class AgentConfigurationManager {
                 }
             }
             logger.info(`Registered the MCP server with ${agent.displayName} in ${file}`);
-            return true;
+            if (duplicates.length > 0) {
+                logger.info(`Removed ${duplicatePhrase(duplicates)} from ${file}: ${duplicates.length === 1 ? 'it points' : 'they point'} at this server`);
+                return ` Removed ${duplicatePhrase(duplicates)}, which pointed at the same server, so that ${agent.displayName} lists each tool once.`;
+            }
+            return '';
         } catch (failure) {
             logger.error(`Could not register the MCP server with ${agent.displayName}`, failure);
             void notifyError(`The ${PRODUCT} MCP server could not be added to ${agent.displayName}: ${String(failure)}`);
@@ -761,11 +896,21 @@ export class AgentConfigurationManager {
                 logger.warn(`Could not move the Cursor entry from ${oldPath} to ${cursor.configPath}`, failure);
             }
         }
+        const deduplicated: string[] = [];
         for (const agent of agentsWithFiles()) {
             try {
-                const counted = agent.configFormat === 'json'
-                    ? await migrateJsonAgent(agent, entryFor(agent.id, url, this.entryTimeoutSeconds))
-                    : await migrateCodexAgent(agent, url);
+                let counted: boolean;
+                if (agent.configFormat === 'json') {
+                    const step = await migrateJsonAgent(agent, entryFor(agent.id, url, this.entryTimeoutSeconds));
+                    counted = step.reported;
+                    if (step.duplicates.length > 0) {
+                        deduplicated.push(`${agent.displayName}: ${duplicatePhrase(step.duplicates)}`);
+                        logger.info(`Removed ${duplicatePhrase(step.duplicates)} from ${agent.configPath}: `
+                            + `${step.duplicates.length === 1 ? 'it points' : 'they point'} at this server, which '${SERVER_KEY}' registers`);
+                    }
+                } else {
+                    counted = await migrateCodexAgent(agent, url);
+                }
                 if (counted) {
                     reported++;
                     logger.info(`Migrated the ${agent.displayName} configuration at ${agent.configPath}`);
@@ -774,7 +919,10 @@ export class AgentConfigurationManager {
                 logger.warn(`Could not migrate the ${agent.displayName} configuration at ${agent.configPath}`, failure);
             }
         }
-        if (reported > 0) {
+        if (deduplicated.length > 0) {
+            void vscode.window.showInformationMessage(`${PRODUCT}: removed second entries for this MCP server, so that agents `
+                + `list each tool once (${deduplicated.join('; ')}).`);
+        } else if (reported > 0) {
             void vscode.window.showInformationMessage(`${PRODUCT}: brought the MCP server entry up to date in ${reported} agent configuration(s).`);
         }
     }
@@ -800,10 +948,13 @@ export class AgentConfigurationManager {
         if (!catalog) {
             return null;
         }
+        // The catalog marks the one skill installed (cmsis-help); every other procedure is a unit of the knowledge
+        // index. The installer's sweep removes what an earlier version installed.
         const wanted = installSet(catalog);
         const roots = skillRoots();
         const report = await this.installer.sync(roots, catalog, wanted.visible, wanted.hidden);
-        logger.info(`Skill install (${reason}) into ${roots.install.map(shortenHome).join(', ')}: ${summarizeSkillSync(report)}; `
+        logger.info(`Skill install (${reason}) into `
+            + `${roots.install.map(shortenHome).join(', ')}: ${summarizeSkillSync(report)}; `
             + `visible [${wanted.visible.join(', ')}], hidden [${wanted.hidden.join(', ')}]`);
         for (const failed of report.failed) {
             logger.warn(`Skill ${failed.name ?? '(root)'} in ${failed.root} failed: ${failed.error}`);
@@ -948,6 +1099,31 @@ export class AgentConfigurationManager {
             });
             fileList.show();
         });
+    }
+
+    /**
+     * Ask whether to review the update of outdated rules blocks: once per
+     * version of the rules, so that every window and every activation does
+     * not ask again, and not while the setup is due, whose rules step offers
+     * the update itself. True when the user chose Review.
+     */
+    private async offerRuleUpdate(changes: readonly RuleChange[], rules: string): Promise<boolean> {
+        if (await this.shouldShowPopup()) {
+            logger.info('Tool rules: the setup is due and offers the update of the outdated rule files');
+            return false;
+        }
+        const digest = crypto.createHash('sha256').update(rules).digest('hex');
+        if (this.ctx.globalState.get<string>(RULES_UPDATE_OFFERED_KEY) === digest) {
+            logger.info('Tool rules: the update of these rules was offered before');
+            return false;
+        }
+        await this.ctx.globalState.update(RULES_UPDATE_OFFERED_KEY, digest);
+        const where = changes.length === 1 ? ruleFileLabel(changes[0].target) : `${changes.length} rule files`;
+        const answer = await vscode.window.showInformationMessage(
+            `${PRODUCT}: this release changes the tool rules it wrote to ${where}. Review the update? `
+            + 'Configure Agent offers it later too.',
+            REVIEW_BUTTON, NOT_NOW_BUTTON);
+        return answer === REVIEW_BUTTON;
     }
 
     /** Where the preview texts come from; the provider is registered on first use. */

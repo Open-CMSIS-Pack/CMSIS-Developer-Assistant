@@ -25,7 +25,9 @@
  * `Discarded input sections` (count and bytes only).
  *
  * armlink: `Memory Map of the image` (load and execution regions with
- * Base/Size/Max, one row per input section with Type/Attr/Object),
+ * Base/Size/Max — or Exec base/Load base/Size/Max and a `Load Addr` column
+ * with `--load_addr_map_info`, as µVision-converted projects link — one row
+ * per input section with Type/Attr/Object),
  * `Image component sizes` (per object and library, plus the totals),
  * `Removing Unused input sections` (count and bytes).
  */
@@ -369,9 +371,12 @@ function parseArmlink(text: string, file: string): MapFile {
     const sizeMembers: ObjectTotal[] = [];
     const sizeLibraries: ObjectTotal[] = [];
     let symbolTable: 'local' | 'global' | undefined;
+    let sawMemoryMap = false;
 
-    const rowRe = /^\s+0x([0-9a-fA-F]+)\s+0x([0-9a-fA-F]+)\s+(Code|Data|Zero|PAD|Veneer)(?:\s+(RO|RW))?(?:\s+(\d+))?(?:\s+(\*))?(?:\s+(\S+))?(?:\s+(\S.*?))?\s*$/;
-    const regionRe = /^\s+(Load|Execution) Region (\S+) \(Base: 0x([0-9a-fA-F]+), Size: 0x([0-9a-fA-F]+), Max: 0x([0-9a-fA-F]+)(?:, (.*))?\)/;
+    // A row: exec address, with `--load_addr_map_info` also the load address (`-` for ZI), then size, type, attr, index, `*` for entry, section, object.
+    const rowRe = /^\s+0x([0-9a-fA-F]+)\s+(?:(?:0x([0-9a-fA-F]+)|-)\s+)?0x([0-9a-fA-F]+)\s+(Code|Data|Zero|PAD|Veneer)(?:\s+(RO|RW))?(?:\s+(\d+))?(?:\s+(\*))?(?:\s+(\S+))?(?:\s+(\S.*?))?\s*$/;
+    // `(Base: …` as armlink writes it by default; `(Exec base: …, Load base: …` with `--load_addr_map_info`, which µVision-converted projects pass.
+    const regionRe = /^\s+(Load|Execution) Region (\S+) \((?:Base: 0x([0-9a-fA-F]+)|Exec base: 0x([0-9a-fA-F]+), Load base: 0x([0-9a-fA-F]+)), Size: 0x([0-9a-fA-F]+), Max: 0x([0-9a-fA-F]+)(?:, (.*))?\)/;
     const sizesRowRe = /^\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S.*?)\s*$/;
     const symRe = /^\s{4}(\S.*?)\s+(0x[0-9a-fA-F]+)\s+(Number|Section|Thumb Code|ARM Code|Data|Data Ptr)?\s*(\d+)?\s+([^\s(]+)(?:\((\S+)\))?/;
 
@@ -381,7 +386,7 @@ function parseArmlink(text: string, file: string): MapFile {
         if (/^Component: /.test(line)) { map.toolLine = line.trim(); continue; }
         if (/^Removing Unused input sections/.test(line)) { part = 'unused'; continue; }
         if (/^Image Symbol Table/.test(line)) { part = 'symbols'; continue; }
-        if (/^Memory Map of the image/.test(line)) { part = 'memmap'; continue; }
+        if (/^Memory Map of the image/.test(line)) { part = 'memmap'; sawMemoryMap = true; continue; }
         if (/^Image component sizes/.test(line)) { finishExec(); part = 'sizes'; continue; }
 
         if (part === 'unused') {
@@ -397,7 +402,8 @@ function parseArmlink(text: string, file: string): MapFile {
             if (m && m[3] && m[3] !== 'Number' && m[3] !== 'Section') {
                 const { object } = objectDisplayName(m[5]);
                 const address = parseHex(m[2].slice(2));
-                map.symbols.push({ name: m[1], address: m[3] === 'Thumb Code' ? address & ~1 : address, object, section: m[6] });
+                // `>>> 0`: the Thumb bit cleared, an address from 0x80000000 up stays positive.
+                map.symbols.push({ name: m[1], address: m[3] === 'Thumb Code' ? (address & ~1) >>> 0 : address, object, section: m[6] });
             }
             continue;
         }
@@ -406,26 +412,30 @@ function parseArmlink(text: string, file: string): MapFile {
             if (e) { map.entry = parseHex(e[1]); continue; }
             const r = line.match(regionRe);
             if (r) {
-                const base = parseHex(r[3]), size = parseHex(r[4]), max = parseHex(r[5]);
+                const base = parseHex(r[3] ?? r[4]), size = parseHex(r[6]), max = parseHex(r[7]);
+                const loadBase = r[5] !== undefined ? parseHex(r[5]) : undefined;
                 if (r[1] === 'Load') {
                     finishExec();
-                    load = { name: r[2], origin: base, length: max, used: size, attributes: r[6], kind: 'load' };
+                    load = { name: r[2], origin: base, length: max, used: size, attributes: r[8], kind: 'load' };
                     map.regions.push(load);
                 } else {
                     finishExec();
-                    map.regions.push({ name: r[2], origin: base, length: max, used: size, attributes: r[6], kind: 'execution' });
-                    exec = { name: r[2], address: base, size, region: load?.name, allocated: true, class: 'other', inputs: [], fill: 0 };
+                    map.regions.push({ name: r[2], origin: base, length: max, used: size, attributes: r[8], kind: 'execution' });
+                    exec = {
+                        name: r[2], address: base, size, region: load?.name, allocated: true, class: 'other', inputs: [], fill: 0,
+                        ...(loadBase !== undefined && loadBase !== base ? { loadAddress: loadBase } : {}),
+                    };
                 }
                 continue;
             }
             const m = line.match(rowRe);
             if (m && exec) {
-                const size = parseHex(m[2]);
-                if (m[3] === 'PAD') { exec.fill += size; continue; }
-                const sectionName = m[7] ?? '';
-                const { object, library } = objectDisplayName(m[8] ?? '');
-                const cls: SizeClass = m[3] === 'Zero' ? 'bss' : m[4] === 'RW' ? 'data' : m[3] === 'Code' || m[3] === 'Veneer' ? 'code' : 'rodata';
-                exec.inputs.push({ name: sectionName, address: parseHex(m[1]), size, object, library, type: m[3], attr: m[4], class: cls });
+                const size = parseHex(m[3]);
+                if (m[4] === 'PAD') { exec.fill += size; continue; }
+                const sectionName = m[8] ?? '';
+                const { object, library } = objectDisplayName(m[9] ?? '');
+                const cls: SizeClass = m[4] === 'Zero' ? 'bss' : m[5] === 'RW' ? 'data' : m[4] === 'Code' || m[4] === 'Veneer' ? 'code' : 'rodata';
+                exec.inputs.push({ name: sectionName, address: parseHex(m[1]), size, object, library, type: m[4], attr: m[5], class: cls });
                 if (size > 0) { addTotal(objects, object, library, cls, size); }
             }
             continue;
@@ -485,7 +495,11 @@ function parseArmlink(text: string, file: string): MapFile {
         map.totals.code = sum('code'); map.totals.roData = sum('rodata'); map.totals.rwData = sum('data'); map.totals.ziData = sum('bss');
         map.totals.ro = map.totals.code + map.totals.roData; map.totals.rw = map.totals.rwData + map.totals.ziData; map.totals.rom = map.totals.ro + map.totals.rwData;
     }
-    if (!map.sections.length) { map.notes.push('no "Memory Map of the image" in the map (link without --map)'); }
+    if (!map.sections.length) {
+        map.notes.push(sawMemoryMap
+            ? 'the "Memory Map of the image" of this map is in a layout this version does not read: no sections'
+            : 'no "Memory Map of the image" in the map (link without --map)');
+    }
     return map;
 }
 

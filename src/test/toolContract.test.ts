@@ -22,7 +22,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { IDebuggingHandler } from '..';
 import { sliceTopic } from '../core/instructionTopics';
-import { TOOL_RULES_REMINDER, buildServerInstructions, composeInstructions } from '../core/serverInstructions';
+import { KNOWLEDGE_REMINDER, TOOL_RULES_REMINDER, buildServerInstructions, composeInstructions } from '../core/serverInstructions';
 import {
     AFTER_HEADING_1,
     CONTRACT_COPIES,
@@ -65,22 +65,37 @@ suite('Tool contract', () => {
 
     test('the rules keep the lines agents are held to', () => {
         for (const phrase of [
-            'Only the user can lift a rule',
-            'never install pyOCD',
+            'These rules cover Arm Cortex-M targets of the CMSIS Debugger',
+            'A host program or a board of another toolchain is not covered: use your usual tools there.',
+            'only the user lifts a rule, by asking for the specific command',
+            'against it from a shell, and never install pyOCD',
             'with `cmsis_action`; program with `flash`',
+            'a procedure from `knowledge_get` or a CMSIS skill names it',
             '`serial_*` tools',
             'never read a PDF into your context',
-            '`cmsis-developer-assistant.packDocs.enabled`',
-            '`cmsis-developer-assistant.buildInfo.enabled`',
-            'use `list_debug_windows` and `select_debug_window`',
-            'A running target rejects reads and steps: call `pause_execution` first.',
-            'When one call fails twice the same way',
+            'Firmware symbol, section, memory-usage and build-log questions through the build-artefact tools',
+            'When a call fails twice the same way',
             'follow the hints of `get_session_status` and `get_recent_problems`, never a shell command',
-            'A value GDB cannot read is an answer, not a failure',
-            'leave the target running; ask the user only for what no tool can do',
+            'a value GDB cannot read is an answer, not a failure',
+            'Leave the target running when you finish, and ask the user only for what no tool can do',
         ]) {
             assert.ok(contract.rules.includes(phrase), `the rules lost "${phrase}"`);
         }
+    });
+
+    test('what left the rules is said in the server instructions, where it applies', () => {
+        const everywhere = ['never call or read them', 'list_debug_windows', 'select_debug_window', 'call pause_execution first'];
+        for (const [options, phrases] of [
+            [{ packDocsEnabled: true, buildInfoEnabled: true }, everywhere],
+            [{ packDocsEnabled: false, buildInfoEnabled: false }, [...everywhere, 'cmsis-developer-assistant.packDocs.enabled', 'cmsis-developer-assistant.buildInfo.enabled']],
+        ] as const) {
+            const text = composeInstructions(options);
+            for (const phrase of phrases) {
+                assert.ok(text.includes(phrase), `the instructions with ${JSON.stringify(options)} lack "${phrase}"`);
+            }
+        }
+        const on = composeInstructions({ packDocsEnabled: true, buildInfoEnabled: true });
+        assert.ok(!on.includes('.enabled;'), 'with every group on, no setting is suggested');
     });
 
     test('every tool the contract names is registered; a name after cmsis_action is one of its actions', () => {
@@ -121,7 +136,7 @@ suite('Tool contract', () => {
         test(`${copy.file} carries its blocks exactly as the contract renders them`, () => {
             const text = read(copy.file);
             for (const { id } of copy.blocks) {
-                assert.strictEqual(extractBlock(text, id), bodyOf(id), `${copy.file}: block "${id}" is stale — run \`npm run skills:sync -- --offline\``);
+                assert.strictEqual(extractBlock(text, id), bodyOf(id), `${copy.file}: block "${id}" is stale — run \`npm run skills:sync\``);
                 assert.ok(text.includes(renderContractBlock(id, contract)), `${copy.file}: block "${id}" differs from the rendering`);
             }
             for (const id of [RULES_BLOCK, TABLE_BLOCK].filter((block) => !copy.blocks.some((listed) => listed.id === block))) {
@@ -131,14 +146,12 @@ suite('Tool contract', () => {
         });
     }
 
-    test('the generated cmsis-help carries the rules first and the table after the MCP tools', () => {
+    test('cmsis-help carries the rules first, the table after them, and the health check after both', () => {
         const help = read('skills/cmsis-help/SKILL.md');
         const rules = help.indexOf(renderContractBlock(RULES_BLOCK, contract));
         const table = help.indexOf(renderContractBlock(TABLE_BLOCK, contract));
-        const tools = help.indexOf('\n## MCP tools\n');
-        assert.ok(rules >= 0 && table >= 0, 'cmsis-help lacks a block — run `npm run skills:sync -- --offline`');
-        assert.ok(rules < help.indexOf('\n## Slash commands\n'), 'the rules come before the lists');
-        assert.ok(tools < table && table < help.indexOf('\n## Settings\n'), 'the table follows the MCP tools');
+        assert.ok(rules >= 0 && table >= 0, 'cmsis-help lacks a block — run `npm run skills:sync`');
+        assert.ok(rules < table && table < help.indexOf('\n## Health check (read-only)\n'), 'the rules, then the table, then the health check');
     });
 
     test('in the skills and the guide the rules follow the H1 directly, and the table follows the rules in the debugging skill', () => {
@@ -147,18 +160,18 @@ suite('Tool contract', () => {
             const below = AFTER_HEADING_1(lines);
             assert.deepStrictEqual(lines.slice(below, below + 2), ['', beginMarker(RULES_BLOCK)], `${copy.file}: the rules are not right below the H1`);
         }
-        const skill = read('skills/cmsis-debug-live/SKILL.md');
+        const skill = read('skills/cmsis-help/SKILL.md');
         assert.ok(skill.includes(`${endMarker(RULES_BLOCK)}\n\n${beginMarker(TABLE_BLOCK)}\n`), 'the table does not follow the rules');
     });
 
-    test('the guide\'s overview starts with the rules and its build topic carries the table', () => {
+    test('the guide\'s overview starts with the rules and its flash topic carries the table', () => {
         const guide = read('docs/agent-resources/debug_instructions.md');
         const overview = sliceTopic(guide);
         const [title] = guide.split('\n');
         assert.ok(overview.startsWith(`${title}\n\n${renderContractBlock(RULES_BLOCK, contract)}\n\n## Work through these steps in order\n`),
             overview.slice(0, 200));
-        assert.ok(sliceTopic(guide, 'build').includes(renderContractBlock(TABLE_BLOCK, contract)), 'the build topic lacks the table');
-        for (const topic of ['session', 'breakpoints', 'inspection', 'faults', 'troubleshooting']) {
+        assert.ok(sliceTopic(guide, 'flash').includes(renderContractBlock(TABLE_BLOCK, contract)), 'the flash topic lacks the table');
+        for (const topic of ['bootstrap', 'session', 'target', 'cmsis-action', 'breakpoints', 'inspection', 'faults', 'troubleshooting']) {
             assert.ok(!sliceTopic(guide, topic).includes(beginMarker(TABLE_BLOCK)), `the ${topic} topic carries the table`);
         }
         assert.ok(!overview.includes(beginMarker(TABLE_BLOCK)), 'the overview carries the table');
@@ -185,7 +198,7 @@ suite('Tool contract', () => {
 
     suite('in a session', () => {
         /** A session whose only working tool is get_session_status, and a client connected to it. */
-        async function connect(toolRules: string | undefined): Promise<{ client: Client; close: () => Promise<void> }> {
+        async function connect(toolRules: string | undefined, clientName = 'tool-contract-check'): Promise<{ client: Client; close: () => Promise<void> }> {
             const debug = { handleGetSessionStatus: async () => 'State: no-session' } as unknown as IDebuggingHandler;
             const server = buildSessionServer({
                 options: {},
@@ -197,7 +210,7 @@ suite('Tool contract', () => {
             });
             const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair();
             await server.connect(serverEnd);
-            const client = new Client({ name: 'tool-contract-check', version: '1.0.0' });
+            const client = new Client({ name: clientName, version: '1.0.0' });
             await client.connect(clientEnd);
             return { client, close: async () => { await client.close(); await server.close(); } };
         }
@@ -213,9 +226,22 @@ suite('Tool contract', () => {
             try {
                 assert.ok(client.getInstructions()?.startsWith(`${RULES_HEADING}\n`));
                 const first = await statusText(client);
-                assert.ok(first.startsWith(`State: no-session\n\n${TOOL_RULES_REMINDER}\n\nTool stats (this session):`), first);
+                assert.ok(first.startsWith(`State: no-session\n\n${TOOL_RULES_REMINDER} ${KNOWLEDGE_REMINDER}\n\nTool stats (this session):`), first);
                 const second = await statusText(client);
                 assert.ok(!second.includes(TOOL_RULES_REMINDER), second);
+                assert.ok(second.startsWith('State: no-session\n\nTool stats (this session):'), second);
+            } finally {
+                await close();
+            }
+        });
+
+        test('a client that drops the instructions (Kimi Code) gets the whole rules in the first status, once', async () => {
+            const { client, close } = await connect(contract.rules, 'kimi-code');
+            try {
+                const first = await statusText(client);
+                assert.ok(first.startsWith(`State: no-session\n\n${contract.rules}\n\n${KNOWLEDGE_REMINDER}\n\nTool stats (this session):`), first);
+                assert.ok(!first.includes('see the server instructions'), 'no pointer to instructions the model never sees');
+                const second = await statusText(client);
                 assert.ok(second.startsWith('State: no-session\n\nTool stats (this session):'), second);
             } finally {
                 await close();
@@ -248,9 +274,9 @@ suite('Tool contract', () => {
     });
 
     test('no shipped text sends agents to the shell outside the table and the prohibitions', () => {
-        const roots = ['docs/agent-resources', 'skills/cmsis-debug-live', 'skills/cmsis-pack-docs', 'skills/add-board-layer', 'skills/cmsis-help'];
+        const roots = ['docs/agent-resources', 'skills/cmsis-help'];
         const files = roots.flatMap((root) => markdownFiles(path.join(repoRoot, root)));
-        assert.ok(files.length >= 10, `${files.length} files`);
+        assert.ok(files.length >= 7, `${files.length} files`);
         const offenders: string[] = [];
         for (const file of files) {
             const lines = fs.readFileSync(file, 'utf8').split('\n');

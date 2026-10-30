@@ -6,12 +6,10 @@ on:
       - '.github/workflows/tpip.yml'
       - docs/third-party-licenses.json
       - docs/tpip-header.md
+      - resources/knowledge/SOURCES.md
+      - resources/knowledge/core.lock.json
       - scripts/tpip-reporter.ts
       - package-lock.json
-      - '!**/*.md'
-      - '!.github/workflows/markdown.yml'
-      - '!.github/markdownlint.json'
-      - '!.github/markdownlint.jsonc'
     branches:
       - main
   workflow_dispatch:

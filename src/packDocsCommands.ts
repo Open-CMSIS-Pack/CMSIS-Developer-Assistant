@@ -22,13 +22,14 @@
  * not the MCP tools are enabled — the handlers exist in every window.
  */
 
+import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
 import { BookCategory, DocRef, UserScope, importUserDoc, resolveUserDocsDir } from './core/packDocs';
 import { errorText, textOf, toToolError } from './core/toolResult';
 import { PackDocsHandlers } from './packDocsDispatch';
 import { readPackDocsSettings } from './packDocsHost';
+import { KnowledgePanel } from './knowledgePanel';
 import { PackDocsPanel } from './packDocsPanel';
 import { logger } from './utils/logger';
 
@@ -70,6 +71,14 @@ export function registerPackDocsCommands(context: vscode.ExtensionContext, handl
 
         vscode.commands.registerCommand(`${CONFIG}.openPackDocsPanel`, () => {
             PackDocsPanel.show(context, handlers.docs, handlers.build, logger);
+        }),
+
+        vscode.commands.registerCommand(`${CONFIG}.openKnowledgePanel`, () => {
+            if (handlers.knowledge === undefined) {
+                void vscode.window.showInformationMessage('CMSIS Developer Assistant: this window has no knowledge handler.');
+                return;
+            }
+            KnowledgePanel.show(context, handlers.knowledge, logger);
         }),
     );
 }

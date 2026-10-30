@@ -42,24 +42,6 @@ export const FAULT_REGISTER_ADDRESSES = {
     AFSR:  '0xE000ED3C',  // Auxiliary Fault Status Register
 } as const;
 
-/** The six registers are contiguous from CFSR; one 24-byte read covers them. */
-export const FAULT_REGISTER_BLOCK = { address: FAULT_REGISTER_ADDRESSES.CFSR, bytes: 24 } as const;
-
-/** Little-endian words in SCS order: CFSR, HFSR, DFSR, MMFAR, BFAR, AFSR. */
-export function faultRegistersFromBlock(buf: Buffer): FaultRegisters {
-    if (buf.length < FAULT_REGISTER_BLOCK.bytes) {
-        throw new Error(`fault register block is ${buf.length} bytes, need ${FAULT_REGISTER_BLOCK.bytes}`);
-    }
-    return {
-        CFSR: buf.readUInt32LE(0),
-        HFSR: buf.readUInt32LE(4),
-        DFSR: buf.readUInt32LE(8),
-        MMFAR: buf.readUInt32LE(12),
-        BFAR: buf.readUInt32LE(16),
-        AFSR: buf.readUInt32LE(20),
-    };
-}
-
 export type FaultStatusRegister = 'HFSR' | 'MMFSR' | 'BFSR' | 'UFSR' | 'DFSR';
 export type FaultClass = 'HardFault' | 'MemManage' | 'BusFault' | 'UsageFault' | 'None';
 

@@ -33,11 +33,14 @@
  * - `probeLoopback`: one request on a connection of its own, waiting only
  *   for the first sign of an answer; the router's health check and
  *   `portSilent` both use it.
+ * - `portAnswers`: whether anything accepts a connection on the router port,
+ *   so a worker's promotion poll does not build a server for a taken port.
  *
  * Pure: Node only, no vscode.
  */
 
 import * as http from 'http';
+import * as net from 'net';
 import { monitorEventLoopDelay, type IntervalHistogram } from 'perf_hooks';
 import type { BusyCall } from '../utils/workspaceRegistry';
 import { toolNameOf } from './windowStatus';
@@ -300,4 +303,22 @@ export async function portSilent(port: number, timeoutMs: number): Promise<boole
     const outcome = await probeLoopback({ port, path: '/mcp', method: 'GET', headers: { Accept: 'application/json, text/event-stream' } },
         undefined, timeoutMs);
     return outcome.kind === 'silent';
+}
+
+/**
+ * True when something accepts a TCP connection on the loopback `port` within
+ * `timeoutMs`. A refused connection, a timeout and any other failure answer
+ * false, so a caller that finds the port free goes on to bind it.
+ */
+export function portAnswers(port: number, timeoutMs: number): Promise<boolean> {
+    return new Promise((resolve) => {
+        const socket = net.connect({ host: '127.0.0.1', port });
+        const finish = (answers: boolean): void => {
+            socket.destroy();
+            resolve(answers);
+        };
+        socket.setTimeout(timeoutMs, () => finish(false));
+        socket.once('connect', () => finish(true));
+        socket.once('error', () => finish(false));
+    });
 }

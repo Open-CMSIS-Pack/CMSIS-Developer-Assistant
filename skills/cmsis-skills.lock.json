@@ -1,8 +1,0 @@
-{
-  "repository": "https://github.com/Open-CMSIS-Pack/cmsis-skills.git",
-  "ref": "main",
-  "sha": "25c2085a810ee531cc13df9d34ce2768cd84c421",
-  "sourcePath": "generic-mcu-skills/skills",
-  "fetchedAt": "2026-10-08T20:04:13.777Z",
-  "contentHash": "e002412f84832e17b58b67dd5ccd71ab96f04f99d6fddfb5e5f430481afb81ef"
-}

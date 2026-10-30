@@ -19,7 +19,8 @@
  *
  * `activate` wires the modules together in a fixed order: settings read once
  * for this activation, the problem journal's output mirror, error sink and
- * copy command (#48), the debug-session and CMSIS task trackers, the agent and skill
+ * copy command (#48), the debug-session and CMSIS task trackers, the extension
+ * context for the Serial Monitor bridge (its `getApi` requires one), the agent and skill
  * manager, the documentation handlers and their commands, this window's
  * `WindowCoordinator` (the MCP router or a worker), the MCP server definition
  * for in-editor Copilot, agent-configuration migration, the update of the tool
@@ -44,6 +45,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { registerCmsisJobTracker } from './cmsisJobTracker';
 import { serialController } from './core/serialController';
+import { serialMonitorBridge } from './core/serialMonitorBridge';
 import { clearSvdCache } from './core/svdParser';
 import { SERVER_VERSION } from './debuggingExecutor';
 import { registerPackDocsCommands } from './packDocsCommands';
@@ -282,17 +284,12 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
         clearSvdCache();
         serialController.debugSessionEnded();
     }));
+    // Before the coordinator serves the serial tools: the Serial Monitor hands its API only to a caller with a context.
+    serialMonitorBridge.attach(extensionContext);
 
     const hostsTests = hostedByTestRunner(extensionContext);
     const manager = new AgentConfigurationManager(extensionContext, active.timeoutInSeconds, active.serverPort);
     agentManager = manager;
-    if (!hostsTests) {
-        try {
-            await manager.syncSkills('activation');
-        } catch (failure) {
-            logger.error('Installing the agent skills at activation failed', failure);
-        }
-    }
 
     // Every window gets the documentation handlers and commands, router or worker.
     const packDocs = createPackDocsHandlers(extensionContext, active.timeoutInSeconds);
@@ -302,17 +299,24 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
     if (hostsTests) {
         logger.info('Running under the extension test runner: no skill installation, agent configuration, rule file, prompt or MCP server');
     } else {
+        // The endpoint before anything that touches the file system: an agent that connects to its MCP
+        // servers once, at its own activation, and never retries (Kimi Code's VS Code extension) must
+        // find the port bound. The skill install alone took 0.7–1.7 s in the field, and that lost the race.
         await startCoordinator(extensionContext, active, packDocs, manager);
+        try {
+            await manager.syncSkills('activation');
+        } catch (failure) {
+            logger.error('Installing the agent skills at activation failed', failure);
+        }
         try {
             await manager.migrateExistingConfigurations();
         } catch (failure) {
             logger.error('Migrating the agent configurations failed', failure);
         }
-        try {
-            await manager.refreshAgentRules();
-        } catch (failure) {
+        // Not awaited: an outdated rules block waits for the user's answer to a toast.
+        void manager.refreshAgentRules().catch((failure: unknown) => {
             logger.error('Updating the tool rules in the agents\' rule files failed', failure);
-        }
+        });
     }
 
     extensionContext.subscriptions.push(

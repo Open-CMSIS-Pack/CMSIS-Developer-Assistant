@@ -39,54 +39,60 @@
  *   `PROBE_WEDGED` when the debug port does not answer, or as
  *   `INVALID_ARGUMENT` when only the address cannot be read (#3,
  *   src/executor/gdbMemory.ts). Nothing is retried or reconnected.
+ *   `checkTargetConnection` reads DHCSR on a stopped CMSIS Debugger session
+ *   too; the session tracker keeps the last read that got no answer.
  *
  * The contract types live in src/executor/contract.ts and are re-exported
  * here. The snapshot, the GDB command and word read, the reset and the
  * session reports have modules of their own under src/executor/.
- * `SERVER_VERSION` stays in this file because the release recipe edits its
- * literal with `npm version`.
+ * `SERVER_VERSION` is read from package.json when the code is compiled or
+ * bundled, so `npm version` (locally or in CI, from the release tag) is the
+ * only place a version is set.
  */
 
 import * as vscode from 'vscode';
-import { DEMCR_TRCENA, DWT_ADDRESSES, DWT_CTRL_CYCCNTENA, DWT_CTRL_NOCYCCNT } from './core/dwt';
-import { decodeFaultRegisters, FAULT_REGISTER_ADDRESSES, FAULT_REGISTER_BLOCK, FaultRegisters, faultRegistersFromBlock } from './core/faultDecoder';
+import { architectureHasCycleCounter, DEMCR_TRCENA, DWT_ADDRESSES, DWT_CTRL_CYCCNTENA, DWT_CTRL_NOCYCCNT } from './core/dwt';
+import { decodeFaultRegisters, FAULT_REGISTER_ADDRESSES, FaultRegisters } from './core/faultDecoder';
 import { CMSIS_DEBUGGER_TYPE, gdbRequestRefusal, miQuoted, passthroughCommand } from './core/gdbDialect';
-import { readPeripheralViaMemory, tryReadPeripheralViaExtension } from './core/peripheralReader';
+import { systemControlSpaceWords } from './core/memoryMap';
+import { readPeripheralViaMemory } from './core/peripheralReader';
 import { ResetMethod } from './core/resetAssist';
 import { type DapVariable, isDapVariable } from './core/variableView';
 import { DebugState, StackFrame } from './debugState';
 import { logger } from './utils/logger';
 import {
-    awaitBreakpointsApplied, expectAgentStart, forgetGdbLogpoints, GdbLogpoint, gdbLogpointsOf, getLiveSessionCount, getLiveSessionNames,
-    getStoppedReason, isSessionStopped, rememberGdbLogpoint, resolveActiveSession, StopWaitResult, waitForSessionEnd, waitForStopEvent,
+    AdoptedBreakpoint, adoptedBreakpointsOf, armFocusWatch, armStartFocusWatch, awaitBreakpointsApplied, expectAgentStart, forgetGdbLogpoints,
+    FrameFocusWatch, GdbLogpoint, gdbLogpointsOf, getLiveSessionCount, getLiveSessionNames, getStoppedReason, isSessionStopped, rememberGdbLogpoint,
+    resolveActiveSession, StartFocusWatch, StopWaitResult, waitForSessionEnd, waitForStopEvent,
 } from './utils/sessionStateTracker';
 import { customRequestWithTimeout, HardwareTimeoutError, withTimeout } from './utils/timeout';
 import { ToolError, wrapError } from './core/toolResult';
 import {
-    Budgets, DEFAULT_HARDWARE_TIMEOUTS, EvaluateBody, FrameArg, frameArgOf, focusedThreadId, hex8, messageOf, NO_SESSION_TEXT, ReadMemoryBody, ScopesBody,
-    sessionOrThrow, StackTraceBody, ThreadsBody, toStackFrame, VariablesBody,
+    Budgets, DEFAULT_HARDWARE_TIMEOUTS, EvaluateBody, FrameArg, frameArgOf, focusedThreadId, hex8, messageOf, NO_SESSION_TEXT, ReadMemoryBody, ScopeBody,
+    ScopesBody, sessionOrThrow, StackTraceBody, ThreadsBody, toStackFrame, VariablesBody,
 } from './executor/common';
 import {
-    AlreadyStopped, BreakpointBinding, BreakpointRemoval, DapThread, ExecutorDiagnostics, HardwareTimeouts, IDebuggingExecutor, ResetOutcome,
-    RestartOutcome, SessionStatus,
+    AlreadyStopped, BreakpointBinding, BreakpointRemoval, DapThread, ExecutorDiagnostics, HardwareTimeouts, IDebuggingExecutor, MemoryRead,
+    ResetOutcome, RestartOutcome, SessionStatus,
 } from './executor/contract';
 import { GdbReply, runGdbCommand } from './executor/gdbCommand';
 import {
-    attemptsOf, explainReadFailure, nthWordAddress, probeDebugPort, readWordThroughGdb, withEarlierAttempts, withHexPrefix,
+    bytesInRange, explainReadFailure, nthWordAddress, probeDebugPort, readWordThroughGdb, withEarlierAttempts, withHexPrefix,
 } from './executor/gdbMemory';
 import type { DebugPortProbe, ReadAttempt } from './core/probeWedge';
-import { connectionReport, deviceReport, launchFolderFor, noLaunchFolderText, probeSession } from './executor/sessionReports';
+import { connectionReport, deviceReport, launchFolderFor, noLaunchFolderText, probeSession, takesRequests } from './executor/sessionReports';
 import { captureDebugState } from './executor/snapshot';
 import { performReset, programCounterFrom } from './executor/targetReset';
+import { version as PACKAGE_VERSION } from '../package.json';
 
 export { DEFAULT_HARDWARE_TIMEOUTS } from './executor/common';
 export type {
-    BreakpointBinding, BreakpointRemoval, DapThread, DebugPortProbe, ExecutorDiagnostics, GdbLogpoint, GdbReply, HardwareTimeouts, IDebuggingExecutor,
-    ResetOutcome, RestartOutcome, SessionState, SessionStatus,
+    AdoptedBreakpoint, BreakpointBinding, BreakpointRemoval, DapThread, DebugPortProbe, ExecutorDiagnostics, FrameFocusWatch, GdbLogpoint, GdbReply,
+    HardwareTimeouts, IDebuggingExecutor, MemoryRead, ResetOutcome, RestartOutcome, SessionState, SessionStatus, StartFocus, StartFocusWatch,
 } from './executor/contract';
 
-/** The version the MCP server, the server definition and the HTTP user agent report. Equals package.json. */
-export const SERVER_VERSION = '2.5.20';
+/** The version the MCP server, the server definition and the HTTP user agent report: package.json's `version` at build time. */
+export const SERVER_VERSION: string = PACKAGE_VERSION;
 
 type Motion = 'stepOver' | 'stepInto' | 'stepOut' | 'continue' | 'pause';
 
@@ -130,7 +136,7 @@ const CALL_STACK_LEVELS = 50;
 /** Size of the stacked exception frame (R0-R3, R12, LR, PC, xPSR). */
 const EXCEPTION_FRAME_BYTES = 32;
 
-/** The fault status registers in the order the word-by-word read visits them. */
+/** The fault status registers in the order the read visits them, one word each. */
 const FAULT_REGISTER_ORDER: ReadonlyArray<keyof FaultRegisters> = ['CFSR', 'HFSR', 'DFSR', 'MMFAR', 'BFAR', 'AFSR'];
 
 /** The session a child session (a core of a multi-core launch) was started from, or the session itself. */
@@ -146,6 +152,33 @@ function rootSessionOf(session: vscode.DebugSession): vscode.DebugSession {
 function sourceFilesOf(breakpoints: readonly vscode.Breakpoint[]): string[] {
     const files = breakpoints.flatMap((entry) => entry instanceof vscode.SourceBreakpoint ? [entry.location.uri.fsPath] : []);
     return [...new Set(files)];
+}
+
+/**
+ * The scopes a variables read covers, and the names of those it leaves out.
+ * `local` and `global` keep each scope whose name contains the word, expensive
+ * or not. `all` keeps every scope, except on the CMSIS Debugger: there it
+ * leaves out an expensive register scope, which VS Code, too, reads only once
+ * the user opens it — cdt-gdb-adapter's Registers scope, every core and FPU
+ * register read over the probe — unless nothing else would be left. An
+ * expensive scope of program variables (statics, globals) is read: `all`
+ * asks for them (K03). Other adapters keep theirs: js-debug marks Global and
+ * Module expensive, and Module holds an ES module's top-level variables.
+ */
+function scopesToRead(offered: ScopeBody[], scope: 'local' | 'global' | 'all' | undefined, sessionType: string): { kept: ScopeBody[]; skipped: string[] } {
+    if (scope === 'local' || scope === 'global') {
+        return { kept: offered.filter((candidate) => candidate.name.toLowerCase().includes(scope)), skipped: [] };
+    }
+    const registers = offered.filter((candidate) => candidate.expensive === true && isRegisterScope(candidate));
+    if (sessionType !== CMSIS_DEBUGGER_TYPE || registers.length === 0 || registers.length === offered.length) {
+        return { kept: offered, skipped: [] };
+    }
+    return { kept: offered.filter((candidate) => !registers.includes(candidate)), skipped: registers.map((candidate) => candidate.name) };
+}
+
+/** A scope of registers: DAP's `presentationHint` says so, or its name does (cdt-gdb-adapter's "Registers"). */
+function isRegisterScope(scope: ScopeBody): boolean {
+    return scope.presentationHint === 'registers' || /\bregisters?\b/i.test(scope.name);
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((wake) => setTimeout(wake, ms));
@@ -240,15 +273,20 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         if (!session) {
             return false;
         }
+        let reply: unknown;
         try {
-            // Only whether it answers matters; the thread list is not looked at.
-            await customRequestWithTimeout(session, 'threads', {}, this.budgets.probe());
+            // Whether it answers, and on the CMSIS Debugger whether it takes requests; the threads are not looked at.
+            reply = await customRequestWithTimeout(session, 'threads', {}, this.budgets.probe());
         } catch (err) {
             if (err instanceof HardwareTimeoutError) {
                 logger.info('hasActiveSession: threads probe timed out — probe or target may be unresponsive');
             } else {
                 logger.debug('hasActiveSession: threads probe failed', err);
             }
+            return false;
+        }
+        if (!takesRequests(session, reply)) {
+            logger.debug('hasActiveSession: the adapter answered the threads probe without a thread list; it takes no requests yet or any more');
             return false;
         }
         return isSessionStopped(session);
@@ -258,8 +296,15 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         return probeSession(this.budgets.probe());
     }
 
+    /** The probe's report; on a stopped CMSIS Debugger session with one DHCSR read, as the target is not asked otherwise (#3). */
     async checkTargetConnection(): Promise<string> {
-        return connectionReport(await this.getSessionStatus());
+        const status = await this.getSessionStatus();
+        const session = resolveActiveSession();
+        if (status.state !== 'stopped' || session?.type !== CMSIS_DEBUGGER_TYPE) {
+            return connectionReport(status);
+        }
+        const request: unknown = session.configuration?.request;
+        return connectionReport(status, await probeDebugPort(session, this.budgets.request()), typeof request === 'string' ? request : undefined);
     }
 
     getDiagnostics(): ExecutorDiagnostics {
@@ -309,6 +354,15 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             return { kind: 'already-stopped', reason: getStoppedReason(session) };
         }
         return waitForStopEvent(session, this.budgets.stopWait(limitMs));
+    }
+
+    watchFrameFocus(): FrameFocusWatch {
+        const session = resolveActiveSession();
+        return session ? armFocusWatch(session) : { selected: async () => false };
+    }
+
+    watchStartFocus(): StartFocusWatch {
+        return armStartFocusWatch();
     }
 
     /** Sends the operation's request without waiting for the stop; the handler arms the waiter first. */
@@ -368,6 +422,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
 
     getBreakpoints(): ReadonlyArray<vscode.Breakpoint> {
         return vscode.debug.breakpoints;
+    }
+
+    adoptedBreakpoints(): AdoptedBreakpoint[] {
+        return adoptedBreakpointsOf();
     }
 
     clearAllBreakpoints(): Promise<BreakpointRemoval> {
@@ -529,9 +587,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             if (!offered || offered.length === 0) {
                 return { scopes: [] };
             }
-            const kept = scope === 'local' || scope === 'global'
-                ? offered.filter((candidate) => candidate.name.toLowerCase().includes(scope))
-                : offered;
+            const { kept, skipped } = scopesToRead(offered, scope, session.type);
             // One scope after the other; the adapter's scope objects are extended in place.
             for (const entry of kept) {
                 try {
@@ -543,7 +599,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                     entry.error = messageOf(err);
                 }
             }
-            return { scopes: kept };
+            return skipped.length > 0 ? { scopes: kept, skipped } : { scopes: kept };
         } catch (err) {
             // Also flattens a `scopes` timeout (KB14): no longer a HardwareTimeoutError, though its code stays TIMEOUT.
             throw wrapError('Reading the variables failed', err);
@@ -586,7 +642,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
 
     // ── Memory ─────────────────────────────────────────────────────────
 
-    async readMemory(address: string, length: number, overrideMs?: number): Promise<Buffer> {
+    async readMemory(address: string, length: number, overrideMs?: number): Promise<MemoryRead> {
         const session = sessionOrThrow();
         const start = withHexPrefix(address);
         try {
@@ -598,21 +654,34 @@ export class DebuggingExecutor implements IDebuggingExecutor {
 
     /**
      * `readMemory` without the DHCSR read: the operation fence around DAP
-     * `readMemory`, then the GDB ladder word by word. A failure carries the
-     * cause of every strategy.
+     * `readMemory`, then the GDB ladder word by word. A range that touches
+     * the System Control Space is read one aligned word at a time instead.
+     * A failure carries the cause of every strategy.
      */
-    private readMemoryOnce(session: vscode.DebugSession, start: string, length: number, overrideMs: number | undefined): Promise<Buffer> {
+    private readMemoryOnce(session: vscode.DebugSession, start: string, length: number, overrideMs: number | undefined): Promise<MemoryRead> {
         const budgetMs = this.budgets.request(overrideMs);
         return withTimeout('readMemory', this.budgets.operation(overrideMs), async () => {
+            // The Corstone FVP's GDB server answers SCS reads longer than one word with zeros.
+            const scs = /^0x[0-9a-f]+$/i.test(start) ? systemControlSpaceWords(BigInt(start), length) : undefined;
+            if (scs) {
+                const words: Buffer[] = [];
+                for (let index = 0; index < scs.words; index++) {
+                    const bytes = Buffer.alloc(4);
+                    bytes.writeUInt32LE(await this.readWordOnce(session, `0x${(scs.first + BigInt(index) * 4n).toString(16)}`, budgetMs) >>> 0, 0);
+                    words.push(bytes);
+                }
+                return { bytes: Buffer.concat(words).subarray(scs.skip, scs.skip + length), offset: 0 };
+            }
             const attempts: ReadAttempt[] = [];
             try {
                 const reply = await customRequestWithTimeout<ReadMemoryBody | undefined>(session, 'readMemory',
                     { memoryReference: start, count: length }, budgetMs);
-                if (reply?.data) {
-                    // Returned as it came, even when shorter than asked (KB9).
-                    return Buffer.from(reply.data, 'base64');
+                // Where the reply says its bytes begin, even when that is later or they end sooner than asked (KB9).
+                const read = bytesInRange(reply, BigInt(start), length);
+                if (typeof read !== 'string') {
+                    return read;
                 }
-                attempts.push({ strategy: 'DAP readMemory', cause: 'no data in the reply' });
+                attempts.push({ strategy: 'DAP readMemory', cause: read });
             } catch (err) {
                 if (err instanceof HardwareTimeoutError) {
                     throw err;
@@ -620,7 +689,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 attempts.push({ strategy: 'DAP readMemory', cause: messageOf(err) });
             }
             try {
-                return await this.readWordsThroughGdb(session, start, length, budgetMs);
+                return { bytes: await this.readWordsThroughGdb(session, start, length, budgetMs), offset: 0 };
             } catch (err) {
                 throw withEarlierAttempts(err, attempts);
             }
@@ -703,9 +772,12 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         }
     }
 
-    async readExceptionFrame(stackPointer: number, overrideMs?: number): Promise<Buffer> {
+    async readExceptionFrame(stackPointer: number, overrideMs?: number, stateOffset: number = 0): Promise<Buffer> {
         // The request budget becomes the nested read's override, so it also bounds that read's fence.
-        return this.readMemory(`0x${(stackPointer >>> 0).toString(16)}`, EXCEPTION_FRAME_BYTES, this.budgets.request(overrideMs));
+        const read = await this.readMemory(`0x${(stackPointer >>> 0).toString(16)}`, stateOffset + EXCEPTION_FRAME_BYTES,
+            this.budgets.request(overrideMs));
+        // Bytes that begin after the stack pointer are not the frame.
+        return read.offset === 0 ? read.bytes : Buffer.alloc(0);
     }
 
     // ── Core registers, DWT, peripherals, fault status ─────────────────
@@ -744,6 +816,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         sessionOrThrow();
         const budgetMs = this.budgets.request(overrideMs);
         return withTimeout('readCycleCounter', this.budgets.operation(overrideMs), async () => {
+            // Armv6-M and Armv8-M Baseline never have one; nothing is written to them.
+            if (!architectureHasCycleCounter(await this.readMemoryWord(DWT_ADDRESSES.CPUID, budgetMs))) {
+                return { present: false, cycles: 0, enabledNow: false };
+            }
             const demcr = await this.readMemoryWord(DWT_ADDRESSES.DEMCR, budgetMs);
             if ((demcr & DEMCR_TRCENA) === 0) {
                 await this.writeMemoryWord(DWT_ADDRESSES.DEMCR, (demcr | DEMCR_TRCENA) >>> 0, budgetMs);
@@ -763,11 +839,6 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     }
 
     async readPeripheralRegister(peripheral: string, register?: string, overrideMs?: number): Promise<string> {
-        // The Peripheral Inspector is asked before the session is checked (KB13).
-        const inspected = await tryReadPeripheralViaExtension(peripheral, register);
-        if (inspected !== null) {
-            return inspected;
-        }
         const session = sessionOrThrow();
         const frameId = await this.focusedFrameId();
         const budgetMs = this.budgets.request(overrideMs);
@@ -776,40 +847,24 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     }
 
     /**
-     * CFSR, HFSR, DFSR, MMFAR, BFAR and AFSR: one 24-byte read, else one word
-     * at a time. A failure is explained once, after both ways failed, with
-     * the causes of both.
+     * CFSR, HFSR, DFSR, MMFAR, BFAR and AFSR, one word each: they are word
+     * registers, and the Corstone FVP's GDB server answers SCS reads longer
+     * than one word with zeros. A failure is explained once, with the causes
+     * of every strategy of the word that failed.
      */
     async readFaultRegisters(overrideMs?: number): Promise<FaultRegisters> {
         const session = sessionOrThrow();
         const budgetMs = this.budgets.request(overrideMs);
         try {
             return await withTimeout('readFaultRegisters', this.budgets.operation(overrideMs), async () => {
-                let blockAttempts: ReadAttempt[] = [];
-                try {
-                    // The request budget is the nested read's override, fence included (KB10).
-                    const block = await this.readMemoryOnce(session, FAULT_REGISTER_BLOCK.address, FAULT_REGISTER_BLOCK.bytes, budgetMs);
-                    if (block.length >= FAULT_REGISTER_BLOCK.bytes) {
-                        return faultRegistersFromBlock(block);
-                    }
-                } catch (err) {
-                    if (err instanceof HardwareTimeoutError) {
-                        throw err;
-                    }
-                    blockAttempts = attemptsOf(err, 'block read');
-                }
                 const registers = {} as FaultRegisters;
                 for (const name of FAULT_REGISTER_ORDER) {
-                    try {
-                        registers[name] = await this.readWordOnce(session, FAULT_REGISTER_ADDRESSES[name], this.budgets.request(budgetMs));
-                    } catch (err) {
-                        throw withEarlierAttempts(err, blockAttempts);
-                    }
+                    registers[name] = await this.readWordOnce(session, FAULT_REGISTER_ADDRESSES[name], budgetMs);
                 }
                 return registers;
             });
         } catch (err) {
-            throw await explainReadFailure(session, FAULT_REGISTER_BLOCK.address, err, budgetMs);
+            throw await explainReadFailure(session, FAULT_REGISTER_ADDRESSES.CFSR, err, budgetMs);
         }
     }
 

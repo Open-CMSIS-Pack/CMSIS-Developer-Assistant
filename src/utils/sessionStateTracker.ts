@@ -16,25 +16,34 @@
 
 /**
  * What this window knows about its debug sessions from the DAP traffic the
- * adapter tracker sees: the live sessions and the one to act on, whether each
- * target is stopped, waits for the next stop and for a session's end, the
+ * adapter tracker sees: the live sessions, the one to act on and the one the
+ * window's registry entry names, whether each target is stopped, waits for
+ * the next stop, for the frame VS Code selects after it and for a session's
+ * end, the
  * output a GDB command prints (#56), when the adapter has answered VS Code's
- * `setBreakpoints`, and the GDB `dprintf` logpoints set in a session.
- * Everything a session holds goes when it ends.
+ * `setBreakpoints`, the GDB `dprintf` logpoints set in a session, when
+ * the last DHCSR read of a session got no answer (#3), and whether a session
+ * was asked to end (a `disconnect` or `terminate` request), which an adapter
+ * that waits for a halt first can take long to do. Everything a session
+ * holds goes when it ends.
  *
  * What goes wrong on the channel goes into the window's problem journal
  * (#48): failed responses, adapter errors, and the output of the categories
  * `stderr`, `console`, `important` and `server` (the GDB server's, on
- * cdt-gdb-adapter), line by line, never the target's `stdout`. A failed
+ * cdt-gdb-adapter), line by line, a line split over several output events
+ * as one, never the target's `stdout`. A failed
  * response is an error when VS Code sent the request (a breakpoint the user
  * set while the target runs) and a warning when a tool sent it through
- * `customRequestWithTimeout`, since that tool reports its own outcome.
+ * `customRequestWithTimeout`, since that tool reports its own outcome; an
+ * `evaluate` of the Watch view, a hover or Live Watch is `info`.
  * `stderr` is a warning, the other output `info`, unless `classifyProblem`
- * knows the line.
+ * knows the line or pyOCD's own level marks a GDB-server line as a warning
+ * or an error.
  */
 
 import * as vscode from 'vscode';
-import { classifyProblem } from '../core/problemCodes';
+import type { CoreVerdict } from '../core/probeWedge';
+import { classifyProblem, serverLineSeverity } from '../core/problemCodes';
 import { failedResponseMessage } from '../core/problemFeed';
 import { problemJournal, type ProblemJournal, type ProblemSeverity, type ProblemSource } from '../core/problemJournal';
 import { logger } from './logger';
@@ -81,6 +90,20 @@ const liveSessions: vscode.DebugSession[] = [];
 
 /** Sessions the tracker has seen end, so a wait that starts afterwards knows at once. */
 const endedSessions = new WeakSet<vscode.DebugSession>();
+
+/** Who is told when a session's adapter starts (`onSessionBegins`). */
+const beginListeners = new Set<(session: vscode.DebugSession) => void>();
+
+/**
+ * Be told when a debug session's adapter starts, before its launch or
+ * attach is sent. VS Code's `onDidStartDebugSession` comes only once the
+ * launch succeeded, and never for a session whose launch fails; this comes
+ * for both.
+ */
+export function onSessionBegins(listener: (session: vscode.DebugSession) => void): vscode.Disposable {
+    beginListeners.add(listener);
+    return { dispose: () => { beginListeners.delete(listener); } };
+}
 
 // ── Starts an agent asked for ───────────────────────────────────────────────
 
@@ -189,6 +212,14 @@ export function getLiveSessionNames(): string[] {
 }
 
 /**
+ * The live debug sessions, oldest first, without `ending`, the session whose
+ * end is being announced: what the window's GDB ports are read from.
+ */
+export function liveSessionsExcept(ending?: vscode.DebugSession): vscode.DebugSession[] {
+    return liveSessions.filter((session) => session !== ending && !endedSessions.has(session));
+}
+
+/**
  * Resolve "the debug session the agent should operate on": VS Code's focused
  * session if there is one, otherwise the most-recently-started tracked
  * session. This is the single source of truth the executor should use
@@ -196,6 +227,29 @@ export function getLiveSessionNames(): string[] {
  */
 export function resolveActiveSession(): vscode.DebugSession | undefined {
     return vscode.debug.activeDebugSession ?? getMostRecentLiveSession();
+}
+
+/**
+ * The session this window's registry entry names: `active`, VS Code's
+ * focused session, while it is live, else the most recently started live
+ * session; undefined when none is live. The focused session alone is no
+ * answer, since `onDidTerminateDebugSession` runs while it still names the
+ * session that ends: VS Code moves the focus only afterwards. `ending` is the
+ * session whose end is being announced, which never counts, whichever end
+ * listener runs first. The tracker sees every debug type, so a focused
+ * session it never saw has its adapter in another extension host, and counts
+ * as VS Code has it.
+ */
+export function registrySession(active: vscode.DebugSession | undefined, ending?: vscode.DebugSession): vscode.DebugSession | undefined {
+    if (active !== undefined && active !== ending && !endedSessions.has(active)) {
+        return active;
+    }
+    for (let index = liveSessions.length - 1; index >= 0; index--) {
+        if (liveSessions[index] !== ending) {
+            return liveSessions[index];
+        }
+    }
+    return undefined;
 }
 
 /**
@@ -281,6 +335,147 @@ export function waitForStopEvent(session: vscode.DebugSession, timeoutMs: number
     });
 }
 
+// ── VS Code's focus after a stop ──────────────────────────────────
+
+/**
+ * How long a read right after a stop waits for VS Code to select a frame.
+ * VS Code focuses one only after it has fetched the threads and the stack of
+ * the stop, which over a probe with an RTOS (pyOCD and CMSIS-RTX on a
+ * B-L475E-IOT01A) comes after a read that starts with the `stopped` event.
+ */
+export const FRAME_FOCUS_WAIT_MS = 2_000;
+
+type StackItem = vscode.DebugThread | vscode.DebugStackFrame | undefined;
+
+/** Where VS Code's focused stack item is read and its changes heard; tests pass their own. */
+export interface FocusSource {
+    current(): StackItem;
+    onDidChange(listener: (item: StackItem) => void): vscode.Disposable;
+}
+
+const VSCODE_FOCUS: FocusSource = {
+    current: () => vscode.debug.activeStackItem,
+    onDidChange: (listener) => vscode.debug.onDidChangeActiveStackItem(listener),
+};
+
+/** The wait, after a stop, for the frame VS Code selects for it. */
+export interface FrameFocusWatch {
+    /**
+     * Resolves true once VS Code has selected a stack frame of the session
+     * for the stop, false when `limitMs` passes first or the session ends.
+     * Never rejects.
+     */
+    selected(limitMs: number): Promise<boolean>;
+}
+
+interface FocusWaiter {
+    session: vscode.DebugSession;
+    settle: (selected: boolean) => void;
+}
+
+const focusWaiters = new Set<FocusWaiter>();
+
+/** True for a stack frame (an item with a `frameId`) of `session`. */
+function isFrameOf(item: StackItem, session: vscode.DebugSession): boolean {
+    return item !== undefined && 'frameId' in item && (item.session === session || item.session?.id === session.id);
+}
+
+/**
+ * Resolves true once VS Code has selected a stack frame of `session` that is
+ * not `stale` — at once when it has — false when `limitMs` passes first or
+ * the session ends. Event-driven: nothing is polled.
+ */
+function frameSelectedFor(session: vscode.DebugSession, focus: FocusSource, stale: StackItem, limitMs: number): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+        const began = Date.now();
+        const finish = (selected: boolean): void => {
+            logger.debug(selected
+                ? `[session-tracker] focus selected after ${Date.now() - began} ms on ${session.name}`
+                : `[session-tracker] no frame selected within ${limitMs} ms on ${session.name}`);
+            resolve(selected);
+        };
+        const now = focus.current();
+        if (now !== stale && isFrameOf(now, session)) {
+            finish(true);
+            return;
+        }
+        if (limitMs <= 0 || endedSessions.has(session)) {
+            finish(false);
+            return;
+        }
+        let subscription: vscode.Disposable | undefined;
+        const waiter: FocusWaiter = { session, settle: () => undefined };
+        const timer = setTimeout(() => waiter.settle(false), limitMs);
+        waiter.settle = (selected) => {
+            clearTimeout(timer);
+            subscription?.dispose();
+            focusWaiters.delete(waiter);
+            finish(selected);
+        };
+        focusWaiters.add(waiter);
+        subscription = focus.onDidChange((item) => {
+            if (focusWaiters.has(waiter) && isFrameOf(item, session)) {
+                waiter.settle(true);
+            }
+        });
+    });
+}
+
+/**
+ * Armed before a request that may stop the target, it remembers the item VS
+ * Code has focused then. Until VS Code hears the `continued` or `stopped` of
+ * a request sent as a custom request it may still hold the frame from
+ * before, and that frame does not count. After the stop, `selected` takes a
+ * frame of `session` that is not that item (VS Code makes a new frame object
+ * for every focus it reports), or any frame of `session` that the change
+ * event delivers once the wait has begun. Event-driven: nothing is polled.
+ */
+export function armFocusWatch(session: vscode.DebugSession, focus: FocusSource = VSCODE_FOCUS): FrameFocusWatch {
+    const stale = focus.current();
+    return { selected: (limitMs) => frameSelectedFor(session, focus, stale, limitMs) };
+}
+
+/** What VS Code shows of a session that came up: the frame it selected for its stop, a target that runs, or no frame in time. */
+export type StartFocus = 'selected' | 'running' | 'none';
+
+/** The wait, after a session came up, for the frame VS Code selects when the session stopped. */
+export interface StartFocusWatch {
+    /**
+     * `running` at once when the session active now is not stopped;
+     * `selected` once VS Code has selected a stack frame of it other than the
+     * item it had focused when the watch was armed; `none` when `limitMs`
+     * passes first, the session ends, or there is no session. Never rejects.
+     */
+    settled(limitMs: number): Promise<StartFocus>;
+}
+
+/**
+ * Armed before a session starts (`start_debugging`, the session phases of
+ * `cmsis_action`): it remembers the item VS Code has focused then, which
+ * belongs to an earlier session or stop and does not count. The session is
+ * the one active when `settled` is called; whether it stopped is the
+ * tracker's view (`isSessionStopped`).
+ */
+export function armStartFocusWatch(
+    focus: FocusSource = VSCODE_FOCUS,
+    sessionOf: () => vscode.DebugSession | undefined = resolveActiveSession,
+    stopped: (session: vscode.DebugSession) => boolean = isSessionStopped,
+): StartFocusWatch {
+    const stale = focus.current();
+    return {
+        settled: async (limitMs) => {
+            const session = sessionOf();
+            if (session === undefined) {
+                return 'none';
+            }
+            if (!stopped(session)) {
+                return 'running';
+            }
+            return (await frameSelectedFor(session, focus, stale, limitMs)) ? 'selected' : 'none';
+        },
+    };
+}
+
 // ── Problems on the adapter channel (#48) ─────────────────────────
 
 /** How long a request the tools announced may take to reach the tracker. */
@@ -341,9 +536,18 @@ function senderOf(session: vscode.DebugSession, response: any): 'tools' | 'vscod
 }
 
 /**
+ * Requests the views send on their own for what they show — the Watch and
+ * Variables views, a hover, the CMSIS Debugger's Live Watch — and repeat
+ * at every stop and refresh: one that fails is the view's, not a problem
+ * of the session.
+ */
+const VIEW_REQUESTS: ReadonlySet<string> = new Set(['evaluate']);
+
+/**
  * A failed response: a warning for a request a tool sent (the tool reports
  * it), an error for one VS Code sent; when the tracker did not see the
  * request, a warning while a tool call runs in this window, else an error.
+ * A view's own request that fails is `info`.
  */
 function journalFailedResponse(journal: ProblemJournal, session: vscode.DebugSession, message: any, sender: 'tools' | 'vscode' | undefined): void {
     const reason = message.message ?? message.body?.error?.format;
@@ -352,11 +556,12 @@ function journalFailedResponse(journal: ProblemJournal, session: vscode.DebugSes
     }
     const text = failedResponseMessage(String(message.command), reason ?? '<no message>');
     const ours = sender === 'tools' || (sender === undefined && journal.callsInFlight() > 0);
+    const viewOnly = !ours && VIEW_REQUESTS.has(String(message.command));
     const known = classifyProblem(text, 'dap');
     journal.append({
         source: 'dap',
         origin: session.name,
-        severity: ours ? 'warning' : 'error',
+        severity: ours ? 'warning' : viewOnly ? 'info' : 'error',
         message: text,
         debugSessionId: session.id,
         ...(known ? { code: known.code, hint: known.hint } : {}),
@@ -367,8 +572,9 @@ function journalFailedResponse(journal: ProblemJournal, session: vscode.DebugSes
  * What adapter output weighs, by category, and whose it is. cdt-gdb-adapter
  * (behind `gdbtarget`) forwards the GDB server's stdout and stderr as
  * `server`, its whole log included, so that is `info` like the adapter's
- * `console`; GDB's own `stderr` is a warning. The target's `stdout`, GDB's
- * `log` stream and anything else are not journaled.
+ * `console`, unless pyOCD's own level says warning or error; GDB's own
+ * `stderr` is a warning. The target's `stdout`, GDB's `log` stream and
+ * anything else are not journaled.
  */
 const OUTPUT_KINDS: Readonly<Partial<Record<string, { severity: ProblemSeverity; source: ProblemSource }>>> = {
     stderr: { severity: 'warning', source: 'dap' },
@@ -377,30 +583,107 @@ const OUTPUT_KINDS: Readonly<Partial<Record<string, { severity: ProblemSeverity;
     server: { severity: 'info', source: 'gdb-server' },
 };
 
+/** A terminal colour or style sequence: pyOCD dims its tracebacks with them. */
+const ANSI_SEQUENCE = /\x1b\[[0-9;]*[A-Za-z]/g;
+
+/** The longest part of a line kept for the output event that ends it; a longer one is journaled as it is. */
+const PARTIAL_LINE_MAX_CHARS = 4_096;
+/** How long the start of a line waits for the output event that ends it before it is journaled as it is. */
+const PARTIAL_LINE_WAIT_MS = 500;
+
+/** The start of a line an output event left without its newline, and how to journal it if no end comes. */
+interface PartialLine {
+    text: string;
+    timer: NodeJS.Timeout;
+    flush: () => void;
+}
+
 /**
- * Adapter output of a journaled category, one record per line, each weighed
- * and coded by `classifyProblem` when it knows the line.
+ * Per session and category, the start of a line an output event ended
+ * without a newline: a GDB server that writes a few characters at a time (an
+ * FVP's model output) would otherwise leave one record per fragment.
+ */
+const partialLines = new WeakMap<vscode.DebugSession, Map<string, PartialLine>>();
+
+/** The kept start of a line of `category`, now taken; empty when there is none. */
+function takePartialLine(session: vscode.DebugSession, category: string): string {
+    const partial = partialLines.get(session)?.get(category);
+    if (!partial) {
+        return '';
+    }
+    clearTimeout(partial.timer);
+    partialLines.get(session)?.delete(category);
+    return partial.text;
+}
+
+/** Journals every kept start of a line of `session` as it is: the session ends. */
+function flushPartialLines(session: vscode.DebugSession): void {
+    const kept = partialLines.get(session);
+    partialLines.delete(session);
+    for (const partial of kept?.values() ?? []) {
+        clearTimeout(partial.timer);
+        partial.flush();
+    }
+}
+
+/**
+ * Adapter output of a journaled category, one record per line without its
+ * colour codes, each weighed and coded by `classifyProblem` when it knows
+ * the line; a GDB-server line it does not know keeps the level pyOCD gave it.
+ * A line is journaled once its newline came, in this event or a later one;
+ * the start of a line waits for its end at most `PARTIAL_LINE_WAIT_MS` and
+ * `PARTIAL_LINE_MAX_CHARS`, and the session's end journals it as it is.
  */
 function journalOutput(journal: ProblemJournal, session: vscode.DebugSession, category: unknown, output: string): void {
-    const kind = OUTPUT_KINDS[typeof category === 'string' ? category : 'console'];
+    const name = typeof category === 'string' ? category : 'console';
+    const kind = OUTPUT_KINDS[name];
     if (!kind) {
         return;
     }
-    for (const line of output.split(/\r?\n/)) {
-        const text = line.trim();
-        if (text.length === 0) {
-            continue;
-        }
-        const known = classifyProblem(text, kind.source);
-        journal.append({
-            source: known?.source ?? kind.source,
-            origin: session.name,
-            severity: known?.severity ?? kind.severity,
-            message: text,
-            debugSessionId: session.id,
-            ...(known ? { code: known.code, hint: known.hint } : {}),
-        });
+    const lines = (takePartialLine(session, name) + output).split(/\r?\n/);
+    const rest = lines.pop() ?? '';
+    for (const line of lines) {
+        journalLine(journal, session, kind, line);
     }
+    if (rest.length === 0) {
+        return;
+    }
+    if (rest.length >= PARTIAL_LINE_MAX_CHARS) {
+        journalLine(journal, session, kind, rest);
+        return;
+    }
+    const flush = (): void => journalLine(journal, session, kind, rest);
+    const timer = setTimeout(() => {
+        if (partialLines.get(session)?.get(name)?.timer === timer) {
+            partialLines.get(session)?.delete(name);
+            flush();
+        }
+    }, PARTIAL_LINE_WAIT_MS);
+    timer.unref?.();
+    let kept = partialLines.get(session);
+    if (!kept) {
+        kept = new Map();
+        partialLines.set(session, kept);
+    }
+    kept.set(name, { text: rest, timer, flush });
+}
+
+/** One line of adapter output as a problem record, unless it is empty once its colour codes are gone. */
+function journalLine(journal: ProblemJournal, session: vscode.DebugSession, kind: { severity: ProblemSeverity; source: ProblemSource }, line: string): void {
+    const text = line.replace(ANSI_SEQUENCE, '').trim();
+    if (text.length === 0) {
+        return;
+    }
+    const known = classifyProblem(text, kind.source);
+    const leveled = kind.source === 'gdb-server' ? serverLineSeverity(text) : undefined;
+    journal.append({
+        source: known?.source ?? kind.source,
+        origin: session.name,
+        severity: known?.severity ?? leveled ?? kind.severity,
+        message: text,
+        debugSessionId: session.id,
+        ...(known ? { code: known.code, hint: known.hint } : {}),
+    });
 }
 
 // ── Output capture (GDB commands on cdt-gdb-adapter) ──────────────
@@ -598,6 +881,107 @@ export function gdbLogpointsOf(session: vscode.DebugSession): GdbLogpoint[] {
         .map((logpoint) => ({ ...logpoint }));
 }
 
+// ── Breakpoints VS Code adopts from an adapter ────────────────────
+
+/**
+ * A breakpoint an adapter announced as new — a GDB `break` command, such as
+ * one in the launch configuration's `initCommands`, or one typed in the
+ * Debug Console — at a source line.
+ */
+export interface AdoptedBreakpoint {
+    /** The source path the adapter named. */
+    path: string;
+    line: number;
+    /** The session whose adapter announced it. */
+    sessionName: string;
+}
+
+/**
+ * The breakpoints VS Code took into its own breakpoint model from a
+ * `breakpoint` event with reason `new` and a source line, by path and line.
+ * VS Code adds them without telling extensions — `vscode.debug.breakpoints`
+ * lists them only after the window reloads them from the workspace's
+ * storage — saves them, and sends them to later sessions. Kept for the
+ * window, past the session's end; the adapter's `removed` event for the
+ * same breakpoint takes one out, as VS Code does.
+ */
+const adoptedBreakpoints = new Map<string, AdoptedBreakpoint & { announced: Array<{ session: vscode.DebugSession; id: number }> }>();
+
+/** An adapter's `breakpoint` event: a new one at a source line is adopted, a removed one forgotten. */
+function noteBreakpointEvent(session: vscode.DebugSession, body: any): void {
+    const breakpoint = body?.breakpoint;
+    const id: unknown = breakpoint?.id;
+    if (body?.reason === 'new') {
+        const sourcePath: unknown = breakpoint?.source?.path;
+        const line: unknown = breakpoint?.line;
+        if (typeof sourcePath !== 'string' || sourcePath.length === 0 || typeof line !== 'number' || !Number.isInteger(line) || line < 1) {
+            return;
+        }
+        const key = `${pathKey(sourcePath)}:${line}`;
+        const known = adoptedBreakpoints.get(key) ?? { path: sourcePath, line, sessionName: session.name, announced: [] };
+        if (typeof id === 'number') {
+            known.announced.push({ session, id });
+        }
+        adoptedBreakpoints.set(key, known);
+    } else if (body?.reason === 'removed' && typeof id === 'number') {
+        for (const [key, known] of adoptedBreakpoints) {
+            if (known.announced.some((entry) => entry.session === session && entry.id === id)) {
+                adoptedBreakpoints.delete(key);
+            }
+        }
+    }
+}
+
+/** The breakpoints VS Code adopted from an adapter in this window, in the order they were announced. */
+export function adoptedBreakpointsOf(): AdoptedBreakpoint[] {
+    return [...adoptedBreakpoints.values()].map(({ path: sourcePath, line, sessionName }) => ({ path: sourcePath, line, sessionName }));
+}
+
+/** Forget every adopted breakpoint: for harnesses that start each scenario with an empty breakpoint model. */
+export function forgetAdoptedBreakpoints(): void {
+    adoptedBreakpoints.clear();
+}
+
+// ── The core's debug status (#3) ──────────────────────────────────
+
+/**
+ * When the last DHCSR read of a session got no answer. A stop event after it
+ * means GDB talked to the target again, so the stop forgets it, as does a
+ * DHCSR read that answers and the session's end.
+ */
+const silentCores = new WeakMap<vscode.DebugSession, number>();
+
+/** Keeps what one DHCSR read of `session` found: `silent` with its time, `answers` forgets it, `unknown` changes nothing. */
+export function noteCoreVerdict(session: vscode.DebugSession, verdict: CoreVerdict, now: number = Date.now()): void {
+    if (verdict === 'silent') {
+        silentCores.set(session, now);
+    } else if (verdict === 'answers') {
+        silentCores.delete(session);
+    }
+}
+
+/** When the last DHCSR read of `session` got no answer, unless the target stopped or DHCSR answered since. */
+export function coreSilentSince(session: vscode.DebugSession): number | undefined {
+    return silentCores.get(session);
+}
+
+// ── A session asked to end ─────────────────────────────────────────
+
+/** The DAP requests that end a session. */
+const END_REQUESTS: ReadonlySet<string> = new Set(['disconnect', 'terminate']);
+
+/**
+ * The last request to end a session that went to its adapter, and when. Kept
+ * until the session ends or starts again, and forgotten when the adapter
+ * refuses it.
+ */
+const endRequests = new WeakMap<vscode.DebugSession, { command: string; at: number }>();
+
+/** When a `disconnect` or `terminate` request went to `session`'s adapter, and which; undefined when none did. */
+export function endRequestOf(session: vscode.DebugSession): { command: string; at: number } | undefined {
+    return endRequests.get(session);
+}
+
 // ── Session end ────────────────────────────────────────────────────
 
 interface EndWaiter {
@@ -630,12 +1014,15 @@ export function waitForSessionEnd(session: vscode.DebugSession, timeoutMs: numbe
 
 /** Everything the tracker holds for a session goes when it ends, and whoever waits on it is told. */
 function sessionEnded(session: vscode.DebugSession): void {
+    flushPartialLines(session);
     endedSessions.add(session);
     sessionStates.delete(session);
     removeLiveSession(session);
     settleStopWaiters(session, { kind: 'ended' });
     closeCaptures(session);
     gdbLogpointsBySession.delete(session);
+    silentCores.delete(session);
+    endRequests.delete(session);
     pendingBreakpointRequests.delete(session);
     ownRequestsDue.delete(session);
     requestsSent.delete(session);
@@ -647,6 +1034,11 @@ function sessionEnded(session: vscode.DebugSession): void {
     for (const waiter of [...endWaiters]) {
         if (waiter.session === session) {
             waiter.settle(true);
+        }
+    }
+    for (const waiter of [...focusWaiters]) {
+        if (waiter.session === session) {
+            waiter.settle(false);
         }
     }
 }
@@ -674,8 +1066,17 @@ function noticeQuietStartFailure(session: vscode.DebugSession, message: { messag
 export function createSessionTracker(session: vscode.DebugSession, journal: ProblemJournal = problemJournal()): vscode.DebugAdapterTracker {
     // VS Code's restart of an adapter without a restart request relaunches it in the same session.
     endedSessions.delete(session);
+    silentCores.delete(session);
+    endRequests.delete(session);
     addLiveSession(session);
     noteSessionOrigin(session);
+    for (const listener of [...beginListeners]) {
+        try {
+            listener(session);
+        } catch (caught) {
+            logger.warn(`A listener for the start of '${session.name}' failed`, caught);
+        }
+    }
     return {
         onWillReceiveMessage(message: any): void {
             if (message?.type !== 'request') {
@@ -684,6 +1085,8 @@ export function createSessionTracker(session: vscode.DebugSession, journal: Prob
             noteRequestSent(session, message);
             if (message.command === 'setBreakpoints') {
                 noteBreakpointRequest(session, message);
+            } else if (END_REQUESTS.has(message.command)) {
+                endRequests.set(session, { command: message.command, at: Date.now() });
             }
         },
         onDidSendMessage(message: any): void {
@@ -691,6 +1094,9 @@ export function createSessionTracker(session: vscode.DebugSession, journal: Prob
                 const sender = senderOf(session, message);
                 if (message.command === 'setBreakpoints') {
                     noteBreakpointResponse(session, message);
+                }
+                if (END_REQUESTS.has(message.command) && message.success === false) {
+                    endRequests.delete(session);
                 }
                 if (message.success === false) {
                     journalFailedResponse(journal, session, message, sender);
@@ -714,6 +1120,7 @@ export function createSessionTracker(session: vscode.DebugSession, journal: Prob
                 if (message.body?.reason === 'removed' && typeof removedId === 'number') {
                     forgetGdbLogpoints(session, [removedId]);
                 }
+                noteBreakpointEvent(session, message.body);
                 return;
             }
             const state = getOrInit(session);
@@ -722,6 +1129,8 @@ export function createSessionTracker(session: vscode.DebugSession, journal: Prob
                 state.stoppedReason = message.body?.reason ?? null;
                 state.stoppedThreadId = message.body?.threadId ?? null;
                 state.lastEventAt = Date.now();
+                // The target ran and stopped again: GDB has talked to it since a DHCSR read that got no answer.
+                silentCores.delete(session);
                 logger.debug(`[session-tracker] stopped (${state.stoppedReason}) on ${session.name}`);
                 settleStopWaiters(session, { kind: 'stopped', reason: state.stoppedReason, threadId: state.stoppedThreadId });
             } else if (message.event === 'continued') {

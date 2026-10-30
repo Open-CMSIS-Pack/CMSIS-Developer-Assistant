@@ -87,6 +87,18 @@ function cbuildYml(context: string, compiler: string, outputs: [string, string][
 
 interface World { root: string; workspace: string; host: BuildInfoHost; lines: string[] }
 
+/**
+ * Copy a fixture as a build would write it: modified now. Windows' CopyFile
+ * keeps the source's modification time, so a copied image was as old as the
+ * checkout there, and the tests that compare a log's time with the image's
+ * failed on Windows alone.
+ */
+function copyFresh(from: string, to: string): void {
+    fs.copyFileSync(from, to);
+    const now = new Date();
+    fs.utimesSync(to, now, now);
+}
+
 function buildWorld(): World {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildinfo-e2e-'));
     const workspace = path.join(root, 'ws');
@@ -100,16 +112,16 @@ function buildWorld(): World {
     fs.writeFileSync(path.join(out, 'Blinky+NUCLEO-F756ZG.cbuild-run.yml'), NUCLEO_RUN);
     fs.writeFileSync(path.join(out, 'Blinky+FVP.cbuild-run.yml'), FVP_RUN);
     fs.writeFileSync(path.join(nucleo, 'Blinky.Debug+NUCLEO-F756ZG.cbuild.yml'), cbuildYml('Blinky.Debug+NUCLEO-F756ZG', 'AC6', [['elf', 'Blinky.axf'], ['hex', 'Blinky.hex'], ['map', 'Blinky.axf.map'], ['comp-db', 'compile_commands.json']]));
-    fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'blink-ac6.axf'), path.join(nucleo, 'Blinky.axf'));
-    fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'blink-ac6.axf.map'), path.join(nucleo, 'Blinky.axf.map'));
+    copyFresh(path.join(BUILDINFO_FIXTURES, 'blink-ac6.axf'), path.join(nucleo, 'Blinky.axf'));
+    copyFresh(path.join(BUILDINFO_FIXTURES, 'blink-ac6.axf.map'), path.join(nucleo, 'Blinky.axf.map'));
     fs.writeFileSync(path.join(nucleo, 'Blinky.hex'), ':020000040800F2\n:00000001FF\n');
     fs.writeFileSync(path.join(fvp, 'Blinky.Debug+FVP.cbuild.yml'), cbuildYml('Blinky.Debug+FVP', 'GCC', [['elf', 'Blinky.elf'], ['map', 'Blinky.elf.map']]));
-    fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'blink-gcc.elf'), path.join(fvp, 'Blinky.elf'));
-    fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'blink-gcc.elf.map'), path.join(fvp, 'Blinky.elf.map'));
-    fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'build-failed.log'), path.join(out, 'build.log'));
+    copyFresh(path.join(BUILDINFO_FIXTURES, 'blink-gcc.elf'), path.join(fvp, 'Blinky.elf'));
+    copyFresh(path.join(BUILDINFO_FIXTURES, 'blink-gcc.elf.map'), path.join(fvp, 'Blinky.elf.map'));
+    copyFresh(path.join(BUILDINFO_FIXTURES, 'build-failed.log'), path.join(out, 'build.log'));
     // An older, unrelated log elsewhere in the workspace must rank below the one in out/.
     fs.mkdirSync(path.join(workspace, 'logs'), { recursive: true });
-    fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'build-ok.log'), path.join(workspace, 'logs', 'build-old.log'));
+    copyFresh(path.join(BUILDINFO_FIXTURES, 'build-ok.log'), path.join(workspace, 'logs', 'build-old.log'));
     const old = new Date(Date.now() - 3_600_000);
     fs.utimesSync(path.join(workspace, 'logs', 'build-old.log'), old, old);
 
@@ -216,7 +228,7 @@ suite('BuildInfoHandler (end to end)', () => {
         const romOnlyDir = path.join(world.root, 'romonly', 'out');
         fs.mkdirSync(path.join(romOnlyDir, 'Blinky', 'NUCLEO-F756ZG', 'Debug'), { recursive: true });
         fs.writeFileSync(path.join(romOnlyDir, 'Blinky+NUCLEO-F756ZG.cbuild-run.yml'), romOnlyRun);
-        fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'blink-ac6.axf'), path.join(romOnlyDir, 'Blinky', 'NUCLEO-F756ZG', 'Debug', 'Blinky.axf'));
+        copyFresh(path.join(BUILDINFO_FIXTURES, 'blink-ac6.axf'), path.join(romOnlyDir, 'Blinky', 'NUCLEO-F756ZG', 'Debug', 'Blinky.axf'));
         fs.writeFileSync(path.join(romOnlyDir, 'Blinky', 'NUCLEO-F756ZG', 'Debug', 'Blinky.axf.map'), 'Component: Arm Compiler for Embedded 6.24 Tool: armlink [5f371500]\n');
         const romOnlyWs = path.join(world.root, 'romonly');
         const romOnly = textOf(await new BuildInfoHandler({ ...world.host, workspaceFolders: () => [romOnlyWs], findFiles: async (g) => walkGlob(romOnlyWs, g) }, { timeoutMs: 5000, workspaceRoot: () => romOnlyWs }).handleGetMemoryUsage({}));
@@ -315,6 +327,22 @@ suite('BuildInfoHandler (end to end)', () => {
         assert.match(gcc, /^Contributors \[Blinky\.elf\.map\] \(per output section, top 5 objects each\):$/m);
         assert.match(gcc, /^  \.data 0x20000000 64 B \(load 0x080001ac\) @RAM — 1 input sections, 1 objects$/m);
         assert.match(gcc, /^  \.text 0x08000040 364 B @FLASH, fill 2 — 6 input sections, 3 objects$/m);
+    });
+
+    test('get_build_diagnostics: a log older than the target\'s image says it is of an earlier build', async () => {
+        const logFile = path.join(world.workspace, 'out', 'build.log');
+        const kept = fs.statSync(logFile).mtime;
+        assert.doesNotMatch(textOf(await handler.handleGetBuildDiagnostics({ target: 'NUCLEO', limit: 1 })), /Older than the image/);
+        // A tester's case: the failed run's log stayed, and the next build succeeded and linked the image.
+        const earlier = new Date(Date.now() - 600_000);
+        fs.utimesSync(logFile, earlier, earlier);
+        try {
+            const text = textOf(await handler.handleGetBuildDiagnostics({ target: 'NUCLEO', limit: 1 }));
+            assert.match(text, /^Older than the image: out\/Blinky\/NUCLEO-F756ZG\/Debug\/Blinky\.axf was linked .+, after this log — the log is of an earlier build, and a later one linked the image \(cmsis_action status has the last result\)\.$/m);
+            assert.match(text, /^Status of that build: FAILED — /m);
+        } finally {
+            fs.utimesSync(logFile, kept, kept);
+        }
     });
 
     test('get_build_diagnostics: newest log under out/, explicit file, none', async () => {

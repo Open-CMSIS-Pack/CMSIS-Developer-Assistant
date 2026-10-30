@@ -62,16 +62,23 @@ function overrunStatement(label: string, limitMs: number): string {
 const OVERRUN_ADVICE = 'The DAP probe or target may be unresponsive — call get_session_status / check_target_connection to confirm. '
     + 'Note: the underlying request may still be running on the server; consider restart_debugging if subsequent calls also stall.';
 
-/** A cap other than 60 s, and what the cap's answer advises instead of the DAP text. */
+/**
+ * A cap other than 60 s, what the cap's answer advises instead of the DAP
+ * text, and the status of a `reply` cap: `timeout` (the wait ran out), or
+ * `running` for a call whose work goes on and is answered by a repeat of the
+ * same call, as `cmsis_query` while the catalog loads.
+ */
 export interface FenceOptions {
     capMs?: number;
     advice?: string;
+    capStatus?: 'timeout' | 'running';
 }
 
 /**
  * Race `body` against the limit for `timeoutMs`. A failing body rejects with
- * its `ToolError`; the cap resolves with a `timeout` reply or rejects with a
- * `TIMEOUT` error, as `onCap` says.
+ * its `ToolError`; the cap resolves with a `timeout` reply (or a `running`
+ * one, `options.capStatus`) or rejects with a `TIMEOUT` error, as `onCap`
+ * says.
  *
  * The timer is armed before the body starts, so a body whose own wait is as
  * long as the fence loses the tie. A body that loses keeps running — a DAP
@@ -92,7 +99,7 @@ export async function fenced(
     const expiry = new Promise<ToolText>((settle, fail) => {
         disarm = timers.startTimer(limitMs, () => {
             if (onCap === 'reply') {
-                settle({ text: `${overrunStatement(label, limitMs)} ${advice}`, status: 'timeout' });
+                settle({ text: `${overrunStatement(label, limitMs)} ${advice}`, status: options.capStatus ?? 'timeout' });
             } else {
                 fail(new ToolError('TIMEOUT', overrunStatement(label, limitMs), advice));
             }

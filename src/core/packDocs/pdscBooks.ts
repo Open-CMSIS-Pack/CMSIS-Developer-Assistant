@@ -28,7 +28,7 @@ import * as path from 'path';
 import { ARM_DOCS, ArmDocEntry, ArmDocKind, armDocId, armDocUrl, armKindOrder, knownNpuOf, normalizeNpu, parseArmDocUrl } from './armDocs';
 import { PackId, formatPackId } from './cbuildRun';
 import { PackDocsLog, silentLog } from './host';
-import { XmlElement, childrenOf, parseXml } from './xmlLite';
+import { XmlElement, childrenOf, decodeEntities, parseXml } from './xmlLite';
 
 /**
  * Where a document was attributed: the pdsc levels, `unlisted` for PDFs in
@@ -124,6 +124,67 @@ export function findPdscFile(dir: string, id?: PackId): string | undefined {
     return candidates.length ? path.join(dir, candidates[0]) : undefined;
 }
 
+const declaredCache = new Map<string, { mtimeMs: number; size: number; id: PackId | undefined }>();
+
+/**
+ * The pack a pdsc declares: its `<vendor>`, `<name>` and the version of its
+ * first `<release>` (the newest, by the schema's order). Read with a scan of
+ * the text, not the parser: a device pack's pdsc runs to megabytes, and only
+ * the header is needed. Undefined when the file cannot be read or names no
+ * vendor and name.
+ */
+export function declaredPackId(pdscPath: string): PackId | undefined {
+    let text: string;
+    let stat: fs.Stats;
+    try {
+        stat = fs.statSync(pdscPath);
+        const hit = declaredCache.get(pdscPath);
+        if (hit && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) {
+            return hit.id;
+        }
+        text = fs.readFileSync(pdscPath, 'utf-8');
+    } catch {
+        return undefined;
+    }
+    const id = scanPackId(text);
+    declaredCache.set(pdscPath, { mtimeMs: stat.mtimeMs, size: stat.size, id });
+    return id;
+}
+
+function scanPackId(text: string): PackId | undefined {
+    const element = (tag: string): string | undefined => {
+        const value = new RegExp(`<${tag}>\\s*([^<]*?)\\s*</${tag}>`).exec(text)?.[1];
+        return value ? decodeEntities(value) : undefined;
+    };
+    const vendor = element('vendor');
+    const name = element('name');
+    if (!vendor || !name) {
+        return undefined;
+    }
+    const version = /<release\b[^>]*\bversion\s*=\s*"([^"]+)"/.exec(text)?.[1]?.trim();
+    return { vendor, name, ...(version ? { version } : {}) };
+}
+
+/**
+ * Whether `dir` holds the pack `id`: its pdsc declares the same vendor and
+ * name (case aside) and, when `id` has a version, that version as its newest
+ * release.
+ */
+export function holdsPack(dir: string, id: PackId): boolean {
+    let pdsc: string | undefined;
+    try {
+        pdsc = findPdscFile(dir, id);
+    } catch {
+        return false;
+    }
+    const declared = pdsc ? declaredPackId(pdsc) : undefined;
+    if (!declared) {
+        return false;
+    }
+    const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+    return same(declared.vendor, id.vendor) && same(declared.name, id.name) && (!id.version || declared.version === id.version);
+}
+
 export function loadPdsc(pdscPath: string, id: PackId, log: PackDocsLog = silentLog): PdscInfo {
     const st = fs.statSync(pdscPath);
     const hit = pdscCache.get(pdscPath);
@@ -141,6 +202,7 @@ export function loadPdsc(pdscPath: string, id: PackId, log: PackDocsLog = silent
 
 export function clearPdscCache(): void {
     pdscCache.clear();
+    declaredCache.clear();
 }
 
 export function slug(text: string): string {

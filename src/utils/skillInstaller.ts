@@ -270,7 +270,7 @@ export class SkillInstaller {
                 continue;
             }
             for (const { entry, hidden } of desired.values()) {
-                await this.installOne(root, entry, hidden, catalog.source.sha, report);
+                await this.installOne(root, entry, hidden, catalog.source?.sha ?? '', report);
             }
             await this.sweep(root, desired, report);
         }

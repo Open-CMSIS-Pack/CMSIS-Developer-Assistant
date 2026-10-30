@@ -37,7 +37,7 @@
 
 import * as vscode from 'vscode';
 import type { CmsisJobTracker } from './cmsisJobTracker';
-import type { Job } from './core/cmsisTasks';
+import { isBuildAction, type Job } from './core/cmsisTasks';
 import { formatProblemLine, problemJournal, type ProblemInput, type ProblemJournal, type ProblemRecord } from './core/problemJournal';
 import { shortenPath } from './core/textBudget';
 import { logger, type ErrorSink } from './utils/logger';
@@ -221,12 +221,12 @@ export function failedJobProblem(job: Job): ProblemInput | undefined {
     }
     const ended = decided.exitCode !== undefined ? `exited with code ${decided.exitCode}` : 'ended without an exit code';
     return {
-        source: job.action === 'build' ? 'build' : 'task',
+        source: isBuildAction(job.action) ? 'build' : 'task',
         origin: decided.name,
         severity: 'error',
         code: 'TASK_FAILED',
         message: `'${decided.name}' ${ended}${job.target ? ` on ${job.target}` : ''} (job ${job.id})`,
-        hint: job.action === 'build'
+        hint: isBuildAction(job.action)
             ? 'cmsis_action {action:\'status\'} shows its error lines.'
             : 'cmsis_action {action:\'status\'} shows the job; flash answers with pyOCD\'s own error lines.',
     };
@@ -283,7 +283,7 @@ export function attachJobJournal(
             return;
         }
         journal.append(failed);
-        if (job.action === 'build') {
+        if (isBuildAction(job.action)) {
             syncProblemsPanel(journal);
         }
     });

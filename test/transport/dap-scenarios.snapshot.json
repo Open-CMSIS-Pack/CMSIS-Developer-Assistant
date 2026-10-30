@@ -12,7 +12,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -20,9 +20,10 @@
         {
           "tool": "check_target_connection",
           "args": {},
-          "text": "Session: CMSIS Debugger: pyOCD (type=gdbtarget)\nConfiguration: CMSIS Debugger: pyOCD\nDAP probe: OK (<n>ms)\nTarget state: stopped — full inspection is available.",
+          "text": "Session: CMSIS Debugger: pyOCD (type=gdbtarget)\nConfiguration: CMSIS Debugger: pyOCD\nDAP probe: OK (<n>ms)\nTarget state: stopped — the debug port answers: DHCSR=0x00030003 (halted).",
           "traffic": [
-            "dap: threads {}"
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes"
           ]
         },
         {
@@ -113,7 +114,7 @@
     },
     {
       "name": "variables",
-      "description": "Halted in led_toggle (caller main has a struct, arrays and secret-named locals): the adapter has Local and Registers scopes only.",
+      "description": "Halted in led_toggle (caller main has a struct, arrays and secret-named locals): the adapter has Local and Registers scopes only, Registers marked expensive, so a listing reads Local alone and names Registers as not read.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -122,12 +123,11 @@
         {
           "tool": "list_variable_names",
           "args": {},
-          "text": "Variables in scope (names and types only — use get_variables_values to read values):\n\nLocal:\n  mask: uint32_t\n\nRegisters:\n  r0\n  r1\n  r2\n  r3\n  r4\n  r5\n  r6\n  r7\n  r8\n  r9\n  r10\n  r11\n  r12\n  sp\n  lr\n  pc\n  xpsr\n  msp\n  psp\n  primask\n  basepri\n  faultmask\n  control\n\n",
+          "text": "Variables in scope (names and types only — use get_variables_values to read values):\n\nLocal:\n  mask: uint32_t\n\nRegisters: not read here (expensive over the probe) — read_core_registers reads the core registers.\n",
           "traffic": [
             "dap: threads {}",
             "dap: scopes {\"frameId\":1000}",
-            "dap: variables {\"variablesReference\":2000}",
-            "dap: variables {\"variablesReference\":2001}"
+            "dap: variables {\"variablesReference\":2000}"
           ]
         },
         {
@@ -145,12 +145,11 @@
         {
           "tool": "get_variables_values",
           "args": {},
-          "text": "Variables:\n==========\n\nLocal:\n  mask: 32 (uint32_t)\n\nRegisters:\n  r0: 0x2a\n  r1: 0x40020000\n  r2: 0x20\n  r3: 0x20\n  r4: 0x1f4\n  r5: 0x0\n  r6: 0x0\n  r7: 0x20017fc8\n  r8: 0x0\n  r9: 0x0\n  r10: 0x0\n  r11: 0x0\n  r12: 0x8000f10\n  sp: 0x20017fc8\n  lr: 0x8000303\n  pc: 0x8000276\n  xpsr: 0x61000000\n  msp: 0x20017fc8\n  psp: 0x0\n  primask: 0x0\n  basepri: 0x0\n  faultmask: 0x0\n  control: 0x0\n\n",
+          "text": "Variables:\n==========\n\nLocal:\n  mask: 32 (uint32_t)\n\nRegisters: not read here (expensive over the probe) — read_core_registers reads the core registers.\n",
           "traffic": [
             "dap: threads {}",
             "dap: scopes {\"frameId\":1000}",
-            "dap: variables {\"variablesReference\":2000}",
-            "dap: variables {\"variablesReference\":2001}"
+            "dap: variables {\"variablesReference\":2000}"
           ]
         },
         {
@@ -161,12 +160,11 @@
               "counter"
             ]
           },
-          "text": "Variables:\n==========\n\nLocal:\n  mask: 32 (uint32_t)\n\n\n⚠️ Not found in the requested scope(s): counter. Call list_variable_names to see what is actually in scope, or use evaluate_expression for globals and struct members that are not top-level locals.\n",
+          "text": "Variables:\n==========\n\nLocal:\n  mask: 32 (uint32_t)\n\n\n⚠️ Not found in the requested scope(s): counter. Call list_variable_names to see what is actually in scope, or use evaluate_expression for globals and struct members that are not top-level locals.\nRegisters: not read here (expensive over the probe) — read_core_registers reads the core registers.\n",
           "traffic": [
             "dap: threads {}",
             "dap: scopes {\"frameId\":1000}",
-            "dap: variables {\"variablesReference\":2000}",
-            "dap: variables {\"variablesReference\":2001}"
+            "dap: variables {\"variablesReference\":2000}"
           ]
         },
         {
@@ -176,12 +174,11 @@
               "counter"
             ]
           },
-          "text": "None of the requested variables are in scope: counter.\nCall list_variable_names to see what is available here.",
+          "text": "None of the requested variables are in scope: counter.\nCall list_variable_names to see what is available here.\nRegisters: not read here (expensive over the probe) — read_core_registers reads the core registers.",
           "traffic": [
             "dap: threads {}",
             "dap: scopes {\"frameId\":1000}",
-            "dap: variables {\"variablesReference\":2000}",
-            "dap: variables {\"variablesReference\":2001}"
+            "dap: variables {\"variablesReference\":2000}"
           ]
         },
         {
@@ -189,13 +186,12 @@
           "args": {
             "scope": "global"
           },
-          "text": "Note: No dedicated \"Global\" scope is available from this debug adapter. Showing all available scopes instead. Use evaluate_expression to inspect specific global variables by name.\n\nVariables:\n==========\n\nLocal:\n  mask: 32 (uint32_t)\n\nRegisters:\n  r0: 0x2a\n  r1: 0x40020000\n  r2: 0x20\n  r3: 0x20\n  r4: 0x1f4\n  r5: 0x0\n  r6: 0x0\n  r7: 0x20017fc8\n  r8: 0x0\n  r9: 0x0\n  r10: 0x0\n  r11: 0x0\n  r12: 0x8000f10\n  sp: 0x20017fc8\n  lr: 0x8000303\n  pc: 0x8000276\n  xpsr: 0x61000000\n  msp: 0x20017fc8\n  psp: 0x0\n  primask: 0x0\n  basepri: 0x0\n  faultmask: 0x0\n  control: 0x0\n\n",
+          "text": "Note: No dedicated \"Global\" scope is available from this debug adapter. Showing all available scopes instead. Use evaluate_expression to inspect specific global variables by name.\n\nVariables:\n==========\n\nLocal:\n  mask: 32 (uint32_t)\n\nRegisters: not read here (expensive over the probe) — read_core_registers reads the core registers.\n",
           "traffic": [
             "dap: threads {}",
             "dap: scopes {\"frameId\":1000}",
             "dap: scopes {\"frameId\":1000}",
-            "dap: variables {\"variablesReference\":2000}",
-            "dap: variables {\"variablesReference\":2001}"
+            "dap: variables {\"variablesReference\":2000}"
           ]
         },
         {
@@ -203,12 +199,11 @@
           "args": {
             "frameId": 1001
           },
-          "text": "Variables for frameId=1001:\n==========\n\nLocal:\n  config: {...} (led_config_t)\n  ledState: true (_Bool)\n  buffer: \"Hello, Cortex-M!\" (char [16])\n  password: 0x8000f10 \"hunter2\" (const char *)\n  api_key: <redacted: possible secret> (char [16])\n\nRegisters:\n  r0: 0x2a\n  r1: 0x40020000\n  r2: 0x20\n  r3: 0x20\n  r4: 0x1f4\n  r5: 0x0\n  r6: 0x0\n  r7: 0x20017fc8\n  r8: 0x0\n  r9: 0x0\n  r10: 0x0\n  r11: 0x0\n  r12: 0x8000f10\n  sp: 0x20017fc8\n  lr: 0x8000303\n  pc: 0x8000302\n  xpsr: 0x61000000\n  msp: 0x20017fc8\n  psp: 0x0\n  primask: 0x0\n  basepri: 0x0\n  faultmask: 0x0\n  control: 0x0\n\nNOTE: values matching '<redacted: possible secret>' were held back because the variable name or the value itself resembles a credential such as an API key, token, password or connection string. To debug such a value, check its type, its length or whether it is null rather than asking for its contents. Numeric scalars are never withheld, so firmware flags and counters stay readable. Turn this off with the \"cmsis-developer-assistant.redactSecrets\" setting.\n",
+          "text": "Variables for frameId=1001:\n==========\n\nLocal:\n  config: {...} (led_config_t)\n  ledState: true (_Bool)\n  buffer: \"Hello, Cortex-M!\" (char [16])\n  password: 0x8000f10 \"hunter2\" (const char *)\n  api_key: <redacted: possible secret> (char [16])\n\nNOTE: values matching '<redacted: possible secret>' were held back because the variable name or the value itself resembles a credential such as an API key, token, password or connection string. To debug such a value, check its type, its length or whether it is null rather than asking for its contents. Numeric scalars are never withheld, so firmware flags and counters stay readable. Turn this off with the \"cmsis-developer-assistant.redactSecrets\" setting.\nRegisters: not read here (expensive over the probe) — read_core_registers reads the core registers.\n",
           "traffic": [
             "dap: threads {}",
             "dap: scopes {\"frameId\":1001}",
-            "dap: variables {\"variablesReference\":2002}",
-            "dap: variables {\"variablesReference\":2003}"
+            "dap: variables {\"variablesReference\":2002}"
           ]
         },
         {
@@ -225,8 +220,7 @@
           "traffic": [
             "dap: threads {}",
             "dap: scopes {\"frameId\":1001}",
-            "dap: variables {\"variablesReference\":2002}",
-            "dap: variables {\"variablesReference\":2003}"
+            "dap: variables {\"variablesReference\":2002}"
           ]
         },
         {
@@ -250,12 +244,11 @@
           "args": {
             "frameId": 1077
           },
-          "text": "Variables for frameId=1077:\n==========\n\nLocal:\n  No variables in this scope\n\nRegisters:\n  No variables in this scope\n\n",
+          "text": "Variables for frameId=1077:\n==========\n\nLocal:\n  No variables in this scope\n\nRegisters: not read here (expensive over the probe) — read_core_registers reads the core registers.\n",
           "traffic": [
             "dap: threads {}",
             "dap: scopes {\"frameId\":1077}",
-            "dap: variables {\"variablesReference\":2154}",
-            "dap: variables {\"variablesReference\":2155}"
+            "dap: variables {\"variablesReference\":2154}"
           ]
         }
       ]
@@ -412,7 +405,7 @@
     },
     {
       "name": "read-memory",
-      "description": "Halted: DAP readMemory in hex / ascii / both, an address without 0x, and an unmapped address where readMemory fails and every GDB fallback fails too.",
+      "description": "Halted: DAP readMemory in hex / ascii / both, an address without 0x, an unmapped address where readMemory fails and every GDB fallback fails too, and ranges across the start and the end of SRAM: the adapter returns the mapped part from where it begins, and the dump says which part could not be read.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -471,6 +464,31 @@
             "dap: evaluate {\"expression\":\"*(unsigned int*)0x60000000\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
             "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0x60000000 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
             "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0x1FFFFFF0",
+            "length": 64,
+            "format": "both"
+          },
+          "text": "Memory at 0x1FFFFFF0 (64 bytes):\nRead 48 of 64 bytes: 0x1ffffff0–0x1fffffff could not be read.\n\nHex:\n  0x20000000: 48 65 6c 6c 6f 2c 20 43 6f 72 74 65 78 2d 4d 21\n  0x20000010: 2a 00 00 00 55 41 52 54 32 20 72 65 61 64 79 0d\n  0x20000020: 0a 00 00 00 ef be ad de 54 68 65 20 71 75 69 63\n\nASCII:\n  Hello, Cortex-M!*...UART2 ready.........The quic\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0x1FFFFFF0\",\"count\":64} -> 48 bytes from 0x20000000"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0x20017FF0",
+            "length": 64
+          },
+          "text": "Memory at 0x20017FF0 (64 bytes):\nRead 16 of 64 bytes: 0x20018000–0x2001802f could not be read.\n\nHex:\n  0x20017ff0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0x20017FF0\",\"count\":64} -> 16 bytes"
           ]
         }
       ]
@@ -647,6 +665,7 @@
           "text": "DWT cycle counter: 10732021 (0x00a3c1f5)\nDWT was enabled during this call — deltas are valid from now.\nWrap: 32-bit, wraps every 2^32 cycles (~<n>s @ 400 MHz) — for longer spans, sample repeatedly and accumulate.\nNote: CYCCNT stops while the core is halted and during WFE sleep — it counts ACTIVE cycles only.\nTo time a region: read here, continue_execution / wait_for_stop to the end point, read again, subtract (mod 2^32).",
           "traffic": [
             "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED00\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDFC\",\"count\":4} -> 4 bytes",
             "dap: writeMemory {\"memoryReference\":\"0xE000EDFC\",\"data\":\"AAAAAQ==\"}",
             "dap: readMemory {\"memoryReference\":\"0xE000EDFC\",\"count\":4} -> 4 bytes",
@@ -662,6 +681,7 @@
           "text": "DWT cycle counter: 10732021 (0x00a3c1f5)\nWrap: 32-bit, wraps every 2^32 cycles (~<n>s @ 400 MHz) — for longer spans, sample repeatedly and accumulate.\nNote: CYCCNT stops while the core is halted and during WFE sleep — it counts ACTIVE cycles only.\nTo time a region: read here, continue_execution / wait_for_stop to the end point, read again, subtract (mod 2^32).",
           "traffic": [
             "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED00\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDFC\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE0001000\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE0001004\",\"count\":4} -> 4 bytes"
@@ -671,7 +691,7 @@
     },
     {
       "name": "cycle-counter-absent",
-      "description": "A core whose DWT_CTRL reports NOCYCCNT.",
+      "description": "An Armv7-M core whose DWT_CTRL reports NOCYCCNT (bit 25): two comparators, no trace packets, no cycle or profiling counters.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -680,11 +700,55 @@
         {
           "tool": "read_cycle_counter",
           "args": {},
-          "text": "This core reports no DWT cycle counter (DWT_CTRL.NOCYCCNT=1) — read_cycle_counter is unavailable. Use an RTOS tick or a timer peripheral for timing instead.",
+          "text": "This core has no DWT cycle counter (none on Armv6-M and Armv8-M Baseline cores such as Cortex-M0, M0+ and M23; elsewhere DWT_CTRL.NOCYCCNT=1) — read_cycle_counter is unavailable. Use an RTOS tick or a timer peripheral for timing instead.",
           "traffic": [
             "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED00\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDFC\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE0001000\",\"count\":4} -> 4 bytes"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cycle-counter-one-comparator",
+      "description": "DWT_CTRL 0x10000000: one comparator (NUMCOMP, bits 31:28) and a cycle counter, which the read enables.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "read_cycle_counter",
+          "args": {},
+          "text": "DWT cycle counter: 10732021 (0x00a3c1f5)\nDWT was enabled during this call — deltas are valid from now.\nWrap: 32-bit, wraps every 2^32 cycles (~<n>s @ 400 MHz) — for longer spans, sample repeatedly and accumulate.\nNote: CYCCNT stops while the core is halted and during WFE sleep — it counts ACTIVE cycles only.\nTo time a region: read here, continue_execution / wait_for_stop to the end point, read again, subtract (mod 2^32).",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED00\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDFC\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE0001000\",\"count\":4} -> 4 bytes",
+            "dap: writeMemory {\"memoryReference\":\"0xE0001000\",\"data\":\"AQAAEA==\"}",
+            "dap: readMemory {\"memoryReference\":\"0xE0001000\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE0001004\",\"count\":4} -> 4 bytes"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cycle-counter-armv6m",
+      "description": "A Cortex-M0+ (CPUID 0x410CC601): Armv6-M has no cycle counter, and its read-only DWT_CTRL holds NUMCOMP alone. Nothing is written.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "read_cycle_counter",
+          "args": {},
+          "text": "This core has no DWT cycle counter (none on Armv6-M and Armv8-M Baseline cores such as Cortex-M0, M0+ and M23; elsewhere DWT_CTRL.NOCYCCNT=1) — read_cycle_counter is unavailable. Use an RTOS tick or a timer peripheral for timing instead.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED00\",\"count\":4} -> 4 bytes"
           ]
         }
       ]
@@ -700,7 +764,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGSEGV\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGSEGV\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -720,17 +784,27 @@
           "text": "=== Cortex-M Fault Analysis ===\n\nHFSR  = 0x40000000\n  FORCED: Escalated fault (check CFSR for root cause)\n\nMMFSR = 0x00\n\nBFSR  = 0x82\n  BFARVALID: Faulting address = 0x60000000\n  PRECISERR: Precise data bus error\n\nUFSR  = 0x0000\n\nDFSR  = 0x00000008\n  VCATCH: Vector catch\n",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes"
           ]
         },
         {
           "tool": "diagnose_fault",
           "args": {},
-          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: LR unavailable — read_core_registers, then read_memory at PSP/MSP\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
+          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: MSP @ 0x20017fa8 (EXC_RETURN 0xfffffff9)\n  R0=0x5fffffec R1=0x00000020 R2=0x00000000 R3=0x20000010 R12=0x00000000\n  PC=0x0800027a ← faulting instruction  LR=0x08000303 (caller)  xPSR=0x21000000\n  PC is in Code\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
@@ -742,13 +816,14 @@
             "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
             "dap: evaluate {\"expression\":\"$msplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
             "dap: evaluate {\"expression\":\"$psplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: readMemory {\"memoryReference\":\"0x20017fa8\",\"count\":32} -> 32 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":3}"
           ]
         },
         {
           "tool": "read_core_registers",
           "args": {},
-          "text": "Core Registers:\n  r0  = 0x5fffffec    r1  = 0x00000020    r2  = 0x00000000    r3  = 0x20000010    \n  r4  = 0x000001f4    r5  = 0x00000000    r6  = 0x00000000    r7  = 0x20017fc8    \n  r8  = 0x00000000    r9  = 0x00000000    r10 = 0x00000000    r11 = 0x00000000    \n  r12 = 0x00000000    sp  = 0x20017fa8    lr  = -7            pc  = 0x80001a4     \n  xpsr = 1627389955\n  msp  = 0x20017fa8\n  psp  = 0x0\n  control   = 0\n  faultmask = 0x00000000\n  basepri   = 0x00000000\n  primask   = 0x00000000\n",
+          "text": "Core Registers:\n  r0  = 0x5fffffec    r1  = 0x00000020    r2  = 0x00000000    r3  = 0x20000010    \n  r4  = 0x000001f4    r5  = 0x00000000    r6  = 0x00000000    r7  = 0x20017fc8    \n  r8  = 0x00000000    r9  = 0x00000000    r10 = 0x00000000    r11 = 0x00000000    \n  r12 = 0x00000000    sp  = 0x20017fa8    lr  = 0xfffffff9    pc  = 0x80001a4     \n  xpsr = 1627389955\n  msp  = 0x20017fa8\n  psp  = 0x0\n  control   = 0\n  faultmask = 0x00000000\n  basepri   = 0x00000000\n  primask   = 0x00000000\n",
           "traffic": [
             "dap: threads {}",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
@@ -795,7 +870,12 @@
           "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: MSP @ 0x20017fa8 (EXC_RETURN 0xfffffff9)\n  R0=0x5fffffec R1=0x00000020 R2=0x00000000 R3=0x20000010 R12=0x00000000\n  PC=0x0800027a ← faulting instruction  LR=0x08000303 (caller)  xPSR=0x21000000\n  PC is in Code\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (4):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\n  #3 main @ main.c:31 [frameId=1003]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
@@ -814,6 +894,47 @@
       ]
     },
     {
+      "name": "fault-trustzone-secure-stack",
+      "description": "A BusFault in Secure code taken to the Non-secure HardFault handler (TrustZone, AIRCR.BFHFNMINS=1): EXC_RETURN 0xfffffff8 puts the frame on a Secure stack behind the integrity signature and R4–R11, CONTROL_S picks the process stack, so diagnose_fault reads PSP_S, not the Non-secure MSP.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"SIGSEGV\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "diagnose_fault",
+          "args": {},
+          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: PSP_S @ 0x20016f00, R0 at +0x28 after the integrity signature and R4–R11 (EXC_RETURN 0xfffffff8)\n  R0=0x60000000 R1=0x00000020 R2=0x00000000 R3=0x20000010 R12=0x00000000\n  PC=0x0800027a ← faulting instruction  LR=0x08000303 (caller)  xPSR=0x21000000\n  PC is in Code\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"0xfffffff8\"",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x80001a4 <HardFault_Handler>\"",
+            "dap: evaluate {\"expression\":\"$xpsr\",\"context\":\"watch\",\"frameId\":1000} -> \"1627389955\"",
+            "dap: evaluate {\"expression\":\"$msp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$psp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x0\"",
+            "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$msplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$psplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$msp_s\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20016fe0\"",
+            "dap: evaluate {\"expression\":\"$psp_s\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20016f00\"",
+            "dap: evaluate {\"expression\":\"$control_s\",\"context\":\"watch\",\"frameId\":1000} -> \"2\"",
+            "dap: readMemory {\"memoryReference\":\"0x20016f00\",\"count\":72} -> 72 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":3}"
+          ]
+        }
+      ]
+    },
+    {
       "name": "fault-lockup",
       "description": "The same fault, with the core in lockup (DHCSR.S_LOCKUP): get_fault_info and diagnose_fault say so (#3).",
       "setup": [
@@ -827,17 +948,27 @@
           "text": "=== Cortex-M Fault Analysis ===\n\nHFSR  = 0x40000000\n  FORCED: Escalated fault (check CFSR for root cause)\n\nMMFSR = 0x00\n\nBFSR  = 0x82\n  BFARVALID: Faulting address = 0x60000000\n  PRECISERR: Precise data bus error\n\nUFSR  = 0x0000\n\nDFSR  = 0x00000008\n  VCATCH: Vector catch\n\nThe core is in lockup (DHCSR.S_LOCKUP=1): it met a fault it could not handle — a fault inside the HardFault or NMI handler, or while entering one — and stopped executing. The fault status shows what went wrong; a reset leaves lockup.\n",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes"
           ]
         },
         {
           "tool": "diagnose_fault",
           "args": {},
-          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nLockup: The core is in lockup (DHCSR.S_LOCKUP=1): it met a fault it could not handle — a fault inside the HardFault or NMI handler, or while entering one — and stopped executing. The fault status shows what went wrong; a reset leaves lockup.\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: LR unavailable — read_core_registers, then read_memory at PSP/MSP\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
+          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nLockup: The core is in lockup (DHCSR.S_LOCKUP=1): it met a fault it could not handle — a fault inside the HardFault or NMI handler, or while entering one — and stopped executing. The fault status shows what went wrong; a reset leaves lockup.\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: MSP @ 0x20017fa8 (EXC_RETURN 0xfffffff9)\n  R0=0x5fffffec R1=0x00000020 R2=0x00000000 R3=0x20000010 R12=0x00000000\n  PC=0x0800027a ← faulting instruction  LR=0x08000303 (caller)  xPSR=0x21000000\n  PC is in Code\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
@@ -849,6 +980,109 @@
             "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
             "dap: evaluate {\"expression\":\"$msplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
             "dap: evaluate {\"expression\":\"$psplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: readMemory {\"memoryReference\":\"0x20017fa8\",\"count\":32} -> 32 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":3}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fault-scs-word-reads",
+      "description": "The same fault on a GDB server that answers System Control Space reads longer than one word with zeros, as the Corstone FVP's does: the fault registers and a read_memory there are read one word each, so the fault shows.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"SIGSEGV\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_fault_info",
+          "args": {},
+          "text": "=== Cortex-M Fault Analysis ===\n\nHFSR  = 0x40000000\n  FORCED: Escalated fault (check CFSR for root cause)\n\nMMFSR = 0x00\n\nBFSR  = 0x82\n  BFARVALID: Faulting address = 0x60000000\n  PRECISERR: Precise data bus error\n\nUFSR  = 0x0000\n\nDFSR  = 0x00000008\n  VCATCH: Vector catch\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes"
+          ]
+        },
+        {
+          "tool": "diagnose_fault",
+          "args": {},
+          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: MSP @ 0x20017fa8 (EXC_RETURN 0xfffffff9)\n  R0=0x5fffffec R1=0x00000020 R2=0x00000000 R3=0x20000010 R12=0x00000000\n  PC=0x0800027a ← faulting instruction  LR=0x08000303 (caller)  xPSR=0x21000000\n  PC is in Code\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"-7\"",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x80001a4 <HardFault_Handler>\"",
+            "dap: evaluate {\"expression\":\"$xpsr\",\"context\":\"watch\",\"frameId\":1000} -> \"1627389955\"",
+            "dap: evaluate {\"expression\":\"$msp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$psp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x0\"",
+            "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$msplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$psplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: readMemory {\"memoryReference\":\"0x20017fa8\",\"count\":32} -> 32 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":3}"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0xE000ED28",
+            "length": 8
+          },
+          "text": "Memory at 0xE000ED28 (8 bytes):\n\nHex:\n  0xe000ed28: 00 82 00 00 00 00 00 40\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xe000ed28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xe000ed2c\",\"count\":4} -> 4 bytes"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fault-status-clear-in-handler",
+      "description": "Halted in the HardFault handler (IPSR 3) with CFSR and HFSR clear: diagnose_fault does not say the target is not in a fault.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "diagnose_fault",
+          "args": {},
+          "text": "=== No fault flags set ===\nStop: breakpoint, exception 3 (HardFault), PC 0x080001a4\nCall stack:\n  #0 HardFault_Handler @ <no source>:?\n  #1 <signal handler called> @ <no source>:?\n  #2 led_toggle @ led.c:18\nThe fault status reads clear (CFSR and HFSR 0), yet the HardFault handler is active: the handler cleared it, or the debug server does not report it.\nNext: get_call_stack for where the exception came from.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"-7\"",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x80001a4 <HardFault_Handler>\"",
+            "dap: evaluate {\"expression\":\"$xpsr\",\"context\":\"watch\",\"frameId\":1000} -> \"1627389955\"",
+            "dap: evaluate {\"expression\":\"$msp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$psp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x0\"",
+            "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$msplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$psplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: readMemory {\"memoryReference\":\"0x20017fa8\",\"count\":32} -> 32 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":3}"
           ]
         }
@@ -856,7 +1090,7 @@
     },
     {
       "name": "probe-wedged",
-      "description": "Halted in HardFault, then the probe wedges (#3): GDB answers threads, stack and registers from its caches, but every memory read fails, DHCSR included. The fault tools and read_memory answer PROBE_WEDGED with each strategy's cause and the hint of a launch session.",
+      "description": "Halted in HardFault, then the probe wedges (#3): GDB answers threads, stack and registers from its caches, but every memory read fails, DHCSR included. The fault tools and read_memory answer PROBE_WEDGED with each strategy's cause and the hint of a launch session. Afterwards get_session_status names the DHCSR read that got no answer without reading, and check_target_connection reads DHCSR again.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"SIGSEGV\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -865,7 +1099,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGSEGV\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGSEGV\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -877,10 +1111,6 @@
           "text": "[PROBE_WEDGED] Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory. (@ 0xe000edf0)). Reading 0xE000ED28 — DAP readMemory: Unable to read memory. (@ 0xe000ed28); watch expression: empty result; MI read: Unable to read memory.\nThis session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug.",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"*(unsigned int*)0xe000ed28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
-            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0xe000ed28 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
             "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"*(unsigned int*)0xE000ED28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
@@ -895,10 +1125,6 @@
           "text": "[PROBE_WEDGED] Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory. (@ 0xe000edf0)). Reading 0xE000ED28 — DAP readMemory: Unable to read memory. (@ 0xe000ed28); watch expression: empty result; MI read: Unable to read memory.\nThis session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug.",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"*(unsigned int*)0xe000ed28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
-            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0xe000ed28 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
             "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"*(unsigned int*)0xE000ED28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
@@ -922,6 +1148,23 @@
             "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0x20017fa8 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
             "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> error: \"Unable to read memory. (@ 0xe000edf0)\""
           ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGSEGV\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: the session is stopped, but the last read of the core's debug status (DHCSR, <n>s ago) got no answer: memory and register reads fail with PROBE_WEDGED. check_target_connection reads it again. This session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "check_target_connection",
+          "args": {},
+          "text": "Session: CMSIS Debugger: pyOCD (type=gdbtarget)\nConfiguration: CMSIS Debugger: pyOCD\nDAP probe: OK (<n>ms)\nTarget state: stopped, but the core does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory. (@ 0xe000edf0)): memory and register reads will fail with PROBE_WEDGED.\nThis session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> error: \"Unable to read memory. (@ 0xe000edf0)\""
+          ]
         }
       ]
     },
@@ -937,13 +1180,9 @@
           "tool": "get_fault_info",
           "args": {},
           "isError": true,
-          "text": "[PROBE_WEDGED] Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory. (@ 0xe000edf0)). Reading 0xE000ED28 — DAP readMemory: Unable to read memory. (@ 0xe000ed28); watch expression: empty result; MI read: Unable to read memory.\nThis session is attached to a GDB server that keeps running: cmsis_action detach, then cmsis_action attach — reconnects without a reset; then get_fault_info.",
+          "text": "[PROBE_WEDGED] Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory. (@ 0xe000edf0)). Reading 0xE000ED28 — DAP readMemory: Unable to read memory. (@ 0xe000ed28); watch expression: empty result; MI read: Unable to read memory.\nThis session is attached to a GDB server that lives as long as its CMSIS Run task: cmsis_action detach, then cmsis_action attach reconnects without a reset (pyOCD lets the target run while detached and halts it on attach); then get_fault_info. If attach then fails with \"could not connect\", the server ended with its task (window closed or reloaded, stop_run): cmsis_action run in the window that owns the board starts it again, with a reset.",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"*(unsigned int*)0xe000ed28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
-            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0xe000ed28 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
             "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"*(unsigned int*)0xE000ED28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
@@ -1040,6 +1279,89 @@
       ]
     },
     {
+      "name": "fvp-ignores-pause",
+      "description": "An Arm FVP, whose GDB server ignores GDB's interrupt while the model runs: a continue that does not stop, a pause and a breakpoint change on the running model say that only a breakpoint stops it, and how to set one, instead of advising a pause.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "continue_execution",
+          "args": {
+            "timeoutMs": 300
+          },
+          "text": "Target is running: no stop within <n>ms of 'continue_execution', and it keeps running; nothing was paused. Call wait_for_stop to wait for a breakpoint. On the Arm FVP pause_execution will not stop it, nor will a fault: to set a breakpoint, stop_debugging and cmsis_action load_and_debug first.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: continue {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+          ]
+        },
+        {
+          "tool": "pause_execution",
+          "args": {
+            "timeoutMs": 1000
+          },
+          "text": "Pause requested, but the Arm FVP did not stop: its GDB server ignores GDB's interrupt while the model runs, so only a breakpoint stops it. To see where it runs: stop_debugging, cmsis_action load_and_debug, add_breakpoint where it should stop (for a fault, HardFault_Handler), then continue_execution.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: pause {\"threadId\":1}"
+          ]
+        },
+        {
+          "tool": "add_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 29
+          },
+          "isError": true,
+          "text": "[TARGET_RUNNING] Cannot add a breakpoint while the Arm FVP runs: the change needs a halted target, and its GDB server ignores the pause request.\nstop_debugging, cmsis_action load_and_debug (it stops at main), make the change, then continue_execution.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: pause {\"threadId\":1}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fvp-stop-waits-for-halt",
+      "description": "stop_debugging on a running Arm FVP: the adapter halts the target before it disconnects and the model ignores the halt, so the first stop answers timeout and says to stop again, the status says the session is shutting down rather than starting, and the second stop ends it.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+        "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "stop_debugging",
+          "args": {},
+          "text": "Stop requested, but the session is still listed: the debug adapter halts the target before it disconnects, and the Arm FVP ignores that interrupt. Call stop_debugging once more: VS Code then ends the adapter.",
+          "traffic": [
+            "vscode: debug.stopDebugging session=\"Arm-FVP@GDB (launch)\"",
+            "adapter: disconnect waits for a halt the target never reports"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: initializing\nSession: Arm-FVP@GDB (launch)\nType: gdbtarget\nConfiguration: Arm-FVP@GDB (launch)\nDAP responsive: true (probe <n>ms)\nDetail: The session was asked to end (disconnect sent <n>s ago); its adapter takes no requests while it shuts down.\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [Arm-FVP@GDB (launch)], vscodeActiveDebugSession=set\nHint: the session is shutting down — call get_session_status again in a moment; if it is still listed, stop_debugging once more makes VS Code end the adapter.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {} -> empty success (adapter not ready)"
+          ]
+        },
+        {
+          "tool": "stop_debugging",
+          "args": {},
+          "text": "The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**\n\nAsk yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?\n\nKnowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:\n- a variable that turns out null or undefined\n- a function that hands back a value nobody expected\n- an error raised at one particular line\n- a condition that took the wrong branch\n\nThe root cause explains *why* it went wrong, for instance:\n- a variable that was initialised with the wrong value\n- faulty logic inside a function\n- an error path that is not handled\n- a condition built on a false assumption\n\nWhat to do next (required):\n1. Set breakpoints at the places worth investigating with `add_breakpoint`.\n2. Trace the run from its beginning with `cmsis_action load_and_debug`.\n3. Work out why it happened, not only what happened.\n4. Repeat until the root cause is identified.",
+          "traffic": [
+            "vscode: debug.stopDebugging session=\"Arm-FVP@GDB (launch)\"",
+            "event: terminated {}"
+          ]
+        }
+      ]
+    },
+    {
       "name": "step-ui-fallback",
       "description": "The tracker says stopped but the adapter rejects `next` with GDB's running-target error: on gdbtarget the step answers TARGET_RUNNING and no UI command runs (the scripted UI command would step).",
       "setup": [
@@ -1061,7 +1383,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1091,7 +1413,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1112,7 +1434,7 @@
           "args": {
             "timeoutMs": 600
           },
-          "text": "{\n  \"sessionActive\": true,\n  \"frameName\": null,\n  \"fileFullPath\": null,\n  \"currentLine\": null,\n  \"currentLineContent\": null,\n  \"nextLines\": [],\n  \"frameId\": null,\n  \"threadId\": null,\n  \"stackTrace\": [],\n  \"breakpointsUnchanged\": 0\n}\n\n⚠️ 'step_over' did not complete within <n>ms. The target is still running or the probe is unresponsive. Consider adding a breakpoint, checking the hardware connection, or calling check_target_connection.\n🩹 Recovery attempt: target did not stop on its own — issuing DAP pause to find out where it is.\nPaused successfully. PC = 0x8000256, LR = 0x08000307 in delay_ms at main.c:17.\n  Current line: for (volatile uint32_t i = 0; i < ms * 1000u; i++) {\nThe breakpoint you expected was not hit — the firmware did not reach it. Verify the breakpoint location, check the call stack with get_call_stack, or step from here with step_over / continue_execution.",
+          "text": "⚠️ 'step_over' did not complete within <n>ms. The target is still running or the probe is unresponsive. Consider adding a breakpoint, checking the hardware connection, or calling check_target_connection.\n🩹 Recovery attempt: target did not stop on its own — issuing DAP pause to find out where it is.\nPaused successfully. PC = 0x8000256, LR = 0x08000307 in delay_ms at main.c:17.\n  Current line: for (volatile uint32_t i = 0; i < ms * 1000u; i++) {\nThe breakpoint you expected was not hit — the firmware did not reach it. Verify the breakpoint location, check the call stack with get_call_stack, or step from here with step_over / continue_execution.\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"delay_ms\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 17,\n  \"currentLineContent\": \"for (volatile uint32_t i = 0; i < ms * 1000u; i++) {\",\n  \"nextLines\": [\n    \"__asm volatile (\\\"nop\\\");\",\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"delay_ms:17\",\n    \"main:32\"\n  ],\n  \"breakpointsUnchanged\": 0\n}",
           "traffic": [
             "dap: threads {}",
             "dap: next {\"threadId\":1}",
@@ -1139,7 +1461,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1298,7 +1620,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1570,9 +1892,42 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: running\nSession: CMSIS Debugger: J-LINK\nType: gdbtarget\nConfiguration: CMSIS Debugger: J-LINK\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: J-LINK], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "text": "State: running\nSession: CMSIS Debugger: J-LINK\nType: gdbtarget\nConfiguration: CMSIS Debugger: J-LINK\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: J-LINK], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "reset-hardware-jlink",
+      "description": "J-Link, halted in main, reset with method hardware: `monitor halt` and `monitor reset 2`, J-Link's reset-pin strategy, reach GDB; the cache flush shows the core at the reset vector and the reset verifies.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "reset",
+          "args": {
+            "method": "hardware"
+          },
+          "text": "Target reset verified. PC=0x08000198 matches the reset vector (0x08000198, vector table at 0x08000000). Method(s) tried: hardware. Commands: 'monitor halt', 'monitor reset 2' (server: jlink). Target is halted at the reset vector — use continue_execution to run.",
+          "traffic": [
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">monitor halt\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">monitor reset 2\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"Resetting target\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">maintenance flush register-cache\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"Register cache flushed.\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">maintenance flush dcache\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED08\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0x08000004\",\"count\":4} -> 4 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x8000198 <Reset_Handler>\""
           ]
         }
       ]
@@ -1604,7 +1959,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1612,7 +1967,7 @@
         {
           "tool": "stop_debugging",
           "args": {},
-          "text": "The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**\n\nAsk yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?\n\nKnowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:\n- a variable that turns out null or undefined\n- a function that hands back a value nobody expected\n- an error raised at one particular line\n- a condition that took the wrong branch\n\nThe root cause explains *why* it went wrong, for instance:\n- a variable that was initialised with the wrong value\n- faulty logic inside a function\n- an error path that is not handled\n- a condition built on a false assumption\n\nWhat to do next (required):\n1. Set breakpoints at the places worth investigating with `add_breakpoint`.\n2. Trace the run from its beginning with `start_debugging`.\n3. Work out why it happened, not only what happened.\n4. Repeat until the root cause is identified.",
+          "text": "The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**\n\nAsk yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?\n\nKnowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:\n- a variable that turns out null or undefined\n- a function that hands back a value nobody expected\n- an error raised at one particular line\n- a condition that took the wrong branch\n\nThe root cause explains *why* it went wrong, for instance:\n- a variable that was initialised with the wrong value\n- faulty logic inside a function\n- an error path that is not handled\n- a condition built on a false assumption\n\nWhat to do next (required):\n1. Set breakpoints at the places worth investigating with `add_breakpoint`.\n2. Trace the run from its beginning with `cmsis_action load_and_debug`.\n3. Work out why it happened, not only what happened.\n4. Repeat until the root cause is identified.",
           "traffic": [
             "vscode: debug.stopDebugging session=\"CMSIS Debugger: pyOCD\"",
             "event: terminated {}"
@@ -1680,7 +2035,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1740,7 +2095,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1939,7 +2294,7 @@
         {
           "tool": "stop_debugging",
           "args": {},
-          "text": "The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**\n\nAsk yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?\n\nKnowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:\n- a variable that turns out null or undefined\n- a function that hands back a value nobody expected\n- an error raised at one particular line\n- a condition that took the wrong branch\n\nThe root cause explains *why* it went wrong, for instance:\n- a variable that was initialised with the wrong value\n- faulty logic inside a function\n- an error path that is not handled\n- a condition built on a false assumption\n\nWhat to do next (required):\n1. Set breakpoints at the places worth investigating with `add_breakpoint`.\n2. Trace the run from its beginning with `start_debugging`.\n3. Work out why it happened, not only what happened.\n4. Repeat until the root cause is identified.",
+          "text": "The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**\n\nAsk yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?\n\nKnowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:\n- a variable that turns out null or undefined\n- a function that hands back a value nobody expected\n- an error raised at one particular line\n- a condition that took the wrong branch\n\nThe root cause explains *why* it went wrong, for instance:\n- a variable that was initialised with the wrong value\n- faulty logic inside a function\n- an error path that is not handled\n- a condition built on a false assumption\n\nWhat to do next (required):\n1. Set breakpoints at the places worth investigating with `add_breakpoint`.\n2. Trace the run from its beginning with `cmsis_action load_and_debug`.\n3. Work out why it happened, not only what happened.\n4. Repeat until the root cause is identified.",
           "traffic": [
             "vscode: debug.stopDebugging session=\"CMSIS Debugger: pyOCD\"",
             "event: terminated {}"
@@ -2158,7 +2513,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -2176,7 +2531,7 @@
             "configurationName": "CMSIS Debugger: pyOCD"
           },
           "isError": true,
-          "text": "[INTERNAL] Error starting debug session: Failed to start debug session with configuration 'CMSIS Debugger: pyOCD'.\nRecent problems:\n  #<seq> warning dap error response to 'launch': Failed to launch the GDB server: pyocd exited with code 1",
+          "text": "[INTERNAL] Error starting debug session: Failed to start debug session with configuration 'CMSIS Debugger: pyOCD'.\nRecent problems:\n  #<seq> error gdb-server 0000410 C No connected debug probes [__main__]\n  #<seq> warning dap error response to 'launch': Failed to launch the GDB server: pyocd exited with code 1",
           "traffic": [
             "vscode: debug.startDebugging folder=<tmp>/project configuration=\"CMSIS Debugger: pyOCD\"",
             "event: output [server] \"0000410 C No connected debug probes [__main__]\"",
@@ -2199,14 +2554,14 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": []
         }
       ]
     },
     {
       "name": "unresponsive-adapter",
-      "description": "Session halted, then every DAP request hangs: status and connection probes time out, a fenced read_memory returns the handler cap (its background probes are recorded as late traffic), pause is refused, stop works.",
+      "description": "Session halted, then every DAP request hangs: status and connection probes time out, a fenced read_memory returns the handler cap (its background probes are recorded as late traffic), pause is tried once and refused when it gets no answer, stop works.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -2215,7 +2570,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: unresponsive\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: false\nDetail: DAP threads probe timed out after <n>ms — probe/target may be hung.\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: probe/GDB server is hung. Try restart_debugging, stop_debugging, or check the physical connection.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "text": "State: unresponsive\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: false\nDetail: DAP threads probe timed out after <n>ms — probe/target may be hung.\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: probe/GDB server is hung. This session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {} -> no answer"
           ]
@@ -2248,18 +2603,155 @@
           "tool": "pause_execution",
           "args": {},
           "isError": true,
-          "text": "[TIMEOUT] Cannot pause: probe/GDB server is unresponsive.\nCall check_target_connection or restart_debugging.",
+          "text": "[PROBE_WEDGED] Cannot pause: session state is 'unresponsive'.\nThe probe/GDB server is unresponsive. Call check_target_connection to confirm. This session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug. Use get_session_status for a definitive, never-failing classification.",
           "traffic": [
-            "dap: threads {} -> no answer"
+            "dap: threads {} -> no answer",
+            "dap: pause {\"threadId\":1} -> no answer"
           ]
         },
         {
           "tool": "stop_debugging",
           "args": {},
-          "text": "The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**\n\nAsk yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?\n\nKnowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:\n- a variable that turns out null or undefined\n- a function that hands back a value nobody expected\n- an error raised at one particular line\n- a condition that took the wrong branch\n\nThe root cause explains *why* it went wrong, for instance:\n- a variable that was initialised with the wrong value\n- faulty logic inside a function\n- an error path that is not handled\n- a condition built on a false assumption\n\nWhat to do next (required):\n1. Set breakpoints at the places worth investigating with `add_breakpoint`.\n2. Trace the run from its beginning with `start_debugging`.\n3. Work out why it happened, not only what happened.\n4. Repeat until the root cause is identified.",
+          "text": "The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**\n\nAsk yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?\n\nKnowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:\n- a variable that turns out null or undefined\n- a function that hands back a value nobody expected\n- an error raised at one particular line\n- a condition that took the wrong branch\n\nThe root cause explains *why* it went wrong, for instance:\n- a variable that was initialised with the wrong value\n- faulty logic inside a function\n- an error path that is not handled\n- a condition built on a false assumption\n\nWhat to do next (required):\n1. Set breakpoints at the places worth investigating with `add_breakpoint`.\n2. Trace the run from its beginning with `cmsis_action load_and_debug`.\n3. Work out why it happened, not only what happened.\n4. Repeat until the root cause is identified.",
           "traffic": [
             "vscode: debug.stopDebugging session=\"CMSIS Debugger: pyOCD\"",
             "event: terminated {}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fvp-fault-without-system-registers",
+      "description": "A HardFault on an Arm FVP: the GDB server zeroes SCS reads longer than a word and reports no msp, psp, control or masks (GDB says void). The fault registers are read word by word, read_core_registers says which registers are not reported and takes MSP from the SP in Handler mode, and diagnose_fault reads the stacked frame there.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "read_core_registers",
+          "args": {},
+          "text": "Core Registers:\n  r0  = 0x5fffffec    r1  = 0x00000020    r2  = 0x00000000    r3  = 0x20000010    \n  r4  = 0x000001f4    r5  = 0x00000000    r6  = 0x00000000    r7  = 0x20017fc8    \n  r8  = 0x00000000    r9  = 0x00000000    r10 = 0x00000000    r11 = 0x00000000    \n  r12 = 0x00000000    sp  = 0x20017fa8    lr  = 0xfffffff9    pc  = 0x80001a4     \n  xpsr = 1627389955\n  msp  = 0x20017fa8 (the SP: Handler mode runs on the MSP; the GDB server does not report msp)\n  psp  = <not reported by the GDB server>\n  control   = <not reported by the GDB server>\n  faultmask = <not reported by the GDB server>\n  basepri   = <not reported by the GDB server>\n  primask   = <not reported by the GDB server>\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$r0\",\"context\":\"watch\",\"frameId\":1000} -> \"1610612716\"",
+            "dap: evaluate {\"expression\":\"$r1\",\"context\":\"watch\",\"frameId\":1000} -> \"32\"",
+            "dap: evaluate {\"expression\":\"$r2\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r3\",\"context\":\"watch\",\"frameId\":1000} -> \"536870928\"",
+            "dap: evaluate {\"expression\":\"$r4\",\"context\":\"watch\",\"frameId\":1000} -> \"500\"",
+            "dap: evaluate {\"expression\":\"$r5\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r6\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r7\",\"context\":\"watch\",\"frameId\":1000} -> \"536969160\"",
+            "dap: evaluate {\"expression\":\"$r8\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r9\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r10\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r11\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r12\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"-7\"",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x80001a4 <HardFault_Handler>\"",
+            "dap: evaluate {\"expression\":\"$xpsr\",\"context\":\"watch\",\"frameId\":1000} -> \"1627389955\"",
+            "dap: evaluate {\"expression\":\"$msp\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$psp\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$faultmask\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$basepri\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$primask\",\"context\":\"watch\",\"frameId\":1000} -> \"void\""
+          ]
+        },
+        {
+          "tool": "diagnose_fault",
+          "args": {},
+          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: breakpoint, halted in exception 3 (HardFault)\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: MSP @ 0x20017fa8 (EXC_RETURN 0xfffffff9)\n  R0=0x5fffffec R1=0x00000020 R2=0x00000000 R3=0x20000010 R12=0x00000000\n  PC=0x0800027a ← faulting instruction  LR=0x08000303 (caller)  xPSR=0x21000000\n  PC is in Code\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"-7\"",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x80001a4 <HardFault_Handler>\"",
+            "dap: evaluate {\"expression\":\"$xpsr\",\"context\":\"watch\",\"frameId\":1000} -> \"1627389955\"",
+            "dap: evaluate {\"expression\":\"$msp\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$psp\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$msplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$psplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: readMemory {\"memoryReference\":\"0x20017fa8\",\"count\":32} -> 32 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":3}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "server-output-in-pieces",
+      "description": "The GDB server writes its lines a few characters per output event, as the Corstone FVP's model output does: get_recent_problems lists each line once, whole, not one record per piece.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: output [server] \"= Bl\"",
+        "event: output [server] \"in\"",
+        "event: output [server] \"ky i\"",
+        "event: output [server] \"s running =\"",
+        "event: output [server] \"Failed to po\"",
+        "event: output [server] \"wer up DAP\"",
+        "event: output [server] \"telnetterminal0: Listening for serial connection on port 5000\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_recent_problems",
+          "args": {
+            "sources": [
+              "gdb-server"
+            ],
+            "minSeverity": "info",
+            "limit": 3
+          },
+          "text": "… <n> older record(s) left out: raise limit (at most 50) or narrow sources or minSeverity.\n#<seq> info gdb-server = Blinky is running =\n#<seq> error gdb-server [DAP_POWER_UP_FAILED] Failed to power up DAP → Check the board's power and the debug cable, then cmsis_action load_and_debug.\n#<seq> info gdb-server telnetterminal0: Listening for serial connection on port 5000\nnextSeq=<seq>",
+          "traffic": []
+        }
+      ]
+    },
+    {
+      "name": "unresponsive-pause-recovers",
+      "description": "A running target whose adapter answers no threads probe (GDB busy with it): the status says unresponsive, yet pause_execution is not refused: its one pause stops the target, and the status is stopped again.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+        "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: unresponsive\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: false\nDetail: DAP threads probe timed out after <n>ms — probe/target may be hung.\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: probe/GDB server is hung. This session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {} -> no answer"
+          ]
+        },
+        {
+          "tool": "pause_execution",
+          "args": {},
+          "text": "Target paused. {\n  \"sessionActive\": true,\n  \"frameName\": \"delay_ms\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 17,\n  \"currentLineContent\": \"for (volatile uint32_t i = 0; i < ms * 1000u; i++) {\",\n  \"nextLines\": [\n    \"__asm volatile (\\\"nop\\\");\",\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"delay_ms:17\",\n    \"main:32\"\n  ],\n  \"breakpoints\": []\n}",
+          "traffic": [
+            "dap: threads {} -> no answer",
+            "dap: pause {\"threadId\":1}",
+            "event: stopped {\"reason\":\"SIGINT\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGINT\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
           ]
         }
       ]
@@ -2278,7 +2770,7 @@
             "timeoutMs": 15000
           },
           "isError": true,
-          "text": "[PROBE_WEDGED] Cannot read fault info: session state is 'unresponsive'.\nThe probe/GDB server is unresponsive. Call check_target_connection to confirm, then restart_debugging or stop_debugging. This session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug. Use get_session_status for a definitive, never-failing classification.",
+          "text": "[PROBE_WEDGED] Cannot read fault info: session state is 'unresponsive'.\nThe probe/GDB server is unresponsive. Call check_target_connection to confirm. This session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug. Use get_session_status for a definitive, never-failing classification.",
           "traffic": [
             "dap: threads {} -> no answer",
             "dap: threads {} -> no answer"
@@ -2288,7 +2780,7 @@
     },
     {
       "name": "focus-elsewhere",
-      "description": "The session is tracked but not VS Code's active session (focus on another session): tools resolve it through the tracker, the SVD lookup and the active stack frame do not.",
+      "description": "The session is tracked but not VS Code's active session (focus on another session): tools resolve it through the tracker, the SVD of read_peripheral_register too; only the active stack frame is missing.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -2297,7 +2789,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=undefined\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=undefined\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -2316,9 +2808,10 @@
             "peripheral": "RCC",
             "register": "CR"
           },
-          "text": "No SVD file found for the current debug session.\nTo read peripheral registers by name, the extension needs an SVD file.\n\nYou can:\n  1. Add \"svdFile\": \"/path/to/device.svd\" to your launch.json configuration\n  2. Use read_memory with the register address, e.g.: address=\"0x40020000\" length=4\n  3. Use evaluate_expression: \"*(unsigned int*)0x40020000\"\n\nTip: Peripheral base addresses can be found in the device datasheet.\n",
+          "text": "RCC.CR @ 0x40023800 = 0x03000083\n  clock control register\n  Fields:\n    HSION                    [0]      = 0x1 (1)  — Internal high-speed clock enable\n    HSIRDY                   [1]      = 0x1 (1)  — Internal high-speed clock ready flag\n    HSEON                    [16]     = 0x0 (0)  — HSE clock enable\n    PLLON                    [24]     = 0x1 (1)  — Main PLL (PLL) enable\n    PLLRDY                   [25]     = 0x1 (1)  — Main PLL (PLL) clock ready flag\n",
           "traffic": [
-            "dap: threads {}"
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0x40023800\",\"count\":4} -> 4 bytes"
           ]
         },
         {
@@ -2401,6 +2894,53 @@
       ]
     },
     {
+      "name": "cmsis-rebuild-clean",
+      "description": "No session: cmsis_action rebuild and clean run their CMSIS Solution commands as jobs of their own (the build task type with rebuild or clean set); the rebuild writes the image, the clean names the image it removed; stop_build with no build running issues nothing.",
+      "calls": [
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "rebuild"
+          },
+          "text": "✅ CMSIS 'rebuild' succeeded on NUCLEO-F401RE (task 'cbuild Blinky.csolution.yml --target all --rebuild --active NUCLEO-F401RE' exited 0 after <n>s, job rb-4). The firmware is rebuilt from scratch — use cmsis_action load or load_and_debug to flash it.",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet",
+            "command: cmsis-csolution.rebuild",
+            "task: start \"cbuild Blinky.csolution.yml --target all --rebuild --active NUCLEO-F401RE\"",
+            "task: end \"cbuild Blinky.csolution.yml --target all --rebuild --active NUCLEO-F401RE\" exitCode=0",
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet"
+          ]
+        },
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "clean"
+          },
+          "text": "✅ CMSIS 'clean' succeeded on NUCLEO-F401RE (task 'cbuild Blinky.csolution.yml --clean --target all' exited 0 after <n>s, job c-5). Removed: out/Blinky/NUCLEO-F401RE/Debug/Blinky.elf. It covers the whole solution (CMSIS Solution: \"Clean All 'out' and 'tmp' Directories\"), not only this target: cmsis_action build before load or flash.",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet",
+            "command: cmsis-csolution.clean",
+            "task: start \"cbuild Blinky.csolution.yml --clean --target all\"",
+            "task: end \"cbuild Blinky.csolution.yml --clean --target all\" exitCode=0"
+          ]
+        },
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "stop_build"
+          },
+          "text": "CMSIS 'stop_build' on NUCLEO-F401RE: nothing to stop — no build is running in this window.",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet"
+          ]
+        }
+      ]
+    },
+    {
       "name": "cmsis-attach",
       "description": "No session: cmsis_action attach starts a running pyOCD attach session that survives both probes; with it active, load_and_debug and flash are refused.",
       "calls": [
@@ -2453,11 +2993,136 @@
         {
           "tool": "stop_debugging",
           "args": {},
-          "text": "The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**\n\nAsk yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?\n\nKnowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:\n- a variable that turns out null or undefined\n- a function that hands back a value nobody expected\n- an error raised at one particular line\n- a condition that took the wrong branch\n\nThe root cause explains *why* it went wrong, for instance:\n- a variable that was initialised with the wrong value\n- faulty logic inside a function\n- an error path that is not handled\n- a condition built on a false assumption\n\nWhat to do next (required):\n1. Set breakpoints at the places worth investigating with `add_breakpoint`.\n2. Trace the run from its beginning with `start_debugging`.\n3. Work out why it happened, not only what happened.\n4. Repeat until the root cause is identified.",
+          "text": "The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**\n\nAsk yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?\n\nKnowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:\n- a variable that turns out null or undefined\n- a function that hands back a value nobody expected\n- an error raised at one particular line\n- a condition that took the wrong branch\n\nThe root cause explains *why* it went wrong, for instance:\n- a variable that was initialised with the wrong value\n- faulty logic inside a function\n- an error path that is not handled\n- a condition built on a false assumption\n\nWhat to do next (required):\n1. Set breakpoints at the places worth investigating with `add_breakpoint`.\n2. Trace the run from its beginning with `cmsis_action load_and_debug`.\n3. Work out why it happened, not only what happened.\n4. Repeat until the root cause is identified.",
           "traffic": [
             "vscode: debug.stopDebugging session=\"CMSIS Debugger: pyOCD (attach)\"",
             "event: terminated {}"
           ]
+        }
+      ]
+    },
+    {
+      "name": "status-connecting",
+      "description": "A pyOCD launch whose adapter takes no requests for 3 s while GDB connects (cdt-gdb-adapter answers each one with an empty success): the status tools report initializing, reads, the pause and a breakpoint are refused with NO_SESSION before any request reaches the target, and wait_for_stop sees the session stop at main once it is up. Then the GDB server exits: while the adapter shuts down the status is initializing again, and after that there is no session.",
+      "calls": [
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: initializing\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: The adapter answered the threads probe without a thread list: it takes no requests until GDB has connected to the target and run the launch configuration's commands, nor while the session shuts down.\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nCMSIS tasks: last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: the adapter is still starting or shutting down — wait a moment and retry.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {} -> empty success (adapter not ready)"
+          ]
+        },
+        {
+          "tool": "check_target_connection",
+          "args": {},
+          "text": "Session: CMSIS Debugger: pyOCD (type=gdbtarget)\nConfiguration: CMSIS Debugger: pyOCD\nDAP probe: NOT READY (<n>ms)\nThe adapter answered the threads probe without a thread list: it takes no requests until GDB has connected to the target and run the launch configuration's commands, nor while the session shuts down.",
+          "traffic": [
+            "dap: threads {} -> empty success (adapter not ready)"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0x20000000",
+            "length": 4
+          },
+          "isError": true,
+          "text": "[NO_SESSION] Cannot read memory: session state is 'initializing'.\nThe debug adapter is still starting, or the session is shutting down, and takes no requests. Wait briefly and retry. Use get_session_status for a definitive, never-failing classification.",
+          "traffic": [
+            "dap: threads {} -> empty success (adapter not ready)",
+            "dap: threads {} -> empty success (adapter not ready)"
+          ]
+        },
+        {
+          "tool": "pause_execution",
+          "args": {
+            "timeoutMs": 1000
+          },
+          "isError": true,
+          "text": "[NO_SESSION] Cannot pause yet: session is still initializing.\nWait briefly and retry.",
+          "traffic": [
+            "dap: threads {} -> empty success (adapter not ready)"
+          ]
+        },
+        {
+          "tool": "add_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 31
+          },
+          "isError": true,
+          "text": "[NO_SESSION] Cannot add a breakpoint yet: the session is still initializing.\nWait briefly and retry.",
+          "traffic": [
+            "dap: threads {} -> empty success (adapter not ready)"
+          ]
+        },
+        {
+          "tool": "wait_for_stop",
+          "args": {
+            "timeoutMs": 5000
+          },
+          "text": "Target stopped (reason: breakpoint, threadId=1).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"main\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 29,\n  \"currentLineContent\": \"counter++;\",\n  \"nextLines\": [\n    \"ledState = !ledState;\",\n    \"led_toggle();\",\n    \"delay_ms(config.period_ms);\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"main:29\"\n  ],\n  \"breakpoints\": []\n}",
+          "traffic": [
+            "event: initialized {}",
+            "adapter: response launch -> success",
+            "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+            "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nCMSIS tasks: last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: initializing\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: The adapter answered the threads probe without a thread list: it takes no requests until GDB has connected to the target and run the launch configuration's commands, nor while the session shuts down.\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nCMSIS tasks: last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: the adapter is still starting or shutting down — wait a moment and retry.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "event: output [server] \"gdbserver exited with code 1\"",
+            "dap: threads {} -> empty success (adapter not ready)"
+          ],
+          "lateTraffic": [
+            "event: terminated {}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nCMSIS tasks: last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): <trailer>",
+          "traffic": []
+        }
+      ]
+    },
+    {
+      "name": "cmsis-attach-connect-fails",
+      "description": "No session: cmsis_action attach starts a pyOCD attach session whose adapter takes no requests while GDB connects, and the connect fails after 600 ms: the call answers TASK_FAILED as soon as the session is gone, without probing it.",
+      "calls": [
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "attach"
+          },
+          "isError": true,
+          "text": "[TASK_FAILED] CMSIS 'attach' on NUCLEO-F401RE started a debug session but it did NOT survive the initial connect — it ended before it came up.\nFor 'attach' this almost always means no GDB server is listening on the configured port: start the GDB server first, or use 'load_and_debug' (which launches one). No CMSIS Run task is alive in this window — cmsis_action run starts the GDB server without programming (the pyOCD task resets the target first); load_and_run programs first. Confirm with get_session_status / check_target_connection.\nRecent problems:\n  #<seq> warning dap error response to 'attach': could not connect: Operation timed out.",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet",
+            "command: cmsis-csolution.cmsisAttachDebugger",
+            "dap: threads {} -> empty success (adapter not ready)",
+            "adapter: response attach -> error: \"could not connect: Operation timed out.\""
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nCMSIS tasks: last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
+          "traffic": []
         }
       ]
     }

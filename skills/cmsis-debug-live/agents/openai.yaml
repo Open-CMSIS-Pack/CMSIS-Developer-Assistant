@@ -1,4 +1,0 @@
-interface:
-  display_name: "CMSIS: Live Debugging"
-  short_description: "Investigate a firmware runtime bug on a live Cortex-M debug session: faults, hangs, wrong values, silent peripherals"
-  default_prompt: "Use $cmsis-debug-live to find out why my firmware ends in the HardFault handler."

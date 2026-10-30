@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-import * as assert from 'assert';
 import * as vscode from 'vscode';
+import * as assert from 'assert';
 import { ProblemJournal } from '../core/problemJournal';
 import { logger } from '../utils/logger';
 import { mirrorProblem } from '../windowProblems';

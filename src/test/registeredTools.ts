@@ -25,7 +25,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /** The files whose `registerTool('…'` calls make up the tool surface. */
-const REGISTERING_SOURCES = ['debugMCPServer.ts', 'debugTools.ts', 'packDocsTools.ts', 'buildInfoTools.ts'];
+const REGISTERING_SOURCES = ['debugMCPServer.ts', 'debugTools.ts', 'packDocsTools.ts', 'buildInfoTools.ts', 'knowledgeTools.ts'];
 
 /** Every tool name registered by the sources under `<repoRoot>/src`, in source order. */
 export function registeredTools(repoRoot: string): string[] {

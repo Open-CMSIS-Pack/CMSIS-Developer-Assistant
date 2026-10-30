@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
+import * as vscode from 'vscode';
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import * as vscode from 'vscode';
 import { DebugConfigurationManager, PickerCancelled } from '../utils/debugConfigurationManager';
 
 /**

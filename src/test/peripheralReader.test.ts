@@ -14,10 +14,13 @@
  * limitations under the License.
  */
 
-import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { readWord } from '../core/peripheralReader';
+import * as assert from 'assert';
+import * as path from 'path';
+import { readPeripheralViaMemory, readWord } from '../core/peripheralReader';
 import { HardwareTimeoutError } from '../utils/timeout';
+
+const FIXTURE_SVD = path.resolve(__dirname, '..', '..', '..', 'src', 'test', 'fixtures', 'test-device.svd');
 
 /** A DAP session whose answers are scripted per command. */
 function session(answer: (command: string, args: Record<string, unknown>) => Promise<unknown>, type?: string): vscode.DebugSession {
@@ -73,5 +76,23 @@ suite('peripheralReader readWord', () => {
         }, 'gdbtarget');
         assert.strictEqual(await readWord(s, '0x40023800', 1000, 1_000), 0x03000083);
         assert.deepStrictEqual(expressions, ['watch *(unsigned int*)0x40023800', 'repl >-data-read-memory-bytes 0x40023800 4']);
+    });
+});
+
+suite('peripheralReader readPeripheralViaMemory', () => {
+    test('decodes with the SVD of the session it reads, which VS Code need not have focused', async () => {
+        // The test host focuses no session; the executor passes the tracked one, whose launch configuration names the SVD.
+        const requests: unknown[] = [];
+        const tracked = {
+            name: 'CMSIS Debugger: pyOCD', type: 'gdbtarget', configuration: { svdFile: FIXTURE_SVD },
+            customRequest: async (command: string, args: Record<string, unknown>) => {
+                requests.push([command, args]);
+                if (command === 'readMemory') { return { data: Buffer.from([0x83, 0x00, 0x00, 0x03]).toString('base64') }; }
+                throw new Error(`unexpected ${command}`);
+            },
+        } as unknown as vscode.DebugSession;
+        const text = await readPeripheralViaMemory(tracked, 'RCC', 'CR', null, 1_000);
+        assert.ok(text.startsWith('RCC.CR @ 0x40023800 = 0x03000083\n'), text);
+        assert.deepStrictEqual(requests, [['readMemory', { memoryReference: '0x40023800', count: 4 }]]);
     });
 });

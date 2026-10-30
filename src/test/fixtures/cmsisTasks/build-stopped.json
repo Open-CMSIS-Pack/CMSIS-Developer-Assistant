@@ -1,0 +1,62 @@
+{
+  "derivedFrom": "Derived from the installed CMSIS Solution 1.72.0 (arm.cmsis-csolution-1.72.0-darwin-arm64): dist/extension.js (BuildCommand.handleRebuild / handleClean / handleBuild → createAndExecuteTaskDefinition, BuildTaskDefinitionBuilder.createDefinitionFromUriOrSolutionNode, BuildTaskProviderImpl.createTask and getTaskLabel, cbuildArgsFromTaskDefinition, BuildStopCommand.stopBuildTask, TerminalTaskRunner.terminateProcess). No live spike was run: the event order is VS Code's for a CustomExecution task; times are illustrative milliseconds from the call.",
+  "description": "cmsis_action stop_build (or the panel's Stop Build) during a build: stopBuildTask finds the task runner by the task's label and calls terminateProcess, which cancels cbuild and closes the pseudoterminal with 130 after 100 ms. The build job is cancelled (stopped), not failed, so no diagnosis runs.",
+  "action": "build",
+  "tasks": {
+    "build": {
+      "name": "cbuild Blinky.csolution.yml --target all --active NUCLEO-F401RE --packs",
+      "source": "cmsis-csolution.build",
+      "definition": {
+        "type": "cmsis-csolution.build",
+        "solution": "/work/Blinky/Blinky.csolution.yml",
+        "schemaCheck": false,
+        "active": "NUCLEO-F401RE",
+        "clean": false,
+        "rebuild": false,
+        "setup": false,
+        "buildOutputVerbosity": "normal",
+        "downloadPacks": true,
+        "cmakeTarget": "all",
+        "virtualProject": false
+      },
+      "execution": "CustomExecution (pseudoterminal)"
+    }
+  },
+  "events": [
+    {
+      "at": 0,
+      "event": "issued"
+    },
+    {
+      "at": 30,
+      "event": "onDidStartTask",
+      "task": "build"
+    },
+    {
+      "at": 31,
+      "event": "commandReturned",
+      "task": "build"
+    },
+    {
+      "at": 35,
+      "event": "onDidStartTaskProcess",
+      "task": "build"
+    },
+    {
+      "at": 20000,
+      "event": "onDidEndTaskProcess",
+      "task": "build",
+      "exitCode": 130
+    },
+    {
+      "at": 20005,
+      "event": "onDidEndTask",
+      "task": "build"
+    }
+  ],
+  "expect": {
+    "state": "cancelled",
+    "decidedBy": "build",
+    "exitCode": 130
+  }
+}

@@ -1,4 +1,0 @@
-interface:
-  display_name: "CMSIS: Start Project"
-  short_description: "Create the first csolution for a board or device: a minimal project, or an example or template of its pack"
-  default_prompt: "Use $start-cmsis-project to create the first CMSIS solution for my board in this folder and build it."

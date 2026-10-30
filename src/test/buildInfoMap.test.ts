@@ -203,6 +203,56 @@ suite('buildInfo/mapFile', () => {
         assert.deepStrictEqual(usageRegions([], m).regions.map(r => r.name), ['LR_ROM0']);
     });
 
+    test('armlink with --load_addr_map_info: "Exec base, Load base" regions and the Load Addr column, "-" for ZI (blinky-ac6-loadaddr.axf.map)', () => {
+        // armlink 6.24 for an STM32L475 Blinky linked with --load_addr_map_info, as µVision-converted projects are; a tester's
+        // SNMP demo on Windows had this map and get_section_layout answered "link without --map".
+        const m = parseMapFile(read('blinky-ac6-loadaddr.axf.map'), '/ws/out/Blinky.axf.map');
+        assert.strictEqual(m.format, 'armlink');
+        assert.strictEqual(hex(m.entry!), '0x08000271');
+        assert.deepStrictEqual(m.regions.map(r => [r.name, r.kind, hex(r.origin), r.length, r.used, r.attributes]), [
+            ['LR_ROM0', 'load', '0x08000000', 0x100000, 35360, 'ABSOLUTE'], ['ER_ROM0', 'execution', '0x08000000', 0x100000, 35168, 'ABSOLUTE'],
+            ['RW_NOINIT', 'execution', '0x20000000', 0x18000, 0, 'ABSOLUTE, UNINIT'], ['RW_RAM0', 'execution', '0x20000000', 0x18000, 39136, 'ABSOLUTE'],
+        ]);
+        // The load address is kept where it differs from the execution address: the initialisers of RW_RAM0 sit in flash at 0x08008960.
+        assert.deepStrictEqual(m.sections.map(s => [s.name, hex(s.address), s.loadAddress === undefined ? undefined : hex(s.loadAddress), s.size, s.inputs.length, s.fill, s.region]), [
+            ['ER_ROM0', '0x08000000', undefined, 35168, 7, 4, 'LR_ROM0'], ['RW_NOINIT', '0x20000000', '0x08008960', 0, 0, 0, 'LR_ROM0'],
+            ['RW_RAM0', '0x20000000', '0x08008960', 39136, 9, 0, 'LR_ROM0'],
+        ]);
+        const ram = m.sections[2];
+        assert.deepStrictEqual(ram.inputs.slice(0, 2).map(i => [i.name, hex(i.address), i.size, i.type, i.attr, i.class, i.object, i.library]), [
+            ['.data', '0x20000000', 4, 'Data', 'RW', 'data', 'c_wu.l(stdio_streams.o)', 'c_wu.l'], ['.data', '0x20000004', 4, 'Data', 'RW', 'data', 'c_wu.l(stdio_streams.o)', 'c_wu.l'],
+        ]);
+        assert.deepStrictEqual(ram.inputs.filter(i => i.type === 'Zero').map(i => [i.name, hex(i.address), i.size, i.class]), [['.bss', '0x200000c0', 84, 'bss'], ['.bss', '0x20000114', 84, 'bss']]);
+        assert.deepStrictEqual(ram.inputs.find(i => i.name === '.data.os')!.object, 'rtx_kernel.o');
+        assert.strictEqual(m.sections[0].inputs.find(i => i.name === '!!!main')!.object, 'c_wu.l(__main.o)');
+        assert.deepStrictEqual(m.totals, { code: 34372, roData: 1204, rwData: 192, ziData: 38944, ro: 35168, rw: 39136, rom: 35360 });
+        assert.ok(!m.notes.some(n => n.includes('Memory Map of the image')), m.notes.join(' | '));
+    });
+
+    test('an armlink map says whether its memory map is missing or merely unreadable', () => {
+        const tool = 'Component: Arm Compiler for Embedded 6.24 Tool: armlink [5f371500]\n\n';
+        assert.deepStrictEqual(parseMapFile(tool, 'x.map').notes.filter(n => n.includes('Memory Map')), ['no "Memory Map of the image" in the map (link without --map)']);
+        const odd = parseMapFile(`${tool}Memory Map of the image\n\n  Load Region LR_1 (Origin: 0x08000000, Length: 0x1000)\n`, 'x.map');
+        assert.deepStrictEqual(odd.sections, []);
+        assert.deepStrictEqual(odd.notes.filter(n => n.includes('Memory Map')), ['the "Memory Map of the image" of this map is in a layout this version does not read: no sections']);
+    });
+
+    test('armlink: Thumb code from 0x80000000 up keeps a positive address once its Thumb bit is cleared', () => {
+        const m = parseMapFile([
+            'Component: Arm Compiler for Embedded 6.24 Tool: armlink [5f371500]',
+            '',
+            'Image Symbol Table',
+            '',
+            '    Global Symbols',
+            '',
+            '    Symbol Name                              Value     Ov Type        Size  Object(Section)',
+            '',
+            '    main                                     0x80000011   Thumb Code    32  main.o(.text.main)',
+            '',
+        ].join('\n'), 'Blinky.axf.map');
+        assert.deepStrictEqual(m.symbols.map(s => [s.name, s.address]), [['main', 0x80000010]]);
+    });
+
     test('armlink map with only the Component line (cbuild default) is armlink with nothing in it', () => {
         const m = parseMapFile('Component: Arm Compiler for Embedded 6.24 Tool: armlink [5f371500]\n', 'Blinky.axf.map');
         assert.strictEqual(m.format, 'armlink');

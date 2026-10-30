@@ -6,7 +6,7 @@ Originally derived from [microsoft/DebugMCP](https://github.com/microsoft/DebugM
 
 Upstream baseline: forked at [`4422d8c`](https://github.com/microsoft/DebugMCP/commit/4422d8c) (2026-03-14), last synced against [`4051049`](https://github.com/microsoft/DebugMCP/commit/4051049) (upstream v2.3.0, 2026-08-05) in fork v2.0.0; individual changes cherry-picked through [`148cbb9a`](https://github.com/microsoft/DebugMCP/commit/148cbb9a) (upstream v2.3.1, 2026-08-20). See [§9](#9-upstream-work-deliberately-not-taken) for what was deliberately left behind.
 
-Current release: **v2.5.20** — see [CHANGELOG.md](CHANGELOG.md) for the per-version detail.
+This is a historical divergence record, not a description of the current release. The transport, timeout, resource and packaging claims below include superseded designs. For 2.7.0 use [CHANGELOG.md](CHANGELOG.md), the [user guide](docs/user-guide.md) and the [architecture pages](docs/architecture/debugMCPServer.md); the independent rewrite is recorded in [provenance](docs/provenance/README.md).
 
 ---
 
@@ -18,7 +18,7 @@ Current release: **v2.5.20** — see [CHANGELOG.md](CHANGELOG.md) for the per-ve
 | Debug-tab pipeline is the only way to start a session | The CMSIS Solution panel's **Debug** button orchestrates **build → flash → attach**; the standard debug tab skips the flash step and is the wrong tool for embedded | New `cmsis_action` tool wraps the panel buttons (`build` / `load` / `erase` / `load_and_run` / `load_and_debug` / `attach` / `detach` / `stop_run`). `start_debugging` is demoted to non-CMSIS use |
 | No memory inspection | First question for any Cortex-M bug: "what's actually at `0x2000_0000`?" | New `read_memory` tool (DAP `readMemory` request with multi-strategy GDB fallback) |
 | No core register inspection | R0–R15 / xPSR / MSP / PSP / CONTROL / FAULTMASK / BASEPRI / PRIMASK are mandatory for crash analysis, stack walking, and processor-mode reasoning | New `read_core_registers` tool (parallel evaluates with overall + per-request deadlines) |
-| No peripheral awareness | Embedded bugs are frequently peripheral-config bugs; the value of `GPIOA->ODR` or `RCC->CR` is load-bearing | New `read_peripheral_register` tool backed by SVD — primary path is the **Peripheral Inspector** extension API, with a standalone SVD parser fallback |
+| No peripheral awareness | Embedded bugs are frequently peripheral-config bugs; the value of `GPIOA->ODR` or `RCC->CR` is load-bearing | New `read_peripheral_register` tool backed by SVD through a standalone SVD parser |
 | No fault-state decoder | A HardFault tells you nothing without CFSR/HFSR/DFSR/MMFAR/BFAR decode | New `get_fault_info` tool that reads the SCS registers and decodes bit-by-bit (STKOF, UNALIGNED, PRECISERR, IACCVIOL, …) |
 | No probe / target introspection | Agents need to know which device, which probe, which GDB server before they can reason about anything | New `get_device_info` tool summarizing session type, program, GDB path, GDB server, port, CMSIS config |
 | No way to inspect a *running* target | Embedded firmware often sits in main loops; the agent needs to halt mid-flight to ask "where are we right now?" | New `pause_execution` tool (DAP `pause`), state-aware (no-op when already stopped) |
@@ -46,12 +46,12 @@ All paths are relative to the extension root (`DebugMCP/`).
 | File | Purpose |
 | -- | --- |
 | [`src/core/faultDecoder.ts`](src/core/faultDecoder.ts) | Cortex-M fault register decoder. CFSR/HFSR/DFSR/MMFAR/BFAR/AFSR → human-readable analysis. Exports `FAULT_REGISTER_ADDRESSES` (SCS memory-mapped addresses at `0xE000ED28` …). |
-| [`src/core/peripheralReader.ts`](src/core/peripheralReader.ts) | Peripheral register reader. Strategy 1: call the Peripheral Inspector extension's public API (`eclipse-cdt.peripheral-inspector`). Strategy 2: locate the SVD referenced by the active CMSIS `cbuild-run.yml`, parse it, and read via DAP `readMemory` / GDB `evaluate`. Per-call timeout via `withTimeout`. |
+| [`src/core/peripheralReader.ts`](src/core/peripheralReader.ts) | Peripheral register reader: locate the SVD referenced by the active CMSIS `cbuild-run.yml`, parse it, and read via DAP `readMemory` / GDB `evaluate`. Per-call timeout via `withTimeout`. |
 | [`src/core/svdParser.ts`](src/core/svdParser.ts) | Minimal SVD XML parser. Resolves `derivedFrom`, computes field ranges, exposes `listPeripheralNames()` / `findPeripheral()` / `findRegister()` / `decodeFields()`. |
 | [`src/core/serialController.ts`](src/core/serialController.ts) | OWNED serial backend. `SerialPort` (from the `serialport` package) wrapped in a singleton with a 1 MB RX ring. Powers `serial_open` / `serial_close` / `serial_read` / `serial_write` / `serial_list_ports`. |
-| [`src/core/serialMonitorBridge.ts`](src/core/serialMonitorBridge.ts) | MS Serial Monitor BRIDGE. Probes `vscode.extensions.getExtension('ms-vscode.vscode-serial-monitor').exports` for any of `onDidReceiveData` / `onDataReceived` / `onData` / `onSerialData` / `onDidReadData` / `subscribeData`. Today the public API (v0.1.7) only exposes port enumeration; bridge falls back with a clear "data event not available" message and **auto-lights-up** when MS ships a data event. |
+| [`src/core/serialMonitorBridge.ts`](src/core/serialMonitorBridge.ts) | MS Serial Monitor BRIDGE. Asks `ms-vscode.vscode-serial-monitor` for its API with `getApi(0, context)` (its exports hold only `getApi`) and looks there for any of `onDidReceiveData` / `onDataReceived` / `onData` / `onSerialData` / `onDidReadData` / `subscribeData`. The API of version 0 lists ports and starts or stops monitoring but has no data event, so the bridge refuses a subscription with that reason and **lights up** when a build's API has one. |
 | [`src/core/resetAssist.ts`](src/core/resetAssist.ts) | Pure reset-command mapping: pyOCD OpenOCD-style vs J-Link numeric `monitor reset` dialects, server-kind detection, unsupported-reply classification. No vscode imports — unit-testable. |
-| [`src/core/dwt.ts`](src/core/dwt.ts) | DWT register map (DEMCR/DWT_CTRL/DWT_CYCCNT + TRCENA/CYCCNTENA/NOCYCCNT bits) for `read_cycle_counter`. |
+| [`src/core/dwt.ts`](src/core/dwt.ts) | DWT register map (CPUID/DEMCR/DWT_CTRL/DWT_CYCCNT + TRCENA/CYCCNTENA/NOCYCCNT bits) and the CPUID test for Armv6-M and Armv8-M Baseline, which have no cycle counter, for `read_cycle_counter`. |
 | [`src/core/flashController.ts`](src/core/flashController.ts) | `pyocd load --cbuild-run` process control + output parsing (bytes programmed, rate, error lines, tail). Node builtins only — testable outside the extension host. |
 | [`src/serialHandler.ts`](src/serialHandler.ts) | Routes the `serial_*` MCP tools to either the OWNED controller or the BRIDGE depending on `from` argument. |
 | [`src/utils/sessionStateTracker.ts`](src/utils/sessionStateTracker.ts) | `DebugAdapterTrackerFactory` that records DAP `stopped` / `continued` events per session, exposed via `isSessionStopped(session)` and `getStoppedReason(session)`. The authoritative "is the target paused?" signal. Also: `waitForStopEvent(session, timeoutMs)` (awaitable stop events with reason + threadId), and the adapter channel's problems (failed responses, adapter errors, `stderr` / `console` output) written into the window's problem journal (#48, `src/core/problemJournal.ts`), which replaced the earlier ring of recent adapter traffic. |
@@ -104,6 +104,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 
 - `cmsis_action(action, target?, timeoutMs?, path?)` — `build` / `load` / `erase` / `run` (since 2.5.15: the GDB server without build or flash, for `attach`) / `load_and_run` / `load_and_debug` / `attach` / `detach` / `stop_run`, and since 2.5.9 `open_solution` with `path`, which opens the folder of a csolution in a VS Code window and works from an empty window; `target` (`type` or `type@set`) switches and verifies the active target first, results name the target they ran on. ⭐ Preferred entry point for embedded.
 - `flash(cbuildRunFile?, timeoutMs?)` — `pyocd load --cbuild-run` as a synchronous operation: bytes programmed + structured flash error; refuses under an active session.
+- `cmsis_query(what, vendor?, name?, board?, device?, limit?)` — the CMSIS Solution extension's catalog through its public API version 2 (Arm's web catalog merged with the installed packs): `boards`, `devices`, or the `examples` and templates of a board or device, each example with its source; no project or session needed (first slice of #41). `cmsis_action create_solution` with `board`/`device`, `draft`, `path` and `git?` creates a project from one through `createNewSolution`.
 
 **Documentation and build artefacts (both on by default since 2.5.3 — `packDocs.enabled` / `buildInfo.enabled`):**
 
@@ -135,7 +136,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 
 **Serial:**
 
-- `serial_list_ports()` — MS Serial Monitor API → `serialport` fallback
+- `serial_list_ports()` — `serialport`, with the friendly name Windows gives a port
 - `serial_capture(path, durationMs, baudRate?, until?, write?)` — one call: open, read until the regex matches or the deadline, close (#49)
 - `serial_open(path, baudRate?, dataBits?, parity?, stopBits?, rtscts?, releaseOn?)` — OWNED port, released after idle time or when the session ends (#49)
 - `serial_close()` / `serial_status()` / `serial_clear_buffer(from?)` / `serial_write(data, encoding?, appendNewline?)` / `serial_read(maxBytes?, waitMs?, consume?, format?, from?)`
@@ -187,6 +188,8 @@ Tool schemas that differ from names agents commonly guess — worth documenting 
 
 This fork is **not** intended to be merged back as-is — the embedded surface (CMSIS pipeline, fault decoder, SVD reader, hardware-timeout layer, dual serial backend) would be dead code for the 95% of upstream users debugging Python/TypeScript. The clean path for upstreaming would be factoring `src/core/*`, `src/utils/timeout.ts`, and `src/utils/sessionStateTracker.ts` into an optional "embedded" feature module gated on the presence of the CMSIS Debugger extension, and making the timeout layer + state-aware errors available generically while keeping the SVD / fault decoder / CMSIS panel controls gated. That refactor is out of scope for this evaluation build.
 
+One CI divergence from Open-CMSIS-Pack's repository: the `Update current version` step of `.github/workflows/ci.yml` also runs for `release` events on any repository owner, so a release cut on a fork builds the tag's version into the VSIX names and the version the server reports (upstream runs it for its own owner only).
+
 ---
 
 ## 9. Upstream work deliberately not taken
@@ -199,8 +202,8 @@ Synced against upstream v2.3.0, then upstream v2.3.1 (PRs #115–#131, 2026-08-2
 | **`src/utils/withTimeout.ts`** | The fork's `src/utils/timeout.ts` is a strict superset — it also carries `customRequestWithTimeout` and `HardwareTimeoutError`. Porting it would mean two timeout utilities. |
 | **`debugTestAtCursor` / VS Code Testing API test debugging** | No meaning for `gdbtarget` firmware. There is no test runner on the target. |
 | **`debugConfigurationManager` refactor** (`-396` lines) | Upstream's went toward .NET/csproj auto-configuration. The fork's version is CMSIS-specific and keeps `jsonc-parser` (which upstream dropped) because CMSIS Solution generates `launch.json` *with comments*. |
-| **Removal of `get_debug_instructions` and its doc** | Kept. Upstream replaced them with the `debug-live` Agent Skill, but GitHub Copilot Chat reads MCP tools and not `~/.agents/skills` — removing the tool would leave that harness with no guidance at all. The fork ships *both*: the tool and the `cmsis-debug-live` skill. |
-| **The `debug-live` skill name** | The fork's skill is `cmsis-debug-live`. Both extensions can be installed at once and would otherwise fight over the same directory, leaving whichever registered last in place with a workflow written for the wrong kind of target. For the same reason the fork does no legacy-name cleanup — removing a `debug-live` directory would delete upstream's skill. |
+| **Removal of `get_debug_instructions` and its doc** | Kept. Upstream replaced them with the `debug-live` Agent Skill, but GitHub Copilot Chat reads MCP tools and not `~/.agents/skills` — removing the tool would leave that harness with no guidance at all. The fork keeps the tool; its live-debugging workflow was the `cmsis-debug-live` skill and is, since 2.7.0, the knowledge unit `proc-cmsis-debug-live`, which the one installed skill, `cmsis-help`, points at. |
+| **The `debug-live` skill name** | The fork's skill was `cmsis-debug-live` (a knowledge unit since 2.7.0; the installed skill is `cmsis-help`). Both extensions can be installed at once and would otherwise have fought over the same directory, leaving whichever registered last in place with a workflow written for the wrong kind of target. For the same reason the fork does no legacy-name cleanup, and its sweep removes only directories that carry its own marker — removing a `debug-live` directory would delete upstream's skill. |
 | **`6f7fa56` "Remove extra checks in hasActiveSession()"** | Not ported (since v1.1.9). The fork replaced that gate with a DAP-event tracker plus `ensureStoppedSession` and state-aware errors, which is the better fix for embedded targets. |
 | **README star-history chart fix** (PR #128) | No such chart here. |
 | **Dependabot bumps** (PRs #121 ip-address + express-rate-limit, #124 js-yaml, #131 @hono/node-server) | Already at or above those versions in the lockfile; none is a direct dependency here. |
@@ -218,4 +221,4 @@ Synced against upstream v2.3.0, then upstream v2.3.1 (PRs #115–#131, 2026-08-2
 | **esbuild bundling** | Script prepared, **packaging not switched over** — see [docs/packaging-esbuild.md](docs/packaging-esbuild.md). `serialport` must stay external regardless: `node-gyp-build` resolves its native `.node` relative to `__dirname` at runtime. |
 | **Remember a dismissed setup picker** (PR #115) | Verbatim. |
 | **Debugger-first guidance** (PR #129) | Same rule, embedded flavour: the temptation here is `printf` over UART/ITM or an LED toggle, which costs a reflash and moves the timing. The MCP `instructions` also point at `get_debug_instructions`, because Copilot Chat does not load skills (see above). |
-| **Skill-trigger contract tests + live evaluation** (PR #130) | Tests pin the fork's wording. The live eval installs `cmsis-debug-live` and uses an embedded prompt (a HardFault, an ADC buffer right on the FVP and wrong on the board); ported as `scripts/test-skill-trigger.ts` under tsx like the other scripts. |
+| **Skill-trigger contract tests + live evaluation** (PR #130) | Tests pin the fork's wording. The live eval installs `cmsis-help` and uses an embedded prompt (a HardFault, an ADC buffer right on the FVP and wrong on the board); ported as `scripts/test-skill-trigger.ts` under tsx like the other scripts. |

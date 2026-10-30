@@ -75,4 +75,4 @@ The session ends, or `wait_for_stop` runs into its timeout; a `continue_executio
 - [ ] `justMyCode` off when the cause may lie in library code.
 - [ ] The session in focus is the process you mean (`get_session_status`).
 - [ ] Values read with `list_variable_names`, then `get_variables_values`; expressions free of side effects unless the change is the experiment.
-- [ ] `clear_all_breakpoints` once the cause is confirmed.
+- [ ] The breakpoints you set removed (`remove_breakpoint`) once the cause is confirmed.

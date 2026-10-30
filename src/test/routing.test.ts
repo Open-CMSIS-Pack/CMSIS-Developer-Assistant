@@ -25,7 +25,7 @@ import type { IDebuggingHandler } from '../debuggingHandler';
 import type { PackDocsHandlers } from '../packDocsDispatch';
 import { RoutingDebuggingHandler, RoutingOptions } from '../routingDebuggingHandler';
 import { runInCallContext } from '../core/callContext';
-import { CONTROL_ENVELOPE_HEADER, DEBUG_OPS, PACKDOCS_BUILD_OPS, PACKDOCS_DOC_OPS } from '../core/opTable';
+import { CONTROL_ENVELOPE_HEADER, DEBUG_OPS, KNOWLEDGE_OPS, PACKDOCS_BUILD_OPS, PACKDOCS_DOC_OPS } from '../core/opTable';
 import { newErrorsNote, newErrorsStatusLine } from '../core/problemFeed';
 import { ProblemJournal } from '../core/problemJournal';
 import { ErrorCode, JsonObject, ToolError, ToolText, errorDetail, textOf, toToolError } from '../core/toolResult';
@@ -40,7 +40,7 @@ const JSON_TYPE: http.OutgoingHttpHeaders = { 'Content-Type': 'application/json'
 /** A reply header that marks the typed envelope (#11). */
 const TYPED_JSON: http.OutgoingHttpHeaders = { ...JSON_TYPE, [CONTROL_ENVELOPE_HEADER]: '2' };
 
-type Role = 'debug' | 'docs' | 'build';
+type Role = 'debug' | 'docs' | 'build' | 'knowledge';
 
 /** Every fake handler answers with who it is, its role, the op and the args it got. */
 function echo(label: string, role: Role, op: string, args: unknown): string {
@@ -57,6 +57,7 @@ function echoingPackDocs(label: string): PackDocsHandlers {
     return {
         docs: echoing(label, 'docs', PACKDOCS_DOC_OPS),
         build: echoing(label, 'build', PACKDOCS_BUILD_OPS),
+        knowledge: echoing(label, 'knowledge', KNOWLEDGE_OPS),
     };
 }
 
@@ -198,11 +199,14 @@ suite('Multi-window routing', () => {
         return { label, pid: entry.pid, port, token, entry, journal, close };
     }
 
-    /** A window: a real control server over echoing handlers and a journal of its own, registered by hand. */
+    /**
+     * A window: a real control server over echoing handlers and a journal of its own, registered by hand.
+     * `withPackDocs`: the echoing documentation handlers, none, or handlers of the test's own.
+     */
     async function openWindow(
         label: string,
         overrides: Partial<WindowRegistration> = {},
-        withPackDocs = true,
+        withPackDocs: boolean | PackDocsHandlers = true,
         ops: OpOverrides = {},
         serverOptions: ControlServerOptions = {},
     ): Promise<FakeWindow> {
@@ -211,7 +215,7 @@ suite('Multi-window routing', () => {
         const control = new ControlServer(
             { ...echoing<IDebuggingHandler>(label, 'debug', DEBUG_OPS), ...ops } as IDebuggingHandler,
             token,
-            withPackDocs ? echoingPackDocs(label) : undefined,
+            withPackDocs === false ? undefined : withPackDocs === true ? echoingPackDocs(label) : withPackDocs,
             journal,
             serverOptions);
         const port = await control.start();
@@ -301,7 +305,7 @@ suite('Multi-window routing', () => {
             const a = await openWindow('boardA', { workspaceFolders: [folder('a')], hasActiveSession: true });
             const b = await openWindow('boardB', { workspaceFolders: [folder('b')], hasActiveSession: true });
             const tie = await refusedAs('AMBIGUOUS_WINDOW', newRouter().handleReadMemory({ address: '0x0', length: 4 }),
-                /2 VS Code windows have an active debug session/, /select_debug_window/, /click "CDA" in the VS Code status bar → Select Target Window/);
+                /2 VS Code windows have an active debug session/, /select_debug_window/, /click the CDA robot icon in the VS Code status bar → Select Target Window/);
             const detail = errorDetail(tie);
             assert.ok(detail.includes(folder('a')) && detail.includes(folder('b')), detail);
             // Windows of 2.5.0 publish no role, so their candidates carry none.
@@ -312,12 +316,30 @@ suite('Multi-window routing', () => {
             });
         });
 
-        test('a path in no workspace is refused even when the session has a target', async () => {
+        test('a file in no workspace, such as a pack source, goes to the session\'s target, and the answer says so', async () => {
             await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
             const router = newRouter();
-            assertAnsweredBy(await router.handleGetSessionStatus(), 'alpha');
-            await refusedAs('INVALID_ARGUMENT', router.handleAddBreakpoint({ fileFullPath: '/not/in/any/workspace.c', line: 1 }),
-                /No open VS Code window has/);
+            await router.handleAddBreakpoint({ fileFullPath: path.join(folder('beta'), 'main.c'), line: 10 });
+            const packSource = '/packs/ExecuTorch/1.5.1/src/program.cpp';
+            const result = await router.handleAddBreakpoint({ fileFullPath: packSource, line: 1 });
+            assertAnsweredBy(result, 'beta');
+            assert.match(textOf(result),
+                /\n"\/packs\/ExecuTorch\/1\.5\.1\/src\/program\.cpp" lies outside every open workspace; the call went to pid \d+[^,]*, the window this session's calls without a file go to\.$/);
+        });
+
+        test('a file in no workspace goes to the only debug session, or to the only window', async () => {
+            await openWindow('idle', { workspaceFolders: [folder('idle')] });
+            await openWindow('board', { workspaceFolders: [folder('board')], hasActiveSession: true });
+            assertAnsweredBy(await newRouter().handleAddBreakpoint({ fileFullPath: '/packs/sds/sdsio_client_usb_mdk.c', line: 5 }), 'board');
+        });
+
+        test('a file in no workspace with two idle windows and no target is refused as a tie that names the file', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            await refusedAs('AMBIGUOUS_WINDOW', newRouter().handleAddBreakpoint({ fileFullPath: '/not/in/any/workspace.c', line: 1 }),
+                /^No open VS Code window has "\/not\/in\/any\/workspace\.c" inside its workspace, and 2 VS Code windows are registered and none has an active debug session, so there is no unambiguous target/,
+                /select_debug_window/);
         });
 
         test('an empty registry is reported as such', async () => {
@@ -332,6 +354,29 @@ suite('Multi-window routing', () => {
             livePids.delete(gone.pid);
             await refusedAs('WINDOW_UNREACHABLE', router.handleGetSessionStatus(), /pinned with select_debug_window .* is gone/);
         });
+
+        test('a pin follows its window through a reload to the one window with the same folders, and says so once', async () => {
+            const before = await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const router = newRouter();
+            router.selectDebugWindow({ pid: before.pid });
+            // The reload: the extension host registers the window again under a new pid.
+            livePids.delete(before.pid);
+            const after = await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            const moved = await router.handleGetSessionStatus();
+            assertAnsweredBy(moved, 'alpha');
+            assert.ok(textOf(moved).endsWith(`\nThe window pinned with select_debug_window (pid=${before.pid}) was reloaded; the pin moved to `
+                + `pid=${after.pid} | ${folder('alpha')}, which has the same folders.`), textOf(moved));
+            const next = await router.handleGetSessionStatus();
+            assert.ok(!textOf(next).includes('was reloaded'), 'said once');
+            assert.match(router.listDebugWindows(), new RegExp(`pid=${after.pid} .*pinned`));
+
+            // Two windows with those folders: the pin has nothing to follow.
+            livePids.delete(after.pid);
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('alpha2', { workspaceFolders: [folder('alpha')] });
+            await refusedAs('WINDOW_UNREACHABLE', router.handleGetSessionStatus(), /pinned with select_debug_window .* is gone/);
+        });
     });
 
     suite('explicit selection', () => {
@@ -342,6 +387,39 @@ suite('Multi-window routing', () => {
             const router = newRouter();
             assert.match(router.selectDebugWindow({ pid: idle.pid }), /pinned to/);
             assertAnsweredBy(await router.handleReadMemory({ address: '0x0', length: 4 }), 'idle');
+        });
+
+        test('a breakpoint op of a pinned session goes to the pinned window with the debug session, whatever file it names, and says so', async () => {
+            const board = await openWindow('board', { workspaceFolders: [folder('board')], hasActiveSession: true });
+            await openWindow('sources', { workspaceFolders: [folder('sources')] });
+            const router = newRouter();
+            router.selectDebugWindow({ pid: board.pid });
+            const foreign = path.join(folder('sources'), 'Blinky.c');
+            const added = await router.handleAddBreakpoint({ fileFullPath: foreign, line: 48 });
+            assertAnsweredBy(added, 'board');
+            assert.ok(textOf(added).endsWith(`\nRan in the pinned window pid ${board.pid} (board); the file lies outside its folders.`), textOf(added));
+            assertAnsweredBy(await router.handleAddLogpoint({ fileFullPath: foreign, line: 50, logMessage: 'x' }), 'board');
+            assertAnsweredBy(await router.handleRemoveBreakpoint({ fileFullPath: foreign, line: 48 }), 'board');
+            // A file outside every workspace is no refusal for a pinned session.
+            assertAnsweredBy(await router.handleAddBreakpoint({ fileFullPath: '/not/in/any/workspace.c', line: 1 }), 'board');
+            // A file of its own folders: no note.
+            const own = await router.handleAddBreakpoint({ fileFullPath: path.join(folder('board'), 'main.c'), line: 3 });
+            assert.ok(!textOf(own).includes('Ran in the pinned window'), textOf(own));
+            assert.deepStrictEqual(router.describeTarget(), { pid: board.pid, name: 'board', reason: 'pinned' });
+            // start_debugging keeps routing by its path: it launches in the window whose folder holds the file.
+            assertAnsweredBy(await router.handleStartDebugging({ fileFullPath: foreign, workingDirectory: folder('sources') }), 'sources');
+        });
+
+        test('a breakpoint op of a pinned session goes to the file\'s window only when that one alone debugs; unpinned, the path decides', async () => {
+            const idle = await openWindow('idle', { workspaceFolders: [folder('idle')] });
+            await openWindow('board', { workspaceFolders: [folder('board')], hasActiveSession: true });
+            await openWindow('quiet', { workspaceFolders: [folder('quiet')] });
+            const router = newRouter();
+            router.selectDebugWindow({ pid: idle.pid });
+            assertAnsweredBy(await router.handleAddBreakpoint({ fileFullPath: path.join(folder('board'), 'main.c'), line: 7 }), 'board');
+            // Neither debugs: the pinned window keeps it for the session it will start.
+            assertAnsweredBy(await router.handleAddBreakpoint({ fileFullPath: path.join(folder('quiet'), 'main.c'), line: 7 }), 'idle');
+            assertAnsweredBy(await newRouter().handleAddBreakpoint({ fileFullPath: path.join(folder('quiet'), 'main.c'), line: 7 }), 'quiet');
         });
 
         test('a selection that matches nothing lists what is registered', async () => {
@@ -479,7 +557,7 @@ suite('Multi-window routing', () => {
                 /none has an active debug session/,
                 /The default target the user set in VS Code \(closed-board\) is not open\./,
                 /cmsis_action load_and_debug and window set to its pid/,
-                /click "CDA" in the VS Code status bar → Select Target Window/);
+                /click the CDA robot icon in the VS Code status bar → Select Target Window/);
             const candidate = (w: FakeWindow, role: string): object => ({
                 pid: w.pid, name: w.label, workspaceFolders: w.entry.workspaceFolders, hasActiveSession: false, isDefault: false, role,
             });
@@ -578,6 +656,123 @@ suite('Multi-window routing', () => {
             await openWindow('solo', { workspaceFolders: [folder('solo')] });
             const answer = textOf(await newRouter().handleCmsisCommand({ action: 'build', path: folder('elsewhere') }));
             assert.strictEqual(answer, echo('solo', 'debug', 'handleCmsisCommand', { action: 'build', path: folder('elsewhere') }));
+        });
+    });
+
+    suite('cmsis_action install_pack', () => {
+        const INSTALL = { action: 'install_pack', pack: 'Acme::Mini_BSP@0.2.0' };
+
+        test('a tie goes to the router\'s own window, which does not become the session\'s target', async () => {
+            await openWindow('own', { pid: process.pid, workspaceFolders: [folder('own')], role: 'router' });
+            await openWindow('other', { workspaceFolders: [folder('other')], role: 'worker' });
+            const router = newRouter();
+            assert.strictEqual(textOf(await router.handleCmsisCommand(INSTALL)), echo('own', 'debug', 'handleCmsisCommand', INSTALL));
+            assert.strictEqual(router.describeTarget(), undefined);
+            // Any other path-less call is still a tie.
+            await refusedAs('AMBIGUOUS_WINDOW', router.handleCmsisCommand({ action: 'build' }));
+        });
+
+        test('it goes to the session\'s target and to the window it names, like any call', async () => {
+            await openWindow('own', { pid: process.pid, workspaceFolders: [folder('own')], role: 'router' });
+            const board = await openWindow('board', { workspaceFolders: [folder('board')], role: 'worker' });
+            const router = newRouter();
+            await router.handleAddBreakpoint({ fileFullPath: path.join(folder('board'), 'main.c'), line: 3 });
+            assert.strictEqual(textOf(await router.handleCmsisCommand(INSTALL)), echo('board', 'debug', 'handleCmsisCommand', INSTALL));
+            const named = textOf(await newRouter().handleCmsisCommand({ ...INSTALL, window: String(board.pid) }));
+            assert.strictEqual(named, echo('board', 'debug', 'handleCmsisCommand', INSTALL));
+        });
+    });
+
+    suite('cmsis_query and cmsis_action create_solution', () => {
+
+        test('cmsis_query runs in any window: two idle windows are no tie for it, and an established target keeps it', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const router = newRouter();
+            await refusedAs('AMBIGUOUS_WINDOW', router.handleGetDeviceInfo());
+            const answer = textOf(await router.handleCmsisQuery({ what: 'boards' }));
+            assert.match(answer, /^(alpha|beta)\|debug\|handleCmsisQuery\|\{"what":"boards"\}$/);
+
+            await router.handleStartDebugging({ workingDirectory: folder('beta') });
+            assertAnsweredBy(await router.handleCmsisQuery({ what: 'devices' }), 'beta');
+        });
+
+        test('create_solution runs in the window that has exactly that folder open, before one that holds its parent', async () => {
+            const project = path.join(folder('alpha'), 'blinky');
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('blinky', { workspaceFolders: [project] });
+            const router = newRouter();
+            const args = { action: 'create_solution' as const, path: project, board: 'B', draft: 'D' };
+            assert.strictEqual(textOf(await router.handleCmsisCommand(args)), echo('blinky', 'debug', 'handleCmsisCommand', args));
+            assertAnsweredBy(await router.handleGetSessionStatus(), 'blinky');
+        });
+
+        test('create_solution for a folder no window has open goes where open_solution would, and waits for no window', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const router = newRouter({ openedWindowWaitMs: 5_000 });
+            const started = Date.now();
+            const answer = textOf(await router.handleCmsisCommand({ action: 'create_solution', path: folder('gamma'), draft: 'D' }));
+            assert.match(answer, /^(alpha|beta)\|debug\|handleCmsisCommand\|/);
+            assert.ok(Date.now() - started < 2_000, 'no wait for a new window');
+            const nested = path.join(folder('beta'), 'app');
+            assertAnsweredBy(await router.handleCmsisCommand({ action: 'create_solution', path: nested, draft: 'D' }), 'beta');
+        });
+    });
+
+    suite('calls that never fail for want of a target window', () => {
+        const typedText = (text: string) => (reply: http.ServerResponse): void => {
+            reply.writeHead(200, TYPED_JSON).end(JSON.stringify({ result: text }));
+        };
+
+        test('serial_list_ports runs in any window: the ports belong to the machine, and the router\'s own window lists them on a tie', async () => {
+            // Scripted windows: the router's choice is what counts, not the serial handler of the test VS Code.
+            const { ops } = await openScripted('own', (op, reply) => typedText(`own: ${op}`)(reply),
+                { pid: process.pid, workspaceFolders: [folder('own')], role: 'router' });
+            const { ops: otherOps } = await openScripted('other', (op, reply) => typedText(`other: ${op}`)(reply),
+                { workspaceFolders: [folder('other')], role: 'worker' });
+            const router = newRouter();
+            assert.strictEqual(textOf(await router.serialOp('handleListPorts')), 'own: handleListPorts');
+            assert.ok(ops.includes('handleListPorts') && !otherOps.includes('handleListPorts'), `${ops.join()} / ${otherOps.join()}`);
+            assert.strictEqual(router.describeTarget(), undefined, 'the window does not become the session\'s target');
+            // Any other serial call is still a tie.
+            await refusedAs('AMBIGUOUS_WINDOW', router.serialOp('handleStatus'));
+        });
+
+        test('get_session_status on a tie of idle windows answers no-session with the windows and how to choose, never AMBIGUOUS_WINDOW', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const router = newRouter();
+            const status = textOf(await router.handleGetSessionStatus());
+            const lines = status.split('\n');
+            assert.strictEqual(lines[0], 'State: no-session (2 VS Code windows are registered and none has an active debug session; '
+                + 'this session has no target window yet)');
+            assert.ok(lines.slice(1, 3).every((line) => line.startsWith('  • pid=')) && status.includes(folder('alpha')) && status.includes(folder('beta')), status);
+            assert.strictEqual(lines[3], 'Hint: Start a session in one with cmsis_action load_and_debug and window set to its pid, pin one with '
+                + 'select_debug_window, or ask the user to pick one: click the CDA robot icon in the VS Code status bar → Select Target Window.');
+            assert.strictEqual(router.describeTarget(), undefined);
+            await refusedAs('AMBIGUOUS_WINDOW', router.handleReadMemory({ address: '0x0', length: 4 }));
+            // Once chosen, the status is the window's own again.
+            router.selectDebugWindow({ workspaceFolder: folder('beta') });
+            assertAnsweredBy(await router.handleGetSessionStatus(), 'beta');
+        });
+
+        test('get_session_status on a tie of debugging windows gives each one\'s state line; a window that does not answer is unknown', async () => {
+            await openScripted('boardA', (op, reply) => typedText(op === 'handleGetSessionStatus' ? 'State: stopped\nDAP responsive: true' : 'other')(reply),
+                { workspaceFolders: [folder('a')], hasActiveSession: true, activeConfigurationName: 'A Debug' });
+            await openScripted('boardB', (op, reply) => typedText('State: running\nDAP responsive: true')(reply),
+                { workspaceFolders: [folder('b')], hasActiveSession: true });
+            await openWindow('idle', { workspaceFolders: [folder('idle')] });
+            const silent = await openStandIn((reply) => { reply.destroy(); }, 'gone', { workspaceFolders: [folder('gone')], hasActiveSession: true });
+            const status = textOf(await newRouter().handleGetSessionStatus());
+            const lines = status.split('\n');
+            assert.strictEqual(lines[0], 'State: no target window (3 VS Code windows have an active debug session; this session has not chosen one)');
+            assert.ok(status.includes(`${folder('a')} | debugging: A Debug — State: stopped`), status);
+            assert.ok(status.includes(`${folder('b')} | debugging — State: running`), status);
+            assert.ok(status.includes(`pid=${silent.pid} | ${folder('gone')} | debugging — State: unknown (the window did not answer)`), status);
+            assert.ok(lines.some((line) => line.endsWith(folder('idle'))), 'an idle window is listed without a state');
+            assert.strictEqual(lines[lines.length - 1], 'Hint: Pin one with select_debug_window, or ask the user to pick one: '
+                + 'click the CDA robot icon in the VS Code status bar → Select Target Window.');
         });
     });
 
@@ -694,6 +889,42 @@ suite('Multi-window routing', () => {
         test('a window without documentation handlers refuses their ops', async () => {
             await openWindow('bare', {}, false);
             await refusedWith(newRouter().packDocsOp('handleListTargetDocs', {}), /not available in this window/);
+        });
+
+        test('knowledge ops take the ladder, and a tie of idle windows falls to the router\'s own window, said on the Indexes line', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('router', { pid: process.pid, workspaceFolders: [folder('router')] });
+            const router = newRouter();
+            // The documentation ops stay as they are: the manuals belong to one window's target.
+            await refusedAs('AMBIGUOUS_WINDOW', router.packDocsOp('handleListTargetDocs', {}));
+            const search = textOf(await router.packDocsOp('handleKnowledgeSearch', { query: 'HardFault' }));
+            assert.strictEqual(search, `${echo('router', 'knowledge', 'handleKnowledgeSearch', { query: 'HardFault' })}\n`
+                + `Indexes: base; context of the router's own window, pid ${process.pid} (router): 2 windows are registered and none is this `
+                + 'session\'s target; pass window to search with another project\'s context.');
+            assert.strictEqual(router.describeTarget(), undefined, 'not the session\'s target');
+            assert.strictEqual(textOf(await router.packDocsOp('handleKnowledgeGet', { id: 'proc-x' })), echo('router', 'knowledge', 'handleKnowledgeGet', { id: 'proc-x' }));
+            // A window argument names the window as for any call, and the line names it.
+            const named = textOf(await router.packDocsOp('handleKnowledgeSearch', { query: 'HardFault', window: folder('alpha') }));
+            assert.match(named, /^alpha\|knowledge\|handleKnowledgeSearch\|\{"query":"HardFault"\}\nIndexes: base; context of window pid \d+ \(alpha\)\.$/);
+            assert.deepStrictEqual(router.describeTarget()?.name, 'alpha');
+        });
+
+        test('the window\'s own Indexes line is extended, and a tie without the router\'s window registered stays refused', async () => {
+            const searching = {
+                handleKnowledgeSearch: async (): Promise<ToolText> => ({
+                    text: 'Knowledge search: 1 of 1 matching units.\nNo project context: no folder is open.\nIndexes: base and V::P@1.0.0 (2 units).\n1. x',
+                    status: 'ok', data: { matched: 1 },
+                }),
+            };
+            const handlers: PackDocsHandlers = { ...echoingPackDocs('alpha'), knowledge: searching as unknown as PackDocsHandlers['knowledge'] };
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] }, handlers);
+            const router = newRouter();
+            const reply = await router.packDocsOp('handleKnowledgeSearch', { query: 'x' });
+            assert.strictEqual(textOf(reply), 'Knowledge search: 1 of 1 matching units.\nNo project context: no folder is open.\n'
+                + 'Indexes: base and V::P@1.0.0 (2 units); context of window pid 500001 (alpha).\n1. x');
+            assert.strictEqual((reply as { data?: JsonObject }).data?.windowPid, 500001);
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            await refusedAs('AMBIGUOUS_WINDOW', newRouter().packDocsOp('handleKnowledgeSearch', { query: 'x' }));
         });
 
         test('arguments arrive as they were sent', async () => {
@@ -1146,7 +1377,8 @@ suite('Multi-window routing', () => {
     suite('fences and health checks (#14)', () => {
         const READ = { address: '0x0', length: 4 };
         const HEALTH = '{"op":"health","args":{}}';
-        const FENCE_HINT = 'A picker or dialog may be open in that window: ask the user, or call get_session_status.';
+        const FENCE_HINT = 'The debug adapter or GDB has not answered: call get_session_status, then check_target_connection.';
+        const PICKER_HINT = 'A picker or dialog may be open in that window: ask the user, or call get_session_status.';
         /** An op that never settles. */
         const never = (): Promise<ToolText> => new Promise<ToolText>(() => { /* waits for a person nobody is */ });
         /** Fences 300 ms inside the budget, and what the window says about itself. */
@@ -1210,6 +1442,36 @@ suite('Multi-window routing', () => {
             // The late result went nowhere: the next call is answered as usual.
             const next = await rawPost(port, 'tok', ['{"op":"handleGetSessionStatus","args":{}}']);
             assert.deepStrictEqual(JSON.parse(next.body), { result: echo('solo', 'debug', 'handleGetSessionStatus', {}) });
+        });
+
+        test('the hint names a picker or dialog only for the ops that can open one; the journal record carries the same hint', async () => {
+            const journal = new ProblemJournal();
+            const { port } = await startControl({ handleRestart: never, handleCmsisCommand: never, handleStartDebugging: never, handleStepOver: never },
+                journal, quickFence);
+            const hintOf = async (op: string): Promise<unknown> => {
+                const reply = await rawPost(port, 'tok', [JSON.stringify({ op, args: {}, budgetMs: 350 })], 0, { [CONTROL_ENVELOPE_HEADER]: '2' });
+                assert.strictEqual(reply.status, 500, reply.body);
+                const error = (JSON.parse(reply.body) as { error: JsonObject }).error;
+                assert.strictEqual(error.code, 'WORKER_TIMEOUT');
+                return error.hint;
+            };
+            assert.strictEqual(await hintOf('handleStartDebugging'), PICKER_HINT, 'the launch.json picker');
+            assert.strictEqual(await hintOf('handleRestart'), PICKER_HINT, 'a preLaunchTask\'s prompt or dialog');
+            assert.strictEqual(await hintOf('handleCmsisCommand'), PICKER_HINT, 'the CMSIS Solution extension\'s pickers');
+            assert.strictEqual(await hintOf('handleStepOver'), FENCE_HINT, 'a step waits for the debug adapter, not for the user');
+            assert.deepStrictEqual(journal.query({ minSeverity: 'warning' }).records.map((record) => record.hint),
+                [PICKER_HINT, PICKER_HINT, PICKER_HINT, FENCE_HINT]);
+
+            // An op outside the debugging handler waits for its own work: neither a picker nor the debug adapter.
+            const knowledge = { ...echoing<object>('solo', 'knowledge', KNOWLEDGE_OPS), handleKnowledgeSearch: never };
+            const control = new ControlServer(echoing<IDebuggingHandler>('solo', 'debug', DEBUG_OPS), 'tok',
+                { ...echoingPackDocs('solo'), knowledge: knowledge as unknown as PackDocsHandlers['knowledge'] }, new ProblemJournal(), quickFence);
+            const other = await control.start();
+            running.push(() => control.stop());
+            const reply = await rawPost(other, 'tok', [JSON.stringify({ op: 'handleKnowledgeSearch', args: {}, budgetMs: 350 })], 0,
+                { [CONTROL_ENVELOPE_HEADER]: '2' });
+            assert.strictEqual((JSON.parse(reply.body) as { error: JsonObject }).error.hint,
+                'list_debug_windows shows when it has finished; get_recent_problems shows what that window reported.');
         });
 
         test('without a budget in the envelope (a router of 2.5.0) the window\'s own timeout sets the fence', async () => {

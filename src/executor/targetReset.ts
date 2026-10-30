@@ -26,8 +26,10 @@
  * templates do in their `customResetCommands`; without that the PC read
  * below would be the one from before the reset. Whether the reset happened
  * is judged by that PC: it has to equal the reset vector in the vector table
- * that VTOR points to. Only a verified reset is resumed, and only when the
- * caller asked for `halt: false`.
+ * that VTOR points to. When a stop event follows the reset, that PC is read
+ * once VS Code has selected a frame for the stop (at most 2 s), since the
+ * read goes through the focused frame. Only a verified reset is resumed, and
+ * only when the caller asked for `halt: false`.
  *
  * Known weak spots, kept on purpose: a target already halted at the reset
  * vector verifies even when the reset command failed (KB5), and both stop
@@ -36,7 +38,7 @@
 
 import * as vscode from 'vscode';
 import { buildResetCommands, detectGdbServerKind, replyLooksUnsupported, ResetMethod, unsupportedResetDetail } from '../core/resetAssist';
-import { isSessionStopped, waitForStopEvent } from '../utils/sessionStateTracker';
+import { armFocusWatch, FRAME_FOCUS_WAIT_MS, isSessionStopped, waitForStopEvent } from '../utils/sessionStateTracker';
 import { HardwareTimeoutError } from '../utils/timeout';
 import { hex8, messageOf } from './common';
 import { ResetOutcome } from './contract';
@@ -126,11 +128,16 @@ export async function performReset(
         }
         // Armed before the cache flush, so a session that ends during it is still noticed.
         const stopOrEnd = waitForStopEvent(session, POST_RESET_WAIT_MS);
+        const focus = armFocusWatch(session);
         await flushGdbCaches(port, budgetMs);
         const afterwards = await stopOrEnd;
         if (afterwards.kind === 'ended') {
             outcome.verificationDetail = 'debug session ended during the reset';
             return outcome;
+        }
+        if (afterwards.kind === 'stopped') {
+            // The PC is read in the focused frame: the one VS Code selects for this stop, not the one from before the reset.
+            await focus.selected(Math.min(FRAME_FOCUS_WAIT_MS, budgetMs));
         }
         await settle(SETTLE_MS);
         const verdict = await compareWithResetVector(port, budgetMs);

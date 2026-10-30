@@ -1,14 +1,15 @@
-# CMSIS Developer Assistant improvement notes & roadmap
+# CMSIS Developer Assistant historical improvement notes and benchmarks
 
 Field notes collected from real hardware sessions (ModelNova, Alif AppKit-E8 /
 Ensemble E8) whenever the agent had to **leave the MCP tool surface** and drive
 `pyocd` / `JLinkGDBServerCL` / shell tools directly. Each item records what was
 bypassed, why, and the tool/feature that would have kept the workflow inside
-DebugMCP. This is a living document — keep it in sync as items ship.
+DebugMCP. These observations and benchmark results are historical. The status
+labels below record earlier work; “unreleased” is not a claim about 2.7.0.
 
-## Status
+## Historical status
 
-### Closed
+### Recorded closures
 
 | # | Item | Shipped in |
 |---|------|-----------|
@@ -20,17 +21,13 @@ DebugMCP. This is a living document — keep it in sync as items ship.
 | 6 | Wait-for-stop — new `wait_for_stop(timeoutMs)` blocks on the raw DAP `stopped` event and returns the reason + state, or a structured timeout. | unreleased |
 | 7 | Launch-failure diagnostics — recent adapter traffic (failed DAP responses, stderr/console output) is captured per session and appended to `start_debugging` / `cmsis_action` failure reports. | unreleased |
 
-### Top remaining (priority order)
+## Remaining choices for review
 
-1. **pyocd-gdbserver as a documented fallback path** — when the VS Code launch
-   pipeline can't spawn a server, bring one up / document the manual path
-   (item 2).
-2. **RTOS time / uptime** — RTOS-aware `get_kernel_time`, or document the
-   inferior-call pattern (item 5).
-3. **Host-side USB enumeration checks** — tiny `list_usb_devices` utility for
-   bring-up (item 8).
-4. **Post-mortem with broken debug access** — `reconnect_probe` or automatic
-   retry-with-reconnect inside read_memory (item 9).
+At the [2026-10-28 review](reviews/2026-10-28-knowledge-and-docs.md), decide whether to keep RTOS time/uptime and host USB enumeration in this extension's scope, and where to track the still-proposed automatic probe reconnect. The reconnect design is in [proposal #3](proposals/03-reconnect-probe.md).
+
+The earlier GDB-server lifecycle gap now has the supported cmsis_action run/attach path; current workflows come from the [agent guide](agent-resources/debug_instructions.md) and knowledge procedures. The manual command suggestions in the original field notes below are historical observations, not present instructions.
+
+Keep section 11's measured search benchmarks as evidence. The old skill names and release labels in the field notes describe the implementation at the time; current procedure ownership is documented in [skills/README.md](../skills/README.md).
 
 ---
 
@@ -133,7 +130,8 @@ twice more, and never called `list_target_docs`. Its own diagnosis:
 
 **Shipped (unreleased):** the MCP instructions, the tool descriptions, the
 `cmsis-pack-docs` / `cmsis-debug-live` / `add-board-layer` skills and the
-`build` topic say that third-party parts (sensors, ADCs, codecs, radios) are
+`target` topic (part of `build` until 2.7.0) say that third-party parts
+(sensors, ADCs, codecs, radios) are
 documented the same way — any part number starts at `list_target_docs`, an
 unlisted datasheet is fetched by URL with `fetch_doc` (the web finds the URL,
 the tools read the document), never read as a PDF — and that a document the

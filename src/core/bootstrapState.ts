@@ -22,7 +22,9 @@
  * texts, and `get_session_status` carries one line per gap while no debug
  * session runs. Each text names the next step, so an agent that starts in an
  * empty window is sent to `cmsis_action open_solution` and the `bootstrap`
- * topic of the guide instead of a shell.
+ * topic of the guide instead of a shell. The search by which the CMSIS
+ * Solution extension lists the csolution files of a window is here too, so
+ * that `open_solution` can run the same one.
  *
  * Pure: no `vscode`, no file access.
  */
@@ -137,20 +139,49 @@ export function isSolutionFile(file: string): boolean {
     return /\.csolution\.ya?ml$/i.test(file);
 }
 
-/** `a` and `b` name the same file or folder; case-insensitive where the platform's file names are. */
-export function samePath(a: string, b: string, platform: NodeJS.Platform = process.platform): boolean {
-    const fold = (p: string): string => {
-        const resolved = path.resolve(p).replace(/[\\/]+$/, '');
-        return platform === 'win32' || platform === 'darwin' ? resolved.toLowerCase() : resolved;
-    };
-    return fold(a) === fold(b);
+/** What the CMSIS Solution extension searches every workspace folder for when it lists the csolution files (1.72.0 `getSolutionPaths`). */
+export const LISTED_SOLUTION_GLOB = '**/*.csolution.{yaml,yml}';
+/** Hidden folders, which that search always leaves out. */
+const HIDDEN_FOLDERS_GLOB = '**/.*/**';
+
+/**
+ * The exclude of that search (1.72.0 `getExcludeGlob`): hidden folders, and
+ * the glob of the setting `cmsis-csolution.exclude` when it is set; a
+ * setting in braces adds its alternatives.
+ */
+export function listedSolutionExclude(setting: unknown): string {
+    const configured = typeof setting === 'string' ? setting.trim() : '';
+    if (configured.length === 0) {
+        return HIDDEN_FOLDERS_GLOB;
+    }
+    const alternatives = configured.startsWith('{') && configured.endsWith('}') ? configured.slice(1, -1).trim() : configured;
+    return `{${HIDDEN_FOLDERS_GLOB},${alternatives}}`;
 }
 
-/** Whether `target` is `folder` or lies below it. */
+/** The path functions of `platform`: Windows paths for win32, POSIX paths for every other platform. */
+function pathsOf(platform: NodeJS.Platform): typeof path.posix {
+    return platform === 'win32' ? path.win32 : path.posix;
+}
+
+/** `p` resolved in the platform's path syntax, in lower case where the platform's file names ignore case (Windows, macOS). */
+function comparablePath(p: string, platform: NodeJS.Platform): string {
+    const resolved = pathsOf(platform).resolve(p);
+    return platform === 'win32' || platform === 'darwin' ? resolved.toLowerCase() : resolved;
+}
+
+/** `a` and `b` name the same file or folder; case-insensitive where the platform's file names are. */
+export function samePath(a: string, b: string, platform: NodeJS.Platform = process.platform): boolean {
+    return comparablePath(a, platform) === comparablePath(b, platform);
+}
+
+/** Whether `target` is `folder` or lies below it, both compared as `samePath` compares. */
 export function liesInside(target: string, folder: string, platform: NodeJS.Platform = process.platform): boolean {
-    if (samePath(target, folder, platform)) {
+    const inner = comparablePath(target, platform);
+    const outer = comparablePath(folder, platform);
+    if (inner === outer) {
         return true;
     }
-    const relative = path.relative(path.resolve(folder), path.resolve(target));
-    return relative.length > 0 && !relative.startsWith('..') && !path.isAbsolute(relative);
+    const paths = pathsOf(platform);
+    const relative = paths.relative(outer, inner);
+    return relative.length > 0 && !relative.startsWith('..') && !paths.isAbsolute(relative);
 }

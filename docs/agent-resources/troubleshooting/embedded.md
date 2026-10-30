@@ -6,7 +6,7 @@ Whenever a tool call hangs, errors out, or returns an unexpected state, run this
 
 1. `get_session_status` — what state is the session in? (`no-session` / `initializing` / `running` / `stopped` / `unresponsive`)
 2. `check_target_connection` — is the probe / GDB server actually responsive?
-3. `get_fault_info` — did the target crash?
+3. `diagnose_fault` — did the target crash? It needs a stopped target: pause first.
 
 The session-status output includes a hint for each state. If state is `running` and you needed `stopped`, call `pause_execution`. If state is `unresponsive`, reads answer `PROBE_WEDGED`: see [Reads Fail With PROBE_WEDGED](#reads-fail-with-probe_wedged) before you restart anything.
 
@@ -18,7 +18,7 @@ The session-status output includes a hint for each state. If state is `running` 
 - Check the probe with `check_target_connection` (or `get_session_status`); do not run `pyocd list` or `JLinkExe` yourself.
 - Ensure the correct device is selected in the launch configuration
 - Check if another debug session is already using the probe — if so, `cmsis_action load_and_debug` will refuse with a structured message naming the existing session
-- For CMSIS projects: `launch.json` should have a `gdbtarget` entry produced by the **Manage Solution → Debugger** dialog. If missing, ask the user to (re)generate it there.
+- For CMSIS projects, try the intended `cmsis_action` load/run/debug action: when CMSIS tasks are missing, the active `cbuild-run.yml` names a debugger, and `cmsis-csolution.autoDebugLaunch` is enabled, it regenerates the CMSIS tasks and launch configurations once. If that cannot apply or `launch.json` is still stale, follow the refusal's hint; the user may need to enable automatic generation or select the debugger in **Manage Solution → Debugger**.
 
 ### Target Doesn't Stop at main
 
@@ -38,11 +38,11 @@ The session-status output includes a hint for each state. If state is `running` 
 - Cortex-M cores have a fixed number of hardware comparators (M0/M0+/M23: 4, M3/M4: 6, M7/M33/M55/M85: 8) — see the FPB unit in the device's TRM
 - Exceeding the limit causes silent drop or unreliable bindings
 - Defensive default: keep ≤4 simultaneous breakpoints unless you know the core has more
-- Use `list_breakpoints` before adding; `clear_all_breakpoints` between investigation phases
+- Use `list_breakpoints` before adding; `remove_breakpoint` for the ones you set between investigation phases (`clear_all_breakpoints` deletes the user's too)
 
 ### Tool Call Hangs or Times Out
 
-- The server caps every call to 60 s (`cmsis_action` and `flash`: 600 s); if you hit the cap, the response includes a structured "handler-level cap" message — the underlying request was abandoned, not actually stuck
+- Most debugging tools accept a `timeoutMs` override up to 60 s; `cmsis_action`, `flash`, documentation and build-artefact tools accept up to 600 s. Tools without that parameter use internal waits, and `restart_debugging` uses the configured session-readiness wait rather than its `timeoutMs` argument. A timeout ends the call's wait; it does not prove that background work stopped
 - A `cmsis_action` whose task is still going answers with status `running` and a job id; that is no hang — call `cmsis_action {action:'status'}` for the result and do not start the action again
 - Causes: probe disconnect, target reset in mid-flight, GDB server crash
 - Run the first-line diagnostic sweep above; a wedged probe answers `PROBE_WEDGED` (next section)
@@ -51,8 +51,8 @@ The session-status output includes a hint for each state. If state is `running` 
 
 - The debug port stopped answering: the failed read and a read of DHCSR (0xE000EDF0), which works on every Cortex-M while the port does, both failed. The message keeps each read strategy's cause.
 - Do not retry the read, and do not start a GDB server yourself; follow the hint of the error
-- Attach session (`cmsis_action attach`): `cmsis_action detach`, then `cmsis_action attach` reconnects without a reset; then `get_fault_info`
-- Launch session (`cmsis_action load_and_debug`): it owns the GDB server. `restart_debugging` and `load_and_debug` re-flash and reset. To keep the fault state, the user restarts the server without a reset (J-Link `-nohalt -noreset`, pyOCD `-O connect_mode=attach`), then `cmsis_action attach`.
+- Attach session (`cmsis_action attach`): the GDB server lives as long as its CMSIS Run task (pyOCD `--persist`), so `cmsis_action detach`, then `cmsis_action attach` reconnects without a reset — pyOCD lets the target run while detached and halts it on attach; then `diagnose_fault`. If attach then fails with "could not connect", the server ended with its task (window closed or reloaded, `stop_run`): `cmsis_action run` in the window that owns the board starts it again, with a reset
+- Launch session (`cmsis_action load_and_debug`): it owns the GDB server. `restart_debugging` and `load_and_debug` re-flash and reset, which clears the fault status: record the fault first. To keep it, the user restarts the server without a reset (J-Link `-nohalt -noreset`, pyOCD `-O connect_mode=attach`), then `cmsis_action attach`.
 - `INVALID_ARGUMENT` "the debug port answers" is different: only that address is unreadable (peripheral clock off, MPU or TrustZone, nothing mapped)
 
 ### `reset` Says the Target Did NOT Reset
@@ -63,7 +63,7 @@ The session-status output includes a hint for each state. If state is `running` 
 
 ### HardFault on Startup
 
-- Call `get_fault_info` to decode the fault registers
+- Call `diagnose_fault` to decode the fault registers and the stacked frame
 - Common cause: missing or incorrect vector table (check VTOR at 0xE000ED08)
 - Check if the stack pointer is initialized correctly (first word of vector table)
 - Verify the reset handler address (second word of vector table)
@@ -91,8 +91,8 @@ The session-status output includes a hint for each state. If state is `running` 
 - Read program counter: `$pc`
 - Read stack pointer: `$sp`
 - Read link register: `$lr`
-- Exception frame: `read_memory` at `$sp` (from `read_core_registers`), 32 bytes: R0,R1,R2,R3,R12,LR,PC,xPSR; `diagnose_fault` decodes it
-- Disassembly around PC: `evaluate_expression` cannot run GDB's `-exec` commands; `lookup_symbol` names the function at the PC
+- Exception frame: `read_memory` 32 bytes at the stack pointer `EXC_RETURN` in LR names (bit 2 set: `$psp`, clear: `$msp`), R0,R1,R2,R3,R12,LR,PC,xPSR; `diagnose_fault` decodes it, TrustZone's banked stacks and the integrity signature included
+- Disassembly around PC: `evaluate_expression {expression: "-exec x/8i $pc"}` returns GDB's output. On the CMSIS Debugger the tool translates `-exec` to the adapter's `>` prefix; `>x/8i $pc` works too. `lookup_symbol` names the function at the PC
 
 ### Multi-Core Debugging (Alif AppKit)
 

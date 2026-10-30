@@ -21,6 +21,7 @@
  * (`undefined reference to`), CMake, ninja (`FAILED:`) and cbuild/csolution
  * lines, plus the build's final status line. ANSI colour codes are stripped
  * first; identical diagnostics from several translation units are folded.
+ * Paths may be Windows paths (`D:\…`, `D:/…`) and may contain spaces.
  */
 
 import * as fs from 'fs';
@@ -71,6 +72,12 @@ function sev(word: string): Severity {
     return 'note';
 }
 
+/** A message's trailing warning flag (`[-Wunused-variable]`) as its code, and the message without it. */
+function splitWarningFlag(text: string): { code?: string; message: string } {
+    const flag = text.match(/\s\[(-W[\w#=+.-]+|-Werror(?:=[\w#-]+)?)\]$/);
+    return flag ? { code: flag[1], message: text.slice(0, -flag[0].length) } : { message: text };
+}
+
 function keyOf(d: Omit<Diagnostic, 'logLine' | 'count'>): string {
     return `${d.severity}|${d.file ?? ''}|${d.line ?? ''}|${d.col ?? ''}|${d.code ?? ''}|${d.message}`;
 }
@@ -97,19 +104,27 @@ export function parseBuildLog(text: string, file: string, stat?: { size: number;
         summary.diagnostics.push(entry);
     };
 
-    // GCC / Clang / armclang (new style), also GNU as (`file.S:12: Error: ...`).
-    const gccRe = /^(?:.*?\s)?([^\s:"][^:"]*?):(\d+)(?::(\d+))?:\s*(fatal error|error|warning|note|Error|Warning|Note):\s*(.*?)\s*$/;
+    // GCC / Clang / armclang (new style), also GNU as (`file.S:12: Error: ...`). A line that starts with an
+    // absolute path, POSIX or Windows (`D:\…`, `D:/…`), keeps all of it, spaces included; otherwise the file is
+    // the last word before `:line`, which may itself carry a drive letter.
+    const gccAbsRe = /^((?:[A-Za-z]:[\\/]|\/)[^:"]*?):(\d+)(?::(\d+))?:\s*(fatal error|error|warning|note|Error|Warning|Note):\s*(.*?)\s*$/;
+    const gccRe = /^(?:.*?\s)?((?:[A-Za-z]:[\\/])?[^\s:"][^:"]*?):(\d+)(?::(\d+))?:\s*(fatal error|error|warning|note|Error|Warning|Note):\s*(.*?)\s*$/;
     // armcc / armclang legacy: "file", line N: Error: #NNN: msg  |  "file", line N (column M): Warning: #NNN-D: msg
     const armOldRe = /^"([^"]+)", line (\d+)(?: \(column (\d+)\))?:\s*(Error|Warning|Fatal error|Remark|Info):\s*(#[\w-]+:)?\s*(.*?)\s*$/;
     // armlink: Error: L6218E: Undefined symbol ...  /  Warning: L6329W: ... / Fatal error: L6002U:
     const armlinkRe = /^(?:.*?:\s*)?(Error|Warning|Fatal error):\s*(L\d{4}[A-Z]):\s*(.*?)\s*$/;
     // GNU ld: file.o: in function `x': path:12: undefined reference to `y'   /   ld: region `FLASH' overflowed by 123 bytes
-    const ldUndefRe = /^(?:\S*(?:ld|ld\.lld|ld\.bfd|collect2): )?(?:(\S+?):(\d+):|(\S+?):\(\S+?\+0x[0-9a-fA-F]+\):)?\s*(undefined reference to .*|multiple definition of .*|cannot find .*|.*will not fit in region .*|region [`'].*?' overflowed by .*|.* exceeds available memory .*)$/;
-    const ldGenericRe = /^(?:.*?)(?:arm-none-eabi-ld|ld\.lld|ld|collect2|clang(?:\+\+)?|armlink|gcc|g\+\+|armclang):\s*(fatal error|error|warning):\s*(.*?)\s*$/;
-    // CMake: CMake Error at CMakeLists.txt:12 (message):  /  CMake Error: ...
-    const cmakeRe = /^CMake (Error|Warning|Deprecation Warning)(?: at ([^:]+):(\d+)(?: \([^)]*\))?)?:\s*(.*?)\s*$/;
-    // cbuild / csolution: `error csolution: ...`, `warning cbuild: ...`, `error cbuild: ...`
-    const cbuildRe = /^(error|warning|info)\s+(csolution|cbuild|cpackget|cbuild2cmake|cbuildgen):\s*(.*?)\s*$/;
+    const ldUndefRe = /^(?:\S*(?:ld|ld\.lld|ld\.bfd|collect2): )?(?:((?:[A-Za-z]:[\\/]|\/)[^:]*?|\S+?):(\d+):|(\S+?):\(\S+?\+0x[0-9a-fA-F]+\):)?\s*(undefined reference to .*|multiple definition of .*|cannot find .*|.*will not fit in region .*|region [`'].*?' overflowed by .*|.* exceeds available memory .*)$/;
+    // A tool's own line: `armclang: warning: argument unused …` and `arm-none-eabi-gcc.exe: error: …` come from the
+    // compiler driver, `ld: …`, `collect2: …` and `armlink: …` from the linker.
+    const ldGenericRe = /^(?:.*?)(arm-none-eabi-ld|ld\.lld|ld|collect2|clang(?:\+\+)?|armlink|gcc|g\+\+|armclang)(?:\.exe)?:\s*(fatal error|error|warning):\s*(.*?)\s*$/;
+    const driverRe = /^(?:clang(?:\+\+)?|gcc|g\+\+|armclang)$/;
+    // CMake: CMake Error at CMakeLists.txt:12 (message):  /  CMake Error at D:/x/CMakeLists.txt:12  /  CMake Error: ...
+    const cmakeRe = /^CMake (Error|Warning|Deprecation Warning)(?: at ((?:[A-Za-z]:[\\/])?[^:]+):(\d+)(?: \([^)]*\))?)?:\s*(.*?)\s*$/;
+    // cbuild / csolution: `error csolution: ...`, `warning cbuild: ...`, `error cbuild: ...`. An error about a YAML file
+    // comes after its location and ` - `: `C:/x/Demo.csolution.yml:43:7 - error csolution: ...`, also without line and
+    // column (`/.cbuild-pack.yml - error csolution: ...`). The file is absolute, POSIX or Windows, spaces included.
+    const cbuildRe = /^(?:((?:[A-Za-z]:[\\/]|\/)[^:"]*?)(?::(\d+)(?::(\d+))?)?\s+-\s+)?(error|warning|info)\s+(csolution|cbuild|cpackget|cbuild2cmake|cbuildgen):\s*(.*?)\s*$/;
     const ninjaFailedRe = /^FAILED:\s*(?:\[code=\d+\]\s*)?(.*?)\s*$/;
     const contextRe = /^\(\d+\/\d+\) Building context:\s*"?([^"]+)"?\s*$/;
     const compilerRe = /^(?:Using compiler:\s*(.+)|Using (\S+ V[\d.]+) compiler,.*)$/;
@@ -139,8 +154,8 @@ export function parseBuildLog(text: string, file: string, stat?: { size: number;
             return;
         }
         if ((m = line.match(cbuildRe))) {
-            if (m[1] === 'info') { return; }
-            push({ severity: sev(m[1]), message: m[3], tool: 'cbuild', code: m[2] }, n);
+            if (m[4] === 'info') { return; }
+            push({ severity: sev(m[4]), file: m[1], line: m[2] ? Number(m[2]) : undefined, col: m[3] ? Number(m[3]) : undefined, message: m[6], tool: 'cbuild', code: m[5] }, n);
             return;
         }
         if ((m = line.match(armlinkRe))) {
@@ -152,12 +167,9 @@ export function parseBuildLog(text: string, file: string, stat?: { size: number;
             push({ severity: sev(m[4]), file: m[1], line: Number(m[2]), col: m[3] ? Number(m[3]) : undefined, code: m[5]?.replace(/:$/, ''), message: m[6], tool: 'compiler' }, n);
             return;
         }
-        if ((m = line.match(gccRe))) {
+        if ((m = line.match(gccAbsRe) ?? line.match(gccRe))) {
             // `In file included from x.h:3:` has no severity and is not matched; `note:` lines that only say "in expansion of macro" are noise.
-            let message = m[5];
-            let code: string | undefined;
-            const flag = message.match(/\s\[(-W[\w#=+.-]+|-Werror(?:=[\w#-]+)?)\]$/);
-            if (flag) { code = flag[1]; message = message.slice(0, -flag[0].length); }
+            const { code, message } = splitWarningFlag(m[5]);
             if (m[4].toLowerCase() === 'note' && /^in expansion of macro|^in definition of macro|^expanded from macro/.test(message)) { return; }
             push({ severity: sev(m[4]), file: m[1], line: Number(m[2]), col: m[3] ? Number(m[3]) : undefined, code, message, tool: 'compiler' }, n);
             return;
@@ -167,8 +179,9 @@ export function parseBuildLog(text: string, file: string, stat?: { size: number;
             return;
         }
         if ((m = line.match(ldGenericRe))) {
-            if (/ld returned \d+ exit status/.test(m[2])) { return; }
-            push({ severity: sev(m[1]), message: m[2], tool: 'linker' }, n);
+            if (/ld returned \d+ exit status/.test(m[3])) { return; }
+            const { code, message } = splitWarningFlag(m[3]);
+            push({ severity: sev(m[2]), code, message, tool: driverRe.test(m[1]) ? 'compiler' : 'linker' }, n);
             return;
         }
     });

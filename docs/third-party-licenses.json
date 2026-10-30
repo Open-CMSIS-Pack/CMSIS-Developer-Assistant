@@ -1,7 +1,7 @@
 [
     {
         "name": "@modelcontextprotocol/sdk",
-        "version": "1.31.0",
+        "version": "1.32.2",
         "spdx": "MIT",
         "url": "https://github.com/modelcontextprotocol/typescript-sdk",
         "license": "https://github.com/modelcontextprotocol/typescript-sdk/blob/main/LICENSE"
@@ -12,6 +12,13 @@
         "spdx": "MIT",
         "url": "https://github.com/expressjs/express",
         "license": "https://github.com/expressjs/express/blob/master/LICENSE"
+    },
+    {
+        "name": "js-yaml",
+        "version": "5.4.2",
+        "spdx": "MIT",
+        "url": "https://github.com/nodeca/js-yaml",
+        "license": "https://github.com/nodeca/js-yaml/blob/master/LICENSE"
     },
     {
         "name": "jsonc-parser",
@@ -28,15 +35,8 @@
         "license": "https://github.com/serialport/node-serialport/blob/master/LICENSE"
     },
     {
-        "name": "cmsis-skills (generic-mcu-skills, vendored under skills/cmsis-skills)",
-        "version": "25c2085",
-        "spdx": "Apache-2.0",
-        "url": "https://github.com/Open-CMSIS-Pack/cmsis-skills",
-        "license": "https://github.com/Open-CMSIS-Pack/cmsis-skills/blob/main/LICENSE"
-    },
-    {
         "name": "zod",
-        "version": "4.6.5",
+        "version": "4.6.7",
         "spdx": "MIT",
         "url": "https://github.com/colinhacks/zod",
         "license": "https://github.com/colinhacks/zod/blob/main/LICENSE"

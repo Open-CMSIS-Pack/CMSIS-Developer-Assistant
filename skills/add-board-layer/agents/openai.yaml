@@ -1,4 +1,0 @@
-interface:
-  display_name: "CMSIS: Add Board Layer"
-  short_description: "Add a board layer to an existing csolution by asking for the few open decisions, then build it"
-  default_prompt: "Use $add-board-layer to add a board layer for my board to this solution."

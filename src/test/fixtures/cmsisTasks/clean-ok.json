@@ -1,0 +1,84 @@
+{
+  "derivedFrom": "Derived from the installed CMSIS Solution 1.72.0 (arm.cmsis-csolution-1.72.0-darwin-arm64): dist/extension.js (BuildCommand.handleRebuild / handleClean / handleBuild → createAndExecuteTaskDefinition, BuildTaskDefinitionBuilder.createDefinitionFromUriOrSolutionNode, BuildTaskProviderImpl.createTask and getTaskLabel, cbuildArgsFromTaskDefinition, BuildStopCommand.stopBuildTask, TerminalTaskRunner.terminateProcess). No live spike was run: the event order is VS Code's for a CustomExecution task; times are illustrative milliseconds from the call.",
+  "description": "cmsis_action clean: the clean command returns the TaskExecution of a cbuild task with clean: true (--clean, no --active: every context of the solution), which exits 0. A build started from the panel meanwhile is noted, never the clean's result.",
+  "action": "clean",
+  "tasks": {
+    "clean": {
+      "name": "cbuild Blinky.csolution.yml --clean --target all --packs",
+      "source": "cmsis-csolution.build",
+      "definition": {
+        "type": "cmsis-csolution.build",
+        "solution": "/work/Blinky/Blinky.csolution.yml",
+        "schemaCheck": false,
+        "active": "NUCLEO-F401RE",
+        "clean": true,
+        "rebuild": false,
+        "setup": false,
+        "buildOutputVerbosity": "normal",
+        "downloadPacks": true,
+        "cmakeTarget": "all",
+        "virtualProject": false
+      },
+      "execution": "CustomExecution (pseudoterminal)"
+    },
+    "build": {
+      "name": "cbuild Blinky.csolution.yml --target all --active NUCLEO-F401RE --packs",
+      "source": "cmsis-csolution.build",
+      "definition": {
+        "type": "cmsis-csolution.build",
+        "solution": "/work/Blinky/Blinky.csolution.yml",
+        "schemaCheck": false,
+        "active": "NUCLEO-F401RE",
+        "clean": false,
+        "rebuild": false,
+        "setup": false,
+        "buildOutputVerbosity": "normal",
+        "downloadPacks": true,
+        "cmakeTarget": "all",
+        "virtualProject": false
+      },
+      "execution": "CustomExecution (pseudoterminal)"
+    }
+  },
+  "events": [
+    {
+      "at": 0,
+      "event": "issued"
+    },
+    {
+      "at": 20,
+      "event": "onDidStartTask",
+      "task": "clean"
+    },
+    {
+      "at": 21,
+      "event": "commandReturned",
+      "task": "clean"
+    },
+    {
+      "at": 25,
+      "event": "onDidStartTaskProcess",
+      "task": "clean"
+    },
+    {
+      "at": 900,
+      "event": "onDidEndTaskProcess",
+      "task": "clean",
+      "exitCode": 0
+    },
+    {
+      "at": 905,
+      "event": "onDidEndTask",
+      "task": "clean"
+    },
+    {
+      "at": 950,
+      "event": "onDidStartTask",
+      "task": "build"
+    }
+  ],
+  "expect": {
+    "state": "ok",
+    "decidedBy": "clean"
+  }
+}

@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
+import type * as vscode from 'vscode';
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-    decodeFields, expandDimIndex, findPeripheral, findRegister, parseSvdXml, resolveSvdPath, selectSvdEntry,
+    decodeFields, expandDimIndex, findPeripheral, findRegister, findSvdFile, parseSvdXml, resolveSvdForLookup, resolveSvdPath, selectSvdEntry,
     svdEntriesFromCbuildRun, SvdRegister,
 } from '../core/svdParser';
 
@@ -206,6 +207,57 @@ suite('SVD path resolution', () => {
         assert.strictEqual((await resolveSvdPath({ ...base, svdFile: '${CMSIS_PACK_ROOT}/dev.svd', packRoot: path.join(dir, 'elsewhere') })).path, null, 'a wrong root does not find it');
     });
 
+    test('a relative cbuild-run entry is relative to the cbuild-run file\'s folder, however the file was found', async () => {
+        // A local DFP (csolution `packs: - path: ../DFP_machine`): csolution names its SVD relative to out/.
+        const svd = touch('DFP_machine/Device/x.svd');
+        // On Windows csolution's text-mode stream writes CRLF.
+        for (const eol of ['\n', '\r\n']) {
+            const ending = eol === '\n' ? 'LF' : 'CRLF';
+            const app = `app-${ending}`;
+            const run = touch(`${app}/out/app+HW.cbuild-run.yml`, [
+                'cbuild-run:',
+                '  system-descriptions:',
+                '    - file: ../../DFP_machine/Device/x.svd',
+                '      type: svd',
+                '',
+            ].join(eol));
+            assert.strictEqual((await resolveSvdPath({ ...base, cbuildRunFile: run })).path, svd, `${ending}: the session's cbuild-run file`);
+            assert.strictEqual((await resolveSvdPath({ ...base, cwd: path.join(dir, app) })).path, svd, `${ending}: <cwd>/out`);
+            assert.strictEqual((await resolveSvdPath({ workspaceCbuildRunFiles: async () => [run], workspaceSvdFiles: none })).path, svd, `${ending}: the workspace scan`);
+        }
+    });
+
+    test('the reader and the lookups read the session they are given, focused or not', async () => {
+        const hp = touch('packs/hp.svd');
+        const he = touch('packs/he.svd');
+        const run = touch('out/app+HW.cbuild-run.yml', [
+            'cbuild-run:',
+            '  system-descriptions:',
+            `    - file: ${hp}`,
+            '      type: svd',
+            '      pname: M55_HP',
+            `    - file: ${he}`,
+            '      type: svd',
+            '      pname: M55_HE',
+            '',
+        ].join('\n'));
+        // The test host focuses no session, as a multi-core launch often leaves it: only the session passed in names the files.
+        const session = (configuration: Record<string, unknown>): vscode.DebugSession =>
+            ({ name: 'M55_HE CMSIS-DAP@pyOCD (launch)', configuration }) as unknown as vscode.DebugSession;
+        const core = session({ cmsis: { cbuildRunFile: run } });
+        assert.strictEqual(await findSvdFile(core), he, 'the session name picks the core');
+        assert.strictEqual((await resolveSvdForLookup({ session: core })).path, he, 'a lookup agrees with the reader');
+        assert.strictEqual((await resolveSvdForLookup({ session: core, pname: 'M55_HP' })).path, hp, 'pname still picks another core');
+        // A launch svdFile describes the session's own core, here a hand-patched copy of the HE description.
+        const patched = touch('he-patched.svd');
+        const launch = session({ svdFile: patched, cmsis: { cbuildRunFile: run } });
+        assert.strictEqual(await findSvdFile(launch), patched, 'the launch configuration\'s svdFile comes first');
+        assert.strictEqual((await resolveSvdForLookup({ session: launch })).path, patched, 'for a lookup too');
+        assert.strictEqual((await resolveSvdForLookup({ session: launch, svdFile: hp })).path, hp, 'the tool\'s svdFile wins over it');
+        assert.strictEqual((await resolveSvdForLookup({ session: launch, pname: 'M55_HP' })).path, hp, 'a call that names another core gets that core');
+        assert.strictEqual((await resolveSvdForLookup({ session: launch, pname: 'M55_HE' })).path, he, 'a named core is its cbuild-run entry');
+    });
+
     test('a single workspace SVD is used, several are not guessed between', async () => {
         const one = touch('a.svd');
         assert.strictEqual((await resolveSvdPath({ workspaceCbuildRunFiles: none, workspaceSvdFiles: async () => [one] })).path, one);
@@ -295,6 +347,7 @@ suite('svdParser parseSvdXml', () => {
         assert.strictEqual(selectSvdEntry(entries, 'hp')?.pname, 'M55_HP', 'a partial pname still selects');
         assert.strictEqual(selectSvdEntry(entries, undefined, 'M55_HP CMSIS_DAP@pyOCD (launch)')?.pname, 'M55_HP');
         assert.strictEqual(selectSvdEntry(entries, undefined, 'Debug')?.pname, 'M55_HE', 'falls back to the first entry');
+        assert.deepStrictEqual(svdEntriesFromCbuildRun(yaml.replace(/\n/g, '\r\n')), entries, 'CRLF, as csolution writes on Windows, reads the same');
     });
 
     test('resolveSvdPath tries explicit, cbuild-run, workspace cbuild-run, then a single workspace svd', async () => {

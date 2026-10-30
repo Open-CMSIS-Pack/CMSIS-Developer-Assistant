@@ -326,7 +326,8 @@ export function readElf(file: string, options: ReadElfOptions = {}): ElfInfo {
                 if (!name || isMappingSymbol(name)) { continue; }
                 const shndx = table.readUInt16LE(o + 14);
                 let value = table.readUInt32LE(o + 4);
-                if (type === 'FUNC') { value &= ~1; }
+                // Clear the Thumb bit; `>>> 0` keeps addresses from 0x80000000 up positive (`&` yields a signed 32-bit value).
+                if (type === 'FUNC') { value = (value & ~1) >>> 0; }
                 symbols.push({
                     name, value, size: table.readUInt32LE(o + 8), type, binding: symbolBinding(info), shndx,
                     section: shndx > 0 && shndx < sections.length ? sections[shndx].name : undefined,

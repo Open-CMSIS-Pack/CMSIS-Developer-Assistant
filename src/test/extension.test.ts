@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-import * as assert from 'assert';
 import * as vscode from 'vscode';
+import * as assert from 'assert';
 
 /**
  * Placeholder that keeps one trivially passing test in the suite. It checks

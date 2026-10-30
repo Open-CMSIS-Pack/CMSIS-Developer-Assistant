@@ -40,16 +40,17 @@ export type AgentRulesInstall = 'ask' | 'never';
 export const RULE_FILES_STATE_KEY = 'cmsis-developer-assistant.agentRules.files';
 
 /** The agents with a rule file. Claude Desktop has none and relies on the server instructions. */
-export type RuleAgentId = 'claude-code' | 'codex' | 'copilot-cli' | 'antigravity' | 'copilot-chat' | 'cursor' | 'cline' | 'roo';
+export type RuleAgentId = 'claude-code' | 'codex' | 'copilot-cli' | 'antigravity' | 'kimi-code' | 'copilot-chat' | 'cursor' | 'cline' | 'roo';
 
 /** In the order the picker names them. */
-export const RULE_AGENTS: readonly RuleAgentId[] = ['claude-code', 'codex', 'copilot-cli', 'antigravity', 'copilot-chat', 'cursor', 'cline', 'roo'];
+export const RULE_AGENTS: readonly RuleAgentId[] = ['claude-code', 'codex', 'copilot-cli', 'antigravity', 'kimi-code', 'copilot-chat', 'cursor', 'cline', 'roo'];
 
 export const RULE_AGENT_NAMES: Readonly<Record<RuleAgentId, string>> = {
     'claude-code': 'Claude Code',
     'codex': 'Codex',
     'copilot-cli': 'GitHub Copilot CLI',
     'antigravity': 'Antigravity',
+    'kimi-code': 'Kimi Code',
     'copilot-chat': 'VS Code Copilot Chat',
     'cursor': 'Cursor',
     'cline': 'Cline',
@@ -132,6 +133,12 @@ const OWN_FILE_STEM = 'cmsis-developer-assistant';
  *   (https://antigravity.google/docs/rules). Unverified: which of the two
  *   user files wins when both exist; `~/.gemini/AGENTS.md` is not read by
  *   Gemini CLI, which shares `~/.gemini`, so the rules stay with Antigravity.
+ * - Kimi Code (checked 2026-10-25): `$KIMI_CODE_HOME/AGENTS.md`, default
+ *   `~/.kimi-code/AGENTS.md`, then `~/.agents/AGENTS.md`; per directory from
+ *   the git root down `.kimi-code/AGENTS.md` and `AGENTS.md`; not `CLAUDE.md`
+ *   (https://moonshotai.github.io/kimi-code/en/customization/agents). It
+ *   passes no MCP server instructions to the model, so these files are the
+ *   rules' only way into its system prompt.
  * - VS Code Copilot Chat: the workspace `AGENTS.md` (`chat.useAgentsMdFile`,
  *   default true) and `.github/copilot-instructions.md`
  *   (`github.copilot.chat.codeGeneration.useInstructionFiles`, default true)
@@ -153,7 +160,8 @@ const OWN_FILE_STEM = 'cmsis-developer-assistant';
  * Offered here, as proposal 50 decided: the user file of Claude Code, Codex
  * and Copilot CLI, preselected, because their MCP registration is per user
  * too; the same for Antigravity, whose user file the proposal could not name
- * yet. Copilot Chat, Cursor, Cline and Roo Code get their workspace file only.
+ * yet, and for Kimi Code. Copilot Chat, Cursor, Cline and Roo Code get their
+ * workspace file only.
  */
 
 /** The file an agent reads in every project, when the rules go there; undefined for workspace-only agents. */
@@ -168,6 +176,8 @@ function userRuleFile(agent: RuleAgentId, context: RuleTargetContext): string | 
             return path.join(env.COPILOT_HOME || path.join(home, '.copilot'), 'copilot-instructions.md');
         case 'antigravity':
             return path.join(home, '.gemini', 'AGENTS.md');
+        case 'kimi-code':
+            return path.join(env.KIMI_CODE_HOME || path.join(home, '.kimi-code'), 'AGENTS.md');
         default:
             return undefined;
     }

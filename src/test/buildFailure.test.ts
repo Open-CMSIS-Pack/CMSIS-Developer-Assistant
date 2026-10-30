@@ -26,7 +26,7 @@ import {
     idxFileName,
     idxMessages,
     messagesFromLog,
-    parseYamlSubset,
+    parseCmsisYaml,
     primaryOutputs,
     readToolsEnvironment,
     rerunSkipText,
@@ -60,7 +60,7 @@ suite('build failure (#15)', () => {
 
     suite('the YAML the CMSIS tools write', () => {
         test('block mappings and sequences, quoted and plain scalars, comments, flow empties', () => {
-            const doc = parseYamlSubset([
+            const doc = parseCmsisYaml([
                 '# header comment',
                 'root:',
                 '  plain: some text # trailing comment',
@@ -84,13 +84,32 @@ suite('build failure (#15)', () => {
             assert.deepStrictEqual(doc, {
                 root: {
                     plain: 'some text', 'quoted key': 'it\'s', escaped: 'tab\there\nnext é', empty: {}, none: [],
-                    list: ['one', { key: 'value', other: '2' }], compact: ['a', 'b'], folded: 'first second', block: 'line 1\n  line 2',
+                    list: ['one', { key: 'value', other: '2' }], compact: ['a', 'b'], folded: 'first second', block: 'line 1\n  line 2\n',
                 },
             });
         });
 
+        test('#102: a comment after a key, a flow sequence and a block scalar read as YAML defines them', () => {
+            assert.deepStrictEqual(parseCmsisYaml('solution:\n  select-compiler: # tested compilers\n    - compiler: AC6\n    - compiler: GCC\n'),
+                { solution: { 'select-compiler': [{ compiler: 'AC6' }, { compiler: 'GCC' }] } });
+            assert.deepStrictEqual(parseCmsisYaml('solution:\n  cdefault: # use the default\n  compiler: AC6\n'),
+                { solution: { cdefault: null, compiler: 'AC6' } });
+            assert.deepStrictEqual(parseCmsisYaml('project:\n  output:\n    type: [elf, hex, map]\n'),
+                { project: { output: { type: ['elf', 'hex', 'map'] } } });
+            assert.deepStrictEqual(parseCmsisYaml('a:\n  execute: |\n    DAP_Delay(500000);  // Delay for 500ms\n'),
+                { a: { execute: 'DAP_Delay(500000);  // Delay for 500ms\n' } });
+        });
+
+        test('scalars stay strings, an empty value is null, and a file that is not YAML reads as nothing', () => {
+            assert.deepStrictEqual(parseCmsisYaml('port: 3333\nversion: 1.0\nflag: true\nempty:\ntilde: ~\nquoted: "null"\n'),
+                { port: '3333', version: '1.0', flag: 'true', empty: null, tilde: null, quoted: 'null' });
+            assert.strictEqual(parseCmsisYaml(''), null);
+            assert.strictEqual(parseCmsisYaml('a: [unclosed'), null);
+            assert.deepStrictEqual(idxMessages('build-idx: [unclosed'), { errors: [], warnings: [] });
+        });
+
         test('a Windows path and a URL are values, not keys', () => {
-            assert.deepStrictEqual(parseYamlSubset('- C:/Users/dev/bin\n- https://pyocd.io/docs/\n- C:\\tools'),
+            assert.deepStrictEqual(parseCmsisYaml('- C:/Users/dev/bin\n- https://pyocd.io/docs/\n- C:\\tools'),
                 ['C:/Users/dev/bin', 'https://pyocd.io/docs/', 'C:\\tools']);
         });
     });

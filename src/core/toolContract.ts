@@ -23,7 +23,7 @@
  * written. Its two sections sit between marker pairs (src/utils/markerBlock.ts);
  * the MCP server leads its instructions with the rules, and
  * `npm run skills:sync` copies the blocks into every file of
- * `CONTRACT_COPIES` and into the generated cmsis-help skill, where
+ * `CONTRACT_COPIES` including the authored cmsis-help skill, where
  * src/test/toolContract.test.ts compares them with the source. Pure: no I/O,
  * no vscode.
  */
@@ -76,31 +76,22 @@ export function endOfTopic(name: string): BlockPlacement {
 }
 
 /**
- * The hand-written files that carry the contract. The rules go to every one
- * of them; the table goes where agents plan builds and probe work: the
- * debugging skill and the build topic of the guide. The generated cmsis-help
- * skill is rendered with both blocks by `renderHelpSkillMarkdown`.
+ * The shipped help skill and debugging guide carry the contract. Knowledge procedure
+ * sources live in cmsis-knowledge-base and contain no generated copies of these rules.
  */
 export const CONTRACT_COPIES: readonly ContractCopy[] = [
     {
-        file: 'skills/cmsis-debug-live/SKILL.md',
+        file: 'skills/cmsis-help/SKILL.md',
         blocks: [
             { id: RULES_BLOCK, placement: AFTER_HEADING_1 },
             { id: TABLE_BLOCK, placement: afterBlock(RULES_BLOCK) },
         ],
     },
-    { file: 'skills/cmsis-pack-docs/SKILL.md', blocks: [{ id: RULES_BLOCK, placement: AFTER_HEADING_1 }] },
-    { file: 'skills/add-board-layer/SKILL.md', blocks: [{ id: RULES_BLOCK, placement: AFTER_HEADING_1 }] },
-    { file: 'skills/cmsis-bootstrap/SKILL.md', blocks: [{ id: RULES_BLOCK, placement: AFTER_HEADING_1 }] },
-    { file: 'skills/cmsis-debugger-setup/SKILL.md', blocks: [{ id: RULES_BLOCK, placement: AFTER_HEADING_1 }] },
-    { file: 'skills/start-cmsis-project/SKILL.md', blocks: [{ id: RULES_BLOCK, placement: AFTER_HEADING_1 }] },
-    { file: 'skills/fvp-debug-setup/SKILL.md', blocks: [{ id: RULES_BLOCK, placement: AFTER_HEADING_1 }] },
-    { file: 'skills/debugger-troubleshooting/SKILL.md', blocks: [{ id: RULES_BLOCK, placement: AFTER_HEADING_1 }] },
     {
         file: 'docs/agent-resources/debug_instructions.md',
         blocks: [
             { id: RULES_BLOCK, placement: AFTER_HEADING_1 },
-            { id: TABLE_BLOCK, placement: endOfTopic('build') },
+            { id: TABLE_BLOCK, placement: endOfTopic('flash') },
         ],
     },
 ];

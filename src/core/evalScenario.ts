@@ -16,11 +16,11 @@
 
 /**
  * The pure half of the agent evaluation runner (scripts/eval-scenario.ts):
- * scenario validation, aggregation of a Copilot CLI JSON event stream into
- * tool calls / turns / final answer, the shell commands that bypass the MCP
- * tools (#50), the verdict, and the MCP-config edit the runner makes and
- * undoes. No I/O, no vscode, so it is unit-tested; the runner itself needs an
- * authenticated agent CLI and a target and is not.
+ * scenario validation, aggregation of a Copilot CLI JSON event stream or a
+ * Kimi Code stream-json run into tool calls / turns / final answer, the shell
+ * commands that bypass the MCP tools (#50), the verdict, and the MCP-config
+ * edits the runner makes. No I/O, no vscode, so it is unit-tested; the runner
+ * itself needs an authenticated agent CLI and a target and is not.
  */
 
 export interface ScenarioSpec {
@@ -169,21 +169,29 @@ export function aggregateEvents(events: unknown[]): EvalAggregate {
  * packs through their own CLIs, installing pyOCD, and curl against the
  * control server (#50, #45). Proposal 50's list with two corrections: `cbuild`
  * followed by `-` is a file name (`app.cbuild-run.yml`), not the command, and
- * curl may take options before the URL. Matched case-insensitively.
+ * curl may take options before the URL. The simulated board counts as the
+ * board: an FVP model run as a command (not a file such as `fvp_config.txt`),
+ * the fixture's model shim `fvp.sh`, and a docker
+ * command that starts or ends a container (a Kimi Code run started the model
+ * by hand and removed the extension's container). Matched case-insensitively.
  */
 export const DEFAULT_SHELL_DENY_LIST =
     String.raw`\b(pyocd|arm-none-eabi-gdb|gdb-multiarch|JLink(Exe|GDBServer\w*)|openocd|cbuild(?!-)|cpackget|pip3? install)\b`
-    + String.raw`|\bcurl\b[^|;&\n]*\b(localhost|127\.0\.0\.1)`;
+    + String.raw`|\bcurl\b[^|;&\n]*\b(localhost|127\.0\.0\.1)`
+    + String.raw`|\bFVP_[\w-]+(?=\s|$)|\bfvp\.sh\b|\bdocker\s+(run|rm|kill|stop|start|exec)\b`;
 
 /**
- * The Copilot CLI tools that run shell commands, and the argument that holds
- * the command. `bash` (macOS, Linux) and `powershell` (Windows) with `command`
- * follow the hook input the Copilot CLI documentation shows (toolName "bash",
- * toolArgs {"command": …}). `shell`, and the `write_*` tools that type into a
- * running shell, are assumptions to check against a recorded run.
+ * The agent tools that run shell commands, and the argument that holds the
+ * command. Copilot CLI: `bash` (macOS, Linux) and `powershell` (Windows) with
+ * `command` follow the hook input its documentation shows (toolName "bash",
+ * toolArgs {"command": …}); `shell`, and the `write_*` tools that type into a
+ * running shell, are assumptions to check against a recorded run. Kimi Code:
+ * `Bash` with `command` (MoonshotAI/kimi-code `agent/tools/os/bash` at
+ * 743f140, and its recorded sessions).
  */
 const SHELL_TOOLS: ReadonlyMap<string, string> = new Map([
     ['bash', 'command'],
+    ['Bash', 'command'],
     ['powershell', 'command'],
     ['shell', 'command'],
     ['write_bash', 'input'],
@@ -315,4 +323,96 @@ export function restoreMcpServer(config: unknown, name: string, previous: unknow
     const servers = { ...((base.mcpServers as Record<string, unknown>) ?? {}) };
     if (previous === undefined) { delete servers[name]; } else { servers[name] = previous; }
     return { ...base, mcpServers: servers };
+}
+
+// ---------------------------------------------------------------------------
+// Kimi Code
+// ---------------------------------------------------------------------------
+
+/**
+ * The entry a Kimi Code run gets in its work copy's `.kimi-code/mcp.json`:
+ * the one *Configure Agent* writes (`ENTRY_SHAPES` in
+ * src/utils/agentConfigurationManager.ts), so that a run measures what users
+ * get. Without `toolTimeoutMs` Kimi ends every tool call after 60 s.
+ */
+export function kimiMcpEntry(url: string): { url: string; toolTimeoutMs: number } {
+    return { url, toolTimeoutMs: 630_000 };
+}
+
+/** A Kimi run's aggregate, and the session id its resume hint names, where the session log is. */
+export interface KimiAggregate extends EvalAggregate {
+    sessionId?: string;
+}
+
+/**
+ * Aggregate a Kimi Code `kimi -p … --output-format stream-json` run. Each
+ * line is a chat message (MoonshotAI/kimi-code
+ * `apps/kimi-code/src/cli/prompt-render.ts` at 743f140): an assistant
+ * message per model step, `{role: 'assistant', content?, tool_calls?: [{id,
+ * function: {name, arguments}}]}` with the arguments as JSON text; a tool
+ * message per result, `{role: 'tool', tool_call_id, content}`; and meta lines
+ * (`turn.step.retrying`, `system.version`, `session.resume_hint` with the
+ * session id). Thinking is not in the stream, nor is token usage, which the
+ * session log has (`sumKimiUsage`). Every assistant message counts as a turn.
+ */
+export function aggregateKimiStream(lines: unknown[]): KimiAggregate {
+    const toolCalls: ToolCallRecord[] = [];
+    const byId = new Map<string, ToolCallRecord>();
+    let turns = 0;
+    let finalAnswer = '';
+    let sessionId: string | undefined;
+    const unknown = new Set<string>();
+
+    for (const raw of lines) {
+        if (!raw || typeof raw !== 'object') { continue; }
+        const line = raw as Record<string, unknown>;
+        if (line.role === 'assistant') {
+            turns += 1;
+            if (typeof line.content === 'string' && line.content.trim()) { finalAnswer = line.content; }
+            for (const call of Array.isArray(line.tool_calls) ? line.tool_calls : []) {
+                const fn = (call as { function?: { name?: unknown; arguments?: unknown } }).function ?? {};
+                const text = typeof fn.arguments === 'string' ? fn.arguments : JSON.stringify(fn.arguments ?? {});
+                let args: unknown = text;
+                try { args = JSON.parse(text); } catch { /* kept as text */ }
+                const rec: ToolCallRecord = { name: String(fn.name ?? 'unknown'), argBytes: Buffer.byteLength(text), args };
+                toolCalls.push(rec);
+                const id = (call as { id?: unknown }).id;
+                if (typeof id === 'string') { byId.set(id, rec); }
+            }
+        } else if (line.role === 'tool') {
+            const rec = typeof line.tool_call_id === 'string' ? byId.get(line.tool_call_id) : undefined;
+            if (rec) { rec.resultBytes = Buffer.byteLength(textOf(line.content)); }
+        } else if (line.role === 'meta' && line.type === 'session.resume_hint') {
+            sessionId = typeof line.session_id === 'string' ? line.session_id : undefined;
+        } else if (line.role === 'meta' && (line.type === 'system.version' || line.type === 'turn.step.retrying')) {
+            // lifecycle
+        } else {
+            unknown.add(`${String(line.role ?? '?')}:${String(line.type ?? '?')}`);
+        }
+    }
+    return { toolCalls, turns, finalAnswer, eventCount: lines.length, unknownEventTypes: [...unknown].sort(), sessionId };
+}
+
+/**
+ * The token usage of a Kimi session: the sum of the `usage.record` events of
+ * its log (`agents/<agent>/wire.jsonl`), one per turn, each with `usage`
+ * counts such as `inputOther`, `output`, `inputCacheRead`. Records of another
+ * scope than `turn` are left out, so that nothing is counted twice; undefined
+ * when there is none.
+ */
+export function sumKimiUsage(events: unknown[]): Record<string, number> | undefined {
+    const total: Record<string, number> = {};
+    let any = false;
+    for (const raw of events) {
+        const event = raw as { type?: unknown; usageScope?: unknown; usage?: unknown } | null;
+        if (!event || event.type !== 'usage.record' || (event.usageScope !== undefined && event.usageScope !== 'turn')) { continue; }
+        if (!event.usage || typeof event.usage !== 'object') { continue; }
+        for (const [key, value] of Object.entries(event.usage as Record<string, unknown>)) {
+            if (typeof value === 'number') {
+                total[key] = (total[key] ?? 0) + value;
+                any = true;
+            }
+        }
+    }
+    return any ? total : undefined;
 }

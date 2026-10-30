@@ -28,6 +28,6 @@ project:
     - component: Device:Native Driver:Timeout
     - component: Device:Native Driver:UART
     - component: Device:Startup&C Startup
-    - component: Compiler:CORE
-    - component: Compiler:STDOUT:Custom
+    - component: CMSIS-Compiler:CORE
+    - component: CMSIS-Compiler:STDOUT:Custom
     - component: Device:USART Retarget

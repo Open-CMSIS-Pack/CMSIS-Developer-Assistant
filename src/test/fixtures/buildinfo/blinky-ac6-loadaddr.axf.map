@@ -1,0 +1,63 @@
+Component: Arm Compiler for Embedded 6.24 Tool: armlink [5f371500]
+
+==============================================================================
+
+Memory Map of the image
+
+  Image Entry point : 0x08000271
+
+  Load Region LR_ROM0 (Base: 0x08000000, Size: 0x00008a20, Max: 0x00100000, ABSOLUTE)
+
+    Execution Region ER_ROM0 (Exec base: 0x08000000, Load base: 0x08000000, Size: 0x00008960, Max: 0x00100000, ABSOLUTE)
+
+    Exec Addr    Load Addr    Size         Type   Attr      Idx    E Section Name        Object
+
+    0x08000000   0x08000000   0x00000188   Data   RO           47    RESET               startup_stm32l475xx.o
+    0x08000188   0x08000188   0x00000008   Code   RO         3202  * !!!main             c_wu.l(__main.o)
+    0x08000190   0x08000190   0x0000005c   Code   RO         3545    !!!scatter          c_wu.l(__scatter.o)
+    0x080001ec   0x080001ec   0x0000001a   Code   RO         3549    !!handler_copy      c_wu.l(__scatter_copy.o)
+    0x08000206   0x08000206   0x00000002   PAD
+    0x08000208   0x08000208   0x00000002   Code   RO         3546    !!handler_null      c_wu.l(__scatter.o)
+    0x0800020a   0x0800020a   0x00000002   PAD
+    0x0800020c   0x0800020c   0x0000001c   Code   RO         3551    !!handler_zi        c_wu.l(__scatter_zi.o)
+    0x08000228   0x08000228   0x00000002   Code   RO         3348    .ARM.Collect$$libinit$$00000000  c_wu.l(libinit.o)
+
+
+
+    Execution Region RW_NOINIT (Exec base: 0x20000000, Load base: 0x08008960, Size: 0x00000000, Max: 0x00018000, ABSOLUTE, UNINIT)
+
+    **** No section assigned to this execution region ****
+
+
+    Execution Region RW_RAM0 (Exec base: 0x20000000, Load base: 0x08008960, Size: 0x000098e0, Max: 0x00018000, ABSOLUTE)
+
+    Exec Addr    Load Addr    Size         Type   Attr      Idx    E Section Name        Object
+
+    0x20000000   0x08008960   0x00000004   Data   RW         3218    .data               c_wu.l(stdio_streams.o)
+    0x20000004   0x08008964   0x00000004   Data   RW         3219    .data               c_wu.l(stdio_streams.o)
+    0x20000008   0x08008968   0x00000004   Data   RW         3220    .data               c_wu.l(stdio_streams.o)
+    0x2000000c   0x0800896c   0x00000004   Data   RW         3320    .data               c_wu.l(streamlock.o)
+    0x20000010   0x08008970   0x00000004   Data   RW          172    .data.SystemCoreClock  system_stm32l4xx.o
+    0x20000014   0x08008974   0x000000a4   Data   RW         2546    .data.os            rtx_kernel.o
+    0x200000b8   0x08008a18   0x00000004   Data   RW          399    .data.uwTickFreq    stm32l4xx_hal.o
+    0x200000c0        -       0x00000054   Zero   RW         3215    .bss                c_wu.l(stdio_streams.o)
+    0x20000114        -       0x00000054   Zero   RW         3216    .bss                c_wu.l(stdio_streams.o)
+
+Image component sizes
+
+
+      Code (inc. data)   RO Data    RW Data    ZI Data      Debug   Object Name
+
+
+      Code (inc. data)   RO Data    RW Data    ZI Data      Debug   
+
+     33964        408       1204        192      38944     637245   Grand Totals
+     33964        408       1204        192      38944     637245   ELF Image Totals
+     33964        408       1204        192          0          0   ROM Totals
+
+==============================================================================
+
+    Total RO  Size (Code + RO Data)                35168 (  34.34kB)
+    Total RW  Size (RW Data + ZI Data)             39136 (  38.22kB)
+    Total ROM Size (Code + RO Data + RW Data)      35360 (  34.53kB)
+

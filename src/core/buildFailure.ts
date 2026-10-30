@@ -34,9 +34,8 @@
  * reports for failed builds too; `idxBuildFiles` and `primaryOutputs` name
  * the images whose age shows whether it rebuilt.
  *
- * Both YAML files are generated, and are read line by line by a reader for
- * the subset of YAML they use (block mappings and sequences, plain and
- * quoted scalars); there is no YAML dependency.
+ * Both YAML files are read with js-yaml (`parseCmsisYaml`): scalars stay
+ * strings, as the CMSIS tools write them, and a value left empty is null.
  *
  * Stage B is interim: it goes once CMSIS Solution offers a log of its own
  * build, as a task-definition property or a "last build output" command
@@ -46,6 +45,7 @@
  */
 
 import * as path from 'path';
+import { FAILSAFE_SCHEMA, load, nullCoreTag } from 'js-yaml';
 import type { BuildLogSummary, Diagnostic } from './buildInfo/buildLog';
 import { BuildMessage, MAX_BUILD_MESSAGES } from './cmsisTasks';
 
@@ -60,233 +60,32 @@ export const DIAGNOSTIC_RERUN_CAP_MS = 120_000;
  */
 export const IDX_FRESHNESS_SLACK_MS = 2_000;
 
-// ── A reader for the YAML the CMSIS tools generate ──────────────────────────
+// ── The YAML the CMSIS tools write ──────────────────────────────────────────
 
 /** What the reader returns: scalars stay strings. */
 export type YamlValue = string | null | YamlValue[] | { [key: string]: YamlValue };
 
-interface YamlLine {
-    indent: number;
-    /** The line without its indentation and trailing blanks. */
-    text: string;
-}
-
-/** Escapes of double-quoted YAML scalars that stand for one character. */
-const ESCAPES: ReadonlyMap<string, string> = new Map([
-    ['0', '\0'], ['a', '\x07'], ['b', '\b'], ['t', '\t'], ['\t', '\t'], ['n', '\n'], ['v', '\v'], ['f', '\f'], ['r', '\r'],
-    ['e', '\x1b'], [' ', ' '], ['"', '"'], ['/', '/'], ['\\', '\\'], ['N', '\u0085'], ['_', ' '], ['L', ' '], ['P', ' '],
-]);
-/** Hex digits after `\x`, `\u` and `\U`. */
-const HEX_ESCAPES: ReadonlyMap<string, number> = new Map([['x', 2], ['u', 4], ['U', 8]]);
-/** A plain mapping key: no indicator first, and no `: ` inside. */
-const PLAIN_KEY = /^([^\s#"'{}[\],&*!|>%@`](?:[^:]|:(?!\s|$))*?)\s*:(?=\s|$)/;
-/** A block scalar header, `|` or `>` with an optional chomping and indentation indicator. */
-const BLOCK_SCALAR = /^[|>][+-]?\d*\s*(?:#.*)?$/;
-
-function yamlLines(text: string): YamlLine[] {
-    const lines: YamlLine[] = [];
-    for (const raw of text.split(/\r?\n/)) {
-        const trimmed = raw.replace(/\s+$/, '');
-        const body = trimmed.trimStart();
-        if (body.length === 0 || body.startsWith('#') || body === '---' || body === '...' || body.startsWith('%')) {
-            continue;
-        }
-        lines.push({ indent: trimmed.length - body.length, text: body });
-    }
-    return lines;
-}
-
-/** A quoted scalar at the start of `text`: its value and where it ends; undefined when it does not end on this text. */
-function readQuoted(text: string): { value: string; end: number } | undefined {
-    const quote = text[0];
-    let value = '';
-    for (let at = 1; at < text.length; at++) {
-        const char = text[at];
-        if (quote === '\'') {
-            if (char === '\'') {
-                if (text[at + 1] === '\'') {
-                    value += '\'';
-                    at++;
-                    continue;
-                }
-                return { value, end: at + 1 };
-            }
-            value += char;
-            continue;
-        }
-        if (char === '"') {
-            return { value, end: at + 1 };
-        }
-        if (char !== '\\') {
-            value += char;
-            continue;
-        }
-        const escaped = text[at + 1];
-        const digits = HEX_ESCAPES.get(escaped);
-        if (digits !== undefined) {
-            const code = parseInt(text.slice(at + 2, at + 2 + digits), 16);
-            value += Number.isNaN(code) ? escaped : String.fromCodePoint(code);
-            at += 1 + digits;
-            continue;
-        }
-        value += ESCAPES.get(escaped) ?? escaped ?? '';
-        at++;
-    }
-    return undefined;
-}
-
-/** The key of a mapping line and the text after its colon; undefined for anything else. */
-function mappingEntry(text: string): { key: string; rest: string } | undefined {
-    if (text.startsWith('"') || text.startsWith('\'')) {
-        const quoted = readQuoted(text);
-        const colon = quoted ? /^\s*:(?=\s|$)/.exec(text.slice(quoted.end)) : null;
-        return quoted && colon ? { key: quoted.value, rest: text.slice(quoted.end + colon[0].length).trim() } : undefined;
-    }
-    const plain = PLAIN_KEY.exec(text);
-    return plain ? { key: plain[1], rest: text.slice(plain[0].length).trim() } : undefined;
-}
-
-function isSequenceEntry(text: string): boolean {
-    return text === '-' || text.startsWith('- ');
-}
-
-/** A plain scalar without a trailing comment. */
-function withoutComment(text: string): string {
-    return text.replace(/\s+#.*$/, '').trim();
-}
-
-/** Reads the block structure of a YAML document from its lines. */
-class YamlSubsetReader {
-    private at = 0;
-
-    constructor(private readonly lines: YamlLine[]) {}
-
-    document(): YamlValue {
-        return this.lines.length === 0 ? null : this.node(this.lines[0].indent - 1);
-    }
-
-    /** The node that starts at the current line, below an owner at `ownerIndent`. */
-    private node(ownerIndent: number): YamlValue {
-        const line = this.lines[this.at];
-        if (isSequenceEntry(line.text)) {
-            return this.sequence(line.indent);
-        }
-        if (mappingEntry(line.text)) {
-            return this.mapping(line.indent);
-        }
-        this.at++;
-        return this.inline(line.text, ownerIndent);
-    }
-
-    /** What follows a key or a dash with nothing after it: deeper lines, or a sequence at the key's own indent. */
-    private nested(ownerIndent: number, sequenceAtSameIndent: boolean): YamlValue {
-        const next = this.lines[this.at];
-        if (!next) {
-            return null;
-        }
-        if (next.indent > ownerIndent) {
-            return this.node(ownerIndent);
-        }
-        return sequenceAtSameIndent && next.indent === ownerIndent && isSequenceEntry(next.text) ? this.sequence(ownerIndent) : null;
-    }
-
-    private mapping(indent: number): YamlValue {
-        const map: { [key: string]: YamlValue } = {};
-        while (this.at < this.lines.length) {
-            const line = this.lines[this.at];
-            const entry = line.indent === indent ? mappingEntry(line.text) : undefined;
-            if (!entry) {
-                break;
-            }
-            this.at++;
-            map[entry.key] = entry.rest.length > 0 ? this.inline(entry.rest, indent) : this.nested(indent, true);
-        }
-        return map;
-    }
-
-    private sequence(indent: number): YamlValue {
-        const list: YamlValue[] = [];
-        while (this.at < this.lines.length) {
-            const line = this.lines[this.at];
-            if (line.indent !== indent || !isSequenceEntry(line.text)) {
-                break;
-            }
-            const rest = line.text.slice(1).trimStart();
-            if (rest.length === 0) {
-                this.at++;
-                list.push(this.nested(indent, false));
-                continue;
-            }
-            const column = indent + line.text.length - rest.length;
-            if (mappingEntry(rest) || isSequenceEntry(rest)) {
-                // `- key: value` is a mapping whose keys sit at the column of `key`.
-                this.lines[this.at] = { indent: column, text: rest };
-                list.push(isSequenceEntry(rest) ? this.sequence(column) : this.mapping(column));
-                continue;
-            }
-            this.at++;
-            list.push(this.inline(rest, indent));
-        }
-        return list;
-    }
-
-    /** A value written after `key:` or `- `, with the lines that continue it (deeper than `ownerIndent`). */
-    private inline(first: string, ownerIndent: number): YamlValue {
-        if (first.startsWith('"') || first.startsWith('\'')) {
-            return this.quoted(first, ownerIndent);
-        }
-        if (BLOCK_SCALAR.test(first)) {
-            return this.blockScalar(first.startsWith('|'), ownerIndent);
-        }
-        const plain = withoutComment(first);
-        if (plain === '{}') {
-            return {};
-        }
-        if (plain === '[]') {
-            return [];
-        }
-        if (plain === '~' || plain === 'null') {
-            return null;
-        }
-        const parts = [plain];
-        while (this.at < this.lines.length && this.lines[this.at].indent > ownerIndent) {
-            parts.push(withoutComment(this.lines[this.at].text));
-            this.at++;
-        }
-        return parts.join(' ');
-    }
-
-    private quoted(first: string, ownerIndent: number): string {
-        let text = first;
-        let read = readQuoted(text);
-        while (!read && this.at < this.lines.length && this.lines[this.at].indent > ownerIndent) {
-            const next = this.lines[this.at].text;
-            this.at++;
-            // A line break folds into a space; an escaped one joins the lines.
-            text = text.startsWith('"') && /(?:^|[^\\])(?:\\\\)*\\$/.test(text) ? `${text.slice(0, -1)}${next}` : `${text} ${next}`;
-            read = readQuoted(text);
-        }
-        return read ? read.value : text.slice(1);
-    }
-
-    private blockScalar(literal: boolean, ownerIndent: number): string {
-        const body: YamlLine[] = [];
-        while (this.at < this.lines.length && this.lines[this.at].indent > ownerIndent) {
-            body.push(this.lines[this.at]);
-            this.at++;
-        }
-        const base = body.length > 0 ? Math.min(...body.map((line) => line.indent)) : 0;
-        return body.map((line) => `${' '.repeat(line.indent - base)}${line.text}`).join(literal ? '\n' : ' ');
-    }
-}
+/**
+ * Every scalar a string, except an empty value, `~` and `null`: the CMSIS
+ * tools write versions, ports and flags that must not turn into numbers.
+ */
+const CMSIS_YAML_SCHEMA = FAILSAFE_SCHEMA.withTags(nullCoreTag);
 
 /**
- * The document as nested maps, lists and string scalars. Covers what the
- * CMSIS tools write; anchors, tags and flow collections other than `{}` and
- * `[]` are read as plain text.
+ * A CMSIS YAML document as nested maps, lists and string scalars (#102):
+ * comments after a key, flow collections and block scalars read as YAML
+ * defines them. Null for an empty document and for one that is not YAML,
+ * so a damaged file yields no messages instead of an exception.
  */
-export function parseYamlSubset(text: string): YamlValue {
-    return new YamlSubsetReader(yamlLines(text)).document();
+export function parseCmsisYaml(text: string): YamlValue {
+    if (text.trim() === '') {
+        return null;
+    }
+    try {
+        return load(text, { schema: CMSIS_YAML_SCHEMA, maxDepth: 64, maxAliases: 100 }) as YamlValue;
+    } catch {
+        return null;
+    }
 }
 
 function asMap(value: YamlValue | undefined): { [key: string]: YamlValue } | undefined {
@@ -316,7 +115,7 @@ export interface IdxMessages {
  * is kept once.
  */
 export function idxMessages(text: string): IdxMessages {
-    const index = asMap(asMap(parseYamlSubset(text))?.['build-idx']);
+    const index = asMap(asMap(parseCmsisYaml(text))?.['build-idx']);
     const found: IdxMessages = { errors: [], warnings: [] };
     const seen = new Set<string>();
     const take = (messages: YamlValue | undefined, context: string | undefined): void => {
@@ -348,7 +147,7 @@ export interface IdxBuildFiles {
 
 /** The cbuild.yml of each context and the cbuild-run.yml a `<solution>.cbuild-idx.yml` names. */
 export function idxBuildFiles(text: string): IdxBuildFiles {
-    const index = asMap(asMap(parseYamlSubset(text))?.['build-idx']);
+    const index = asMap(asMap(parseCmsisYaml(text))?.['build-idx']);
     const cbuilds: string[] = [];
     for (const entry of asList(index?.cbuilds)) {
         const file = asText(asMap(entry)?.cbuild)?.trim();
@@ -409,7 +208,7 @@ export interface ToolsEnvironment {
  * forward slashes on every platform. `CMSIS_PACK_ROOT` is usually not in it.
  */
 export function readToolsEnvironment(text: string): ToolsEnvironment {
-    const root = asMap(asMap(parseYamlSubset(text))?.['cmsis-tools-environment']);
+    const root = asMap(asMap(parseCmsisYaml(text))?.['cmsis-tools-environment']);
     const environment = asMap(root?.environment);
     const variables: Record<string, string> = {};
     for (const [name, value] of Object.entries(asMap(environment?.variables) ?? {})) {

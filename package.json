@@ -2,7 +2,7 @@
   "name": "cmsis-developer-assistant",
   "displayName": "CMSIS Developer Assistant",
   "description": "Enable AI coding agents to develop and debug CMSIS projects with AI skills and MCP tools.",
-  "version": "2.5.20",
+  "version": "2.7.0",
   "publisher": "arm",
   "license": "Apache-2.0 OR MIT",
   "homepage": "https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant",
@@ -52,11 +52,21 @@
     "url": "https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant.git"
   },
   "activationEvents": [
+    "workspaceContains:**/*.csolution.yml",
     "onStartupFinished",
     "onDebug"
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "icons": {
+      "cda-robot": {
+        "description": "CMSIS Developer Assistant",
+        "default": {
+          "fontPath": "./assets/icons/cda-icons.woff",
+          "fontCharacter": "\\E001"
+        }
+      }
+    },
     "mcpServerDefinitionProviders": [
       {
         "id": "cmsis-developer-assistant",
@@ -110,6 +120,11 @@
         "category": "CMSIS Developer Assistant"
       },
       {
+        "command": "cmsis-developer-assistant.openKnowledgePanel",
+        "title": "Open Knowledge Browser",
+        "category": "CMSIS Developer Assistant"
+      },
+      {
         "command": "cmsis-developer-assistant.copyRecentProblems",
         "title": "Copy Recent Problems",
         "category": "CMSIS Developer Assistant"
@@ -143,12 +158,12 @@
             "never"
           ],
           "enumDescriptions": [
-            "The setup offers to add the tool rules to your agents' rule files, and blocks written earlier are kept up to date.",
+            "The setup offers to add the tool rules to your agents' rule files, and offers to update blocks written earlier when a release changes the rules.",
             "The setup never offers it, and no rule file is touched."
           ],
           "default": "ask",
           "scope": "application",
-          "markdownDescription": "Whether **CMSIS Developer Assistant: Configure Agent** — also the first-run setup — offers to add the tool rules, which keep agents on the MCP tools instead of `pyocd`, `gdb` or `cbuild` in a shell, to your agents' rule files: `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` and `~/.copilot/copilot-instructions.md` (preselected), or a workspace's `AGENTS.md`, `CLAUDE.md` and the rule folders of Cursor, Cline and Roo Code. Every change is shown as a diff and written only when you confirm it; the rules sit between `cmsis-developer-assistant:rules` marker comments and nothing else in the file changes. On activation, a block written earlier is brought up to date with the current rules, never created. `never`: the setup skips the step and no rule file is touched."
+          "markdownDescription": "Whether **CMSIS Developer Assistant: Configure Agent** — also the first-run setup — offers to add the tool rules, which keep agents on the MCP tools instead of `pyocd`, `gdb` or `cbuild` in a shell, to your agents' rule files: `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` and `~/.copilot/copilot-instructions.md` (preselected), or a workspace's `AGENTS.md`, `CLAUDE.md` and the rule folders of Cursor, Cline and Roo Code. Every change is shown as a diff and written only when you confirm it; the rules sit between `cmsis-developer-assistant:rules` marker comments and nothing else in the file changes. When a release changes the rules, activation offers once to review the update of the blocks written earlier; each file is shown as a diff and written only when you confirm it, and no block is ever created at activation. `never`: the setup skips the step and no rule file is touched."
         },
         "cmsis-developer-assistant.redactSecrets": {
           "type": "boolean",
@@ -288,6 +303,22 @@
           "tags": [
             "experimental"
           ]
+        },
+        "cmsis-developer-assistant.knowledge.indexPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path of a knowledge index (`knowledge.db`) that replaces the core index the extension ships (`resources/knowledge/core.db`), for testing a rebuilt index. Empty uses the core index. Absolute, starting with `~`, or relative to the first workspace folder. Read on every call. The knowledge tools are always on.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.knowledge.includeIncomplete": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Also return knowledge units whose text is still a placeholder, such as an error message without a recorded cause. Off leaves them out of `knowledge_search`; a build result never names them.",
+          "tags": [
+            "experimental"
+          ]
         }
       }
     }
@@ -308,16 +339,20 @@
     "bench:search": "tsx scripts/search-benchmark.ts",
     "bundle": "node esbuild.js",
     "package": "npm run build && tsx scripts/package.ts",
+    "knowledge:fetch": "tsx scripts/knowledge-index.ts fetch",
+    "knowledge:check": "tsx scripts/knowledge-index.ts check",
+    "knowledge:update": "tsx scripts/knowledge-index.ts update",
     "skills:sync": "tsx scripts/sync-skills.ts",
     "tpip:update": "tsx scripts/update-tpip docs/third-party-licenses.json",
-    "tpip:report": "tsx scripts/tpip-reporter --header docs/tpip-header.md docs/third-party-licenses.json TPIP.md",
-    "lint:md": "markdownlint \"**/*.md\" -c ./.github/markdownlint.jsonc -i \"node_modules/**\" -i ./dist -i ./coverage -i ./out -i ./docs/architecture -i ./skills/cmsis-skills -i CHANGELOG.md",
+    "tpip:report": "tsx scripts/tpip-reporter --header docs/tpip-header.md --knowledge resources/knowledge/SOURCES.md docs/third-party-licenses.json TPIP.md",
+    "lint:md": "markdownlint \"**/*.md\" -c ./.github/markdownlint.jsonc -i \"node_modules/**\" -i ./dist -i ./coverage -i ./out -i ./docs/architecture -i CHANGELOG.md",
     "diagram": "npx -y @mermaid-js/mermaid-cli@11 -p scripts/puppeteer.json -i assets/architecture.mmd -o assets/architecture.png -b white -s 2"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.31.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "@types/express": "^5.0.6",
     "express": "^5.3.0",
+    "js-yaml": "5.4.2",
     "jsonc-parser": "^3.3.1",
     "pdfjs-dist": "6.3.289",
     "serialport": "^13.0.0",

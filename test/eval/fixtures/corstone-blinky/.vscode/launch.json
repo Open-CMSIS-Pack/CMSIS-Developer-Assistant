@@ -1,0 +1,62 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Arm-FVP@GDB (launch)",
+            "type": "gdbtarget",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/",
+            "verbose": true,
+            "logFile": "${workspaceFolder}/tmp/gdb-adapter.log",
+            "program": "build/MPS3/GCC/Debug/Blinky/outdir/Blinky.elf",
+            "gdb": "arm-none-eabi-gdb",
+            "auxiliaryGdb": false,
+            "initCommands": [
+                "set remote verbose-resume-supported-packet off",
+                "set remote verbose-resume-packet off",
+                "tbreak main"
+            ],
+            "target": {
+                "server": "${workspaceFolder}/.vscode/fvp.sh",
+                "serverParameters": [
+                    "-D",
+                    "--plugin",
+                    "${env:AVH_FVP_PLUGINS}/GDBServer.so",
+                    "-C",
+                    "GDBServer.port=3333",
+                    "-f",
+                    "fvp_config.txt",
+                    "-a",
+                    "build/MPS3/GCC/Debug/Blinky/outdir/Blinky.elf"
+                ],
+                "port": "",
+                "serverPortRegExp": "GDBServer: Listening .*port=([0-9]+)",
+                "portDetectionTimeout": 300000
+            },
+            "cmsis": {
+                "cbuildRunFile": "${command:cmsis-csolution.getCbuildRunFile}",
+                "updateConfiguration": "manual"
+            }
+        },
+        {
+            "name": "Arm-FVP@GDB (attach)",
+            "type": "gdbtarget",
+            "request": "attach",
+            "cwd": "${workspaceFolder}/",
+            "program": "build/MPS3/GCC/Debug/Blinky/outdir/Blinky.elf",
+            "gdb": "arm-none-eabi-gdb",
+            "auxiliaryGdb": false,
+            "initCommands": [
+                "set remote verbose-resume-supported-packet off",
+                "set remote verbose-resume-packet off"
+            ],
+            "target": {
+                "port": "3333"
+            },
+            "cmsis": {
+                "cbuildRunFile": "${command:cmsis-csolution.getCbuildRunFile}",
+                "updateConfiguration": "manual"
+            }
+        }
+    ]
+}

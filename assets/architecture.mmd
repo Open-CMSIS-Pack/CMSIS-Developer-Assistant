@@ -1,9 +1,31 @@
-%% Architecture of the CMSIS Developer Assistant.
-%% Export to assets/architecture.png (used by the README) after editing:
+---
+title: CMSIS Developer Assistant 2.7
+config:
+    theme: base
+    themeVariables:
+        fontFamily: Arial, sans-serif
+        fontSize: 16px
+        primaryColor: '#eef4fa'
+        primaryTextColor: '#18344d'
+        primaryBorderColor: '#7394b3'
+        lineColor: '#64788a'
+        clusterBkg: '#f7f9fc'
+        clusterBorder: '#b5c4d2'
+        edgeLabelBackground: '#ffffff'
+        titleColor: '#18344d'
+    flowchart:
+        useMaxWidth: false
+        nodeSpacing: 24
+        rankSpacing: 36
+---
+%% Architecture of the CMSIS Developer Assistant 2.7.
+%% Export to assets/architecture.png (used by the user guide) after editing:
 %%   npm run diagram
 %% (mermaid-cli with the local Chrome; opaque background so the extension page renders it in dark themes too).
 flowchart LR
-    agent["AI Agent<br/>(Copilot, Claude Code, Cursor, …)"]
+    accTitle: CMSIS Developer Assistant 2.7 architecture
+    accDescr: MCP calls are routed to the workspace's VS Code window. Each window provides debugging, documentation and build information, and an always-on knowledge system. Knowledge tools and the Knowledge Browser share read-only core, pack and workspace indexes; the active target scopes knowledge_search and optionally browser searches.
+    agent["AI coding agent<br/>(MCP client)"]
     agent -- "MCP over HTTP<br/>localhost:3001" --> srvA
 
     subgraph router["VS Code window A — router"]
@@ -11,6 +33,7 @@ flowchart LR
         srvA["MCP server"]
         srvA -- "runs the tool locally" --> dbgA["Debug pipeline"]
         srvA -- "documentation tools" --> docsA["Pack docs"]
+        srvA -- "knowledge tools" --> knowledgeA["Knowledge"]
     end
 
     srvA -- "forwards the tool call<br/>127.0.0.1 + token" --> srvB
@@ -20,6 +43,7 @@ flowchart LR
         srvB["Control server"]
         srvB --> dbgB["Debug pipeline"]
         srvB --> docsB["Pack docs"]
+        srvB --> knowledgeB["Knowledge"]
     end
 
     subgraph pipeline["Debug pipeline (per window)"]
@@ -28,10 +52,10 @@ flowchart LR
         cdt --> gdb["arm-none-eabi-gdb"]
         gdb --> server["pyOCD / J-Link GDB Server"]
         server -- "SWD / JTAG" --> target["Cortex-M target"]
-        api -.-> svd["Peripheral Inspector API /<br/>SVD parser"]
+        api -.-> svd["SVD parser"]
     end
 
-    subgraph docs["Documentation retrieval (per window, experimental)"]
+    subgraph docs["Documentation retrieval (per window)"]
         direction TB
         store["Page store<br/>(page text + BM25 index,<br/>extension global storage)"]
         extract["pdf.js (bundled) /<br/>pdftotext"] --> store
@@ -43,7 +67,25 @@ flowchart LR
         build["ELF · linker map · build log<br/>(build-artefact tools)"]
     end
 
+    subgraph knowledge["Knowledge system (per window)"]
+        direction TB
+        coreIndex["Bundled core index<br/>resources/knowledge/core.db"]
+        packIndexes["Pack indexes<br/>.knowledge/knowledge.db"]
+        workspaceIndex["Workspace index<br/>.cmsis/knowledge.db"]
+        coreIndex & packIndexes & workspaceIndex --> indexes[("Read-only SQLite index set<br/>Procedures · rules · concepts<br/>Troubleshooting · assets")]
+        indexes --> engine["Knowledge engine<br/>Search · units · graph"]
+        context["Active target context<br/>Board · device · packs · compiler"] -. "scopes knowledge_search" .-> engine
+        knowledgeTools["knowledge_search<br/>knowledge_get · knowledge_expand"] --> engine
+        browser["Knowledge Browser<br/>Read-only VS Code panel"] --> engine
+    end
+
     dbgA -.-> pipeline
     dbgB -.-> pipeline
     docsA -.-> docs
     docsB -.-> docs
+    knowledgeA -.-> knowledge
+    knowledgeB -.-> knowledge
+
+    style knowledge fill:#f0f8f5,stroke:#77a793
+    classDef knowledgeNode fill:#e2f2eb,stroke:#77a793,color:#183d30
+    class knowledgeA,knowledgeB,coreIndex,packIndexes,workspaceIndex,indexes,engine,context,knowledgeTools,browser knowledgeNode

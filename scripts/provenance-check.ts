@@ -247,7 +247,7 @@ function main(): void {
     const reports: FileReport[] = [];
     const anyReports: AnyReport[] = [];
     for (const file of tracked) {
-        if (file.startsWith('skills/cmsis-skills/') || file.endsWith('package-lock.json') || file.startsWith('docs/provenance/')) { continue; }
+        if (file.endsWith('package-lock.json') || file.startsWith('docs/provenance/')) { continue; }
         const text = TEXT_FILE.test(file) ? readOurs(file) : '';
         const ours = significantText(text);
         const hasMsLine = text.includes(MS_LINE);

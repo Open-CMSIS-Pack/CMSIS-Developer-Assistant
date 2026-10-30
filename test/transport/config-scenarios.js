@@ -25,7 +25,9 @@
 //   how it reads `.vscode/launch.json`, and its configuration quick-pick.
 // - `extension`: activate() and deactivate() under the stub — the order of
 //   the major calls, the settings read, the registered commands, the MCP
-//   server definition provider, the listeners, the setup timer.
+//   server definition provider, the listeners, the setup timer, and the
+//   Serial Monitor's API as the window's bridge gets it when the coordinator
+//   starts.
 //
 // Only public entry points are driven; private methods are never called, so
 // the same script runs against a rewrite of any of the three files.
@@ -38,7 +40,7 @@
 //
 // Isolation. Everything the code can derive a path from — HOME, USERPROFILE,
 // APPDATA, LOCALAPPDATA, XDG_*, CODEX_HOME, COPILOT_HOME, CLAUDE_CONFIG_DIR,
-// GEMINI_HOME, CMSIS_PACK_ROOT, TMPDIR/TMP/TEMP, os.homedir(), os.tmpdir(),
+// GEMINI_HOME, KIMI_CODE_HOME, CMSIS_PACK_ROOT, TMPDIR/TMP/TEMP, os.homedir(), os.tmpdir(),
 // the context's extensionPath and globalStorageUri — points into one fresh
 // temporary directory. That is asserted before every scenario, and a write
 // fence on `fs` refuses and reports any write outside it. Sockets: 127.0.0.1
@@ -85,7 +87,7 @@ fs.mkdirSync(WORLDS, { recursive: true });
 /** Variables that can steer a path; all are reset for every scenario. */
 const CONTROLLED_ENV = [
     'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME',
-    'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_CONFIG_DIR', 'GEMINI_HOME', 'ANTIGRAVITY_ENV', 'CMSIS_PACK_ROOT',
+    'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_CONFIG_DIR', 'GEMINI_HOME', 'KIMI_CODE_HOME', 'ANTIGRAVITY_ENV', 'CMSIS_PACK_ROOT',
     'TMPDIR', 'TMP', 'TEMP',
 ];
 const PATH_ENV = CONTROLLED_ENV.filter((k) => k !== 'ANTIGRAVITY_ENV');
@@ -736,6 +738,7 @@ const AGENT_FILES = {
     'copilot-cli': 'home/.copilot/mcp-config.json',
     'cursor': 'home/.cursor/mcp.json',
     'codex': 'home/.codex/config.toml',
+    'kimi-code': 'home/.kimi-code/mcp.json',
     'claude-code': 'home/.claude.json',
     'claude-desktop': 'home/Library/Application Support/Claude/claude_desktop_config.json',
 };
@@ -970,6 +973,8 @@ function writeFixtureExtension() {
             ...(s.shortDescription ? { shortDescription: s.shortDescription } : {}),
             dependsOn: s.dependsOn,
             invocable: s.invocable,
+            // Only cmsis-help is installed; fx-broken stays installed so the missing-directory failure is still exercised.
+            installed: ['fx-help', 'fx-broken'].includes(s.name),
         };
         return entry;
     });
@@ -1340,6 +1345,7 @@ const SEED_OTHERS = agentSeeds({
     'copilot-cli': JSON.stringify({ mcpServers: { a: { type: 'http', url: 'http://a/mcp' }, [KEY]: { type: 'http', url: URL_3001, tools: ['read_memory'], custom: true }, z: {} } }),
     'cursor': '{\n\t"mcpServers": {\n\t\t"other": {}\n\t}\n}\n',
     'codex': '# Codex config\nmodel = "o3"\n\n[mcp_servers.other]\ncommand = "npx"\nargs = ["-y", "other-mcp"]\n\n[profiles.fast]\nmodel = "o4-mini"\n',
+    'kimi-code': json({ mcpServers: { linear: { url: 'https://mcp.linear.app/mcp' }, fs: { command: 'npx', args: ['-y', 'fs-mcp'], toolTimeoutMs: 5000 } } }),
     'claude-code': JSON.stringify({ numStartups: 3, projects: { '/p': { allowedTools: [], history: ['x'] } }, mcpServers: { other: { type: 'stdio', command: 'x' }, [KEY]: { x: 1 } }, userID: 'abc' }),
     'claude-desktop': json({ mcpServers: { fs: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/data'] } }, globalShortcut: 'Ctrl+Space' }),
 });
@@ -1352,6 +1358,7 @@ const SEED_LEGACY = agentSeeds({
     'copilot-cli': json({ mcpServers: { [LEGACY]: { type: 'http', url: URL_3001, tools: ['*'] } } }),
     'cursor': json({ mcpServers: { [LEGACY]: { type: 'sse', url: 'http://localhost:3001/sse' } } }),
     'codex': '[mcp_servers.cmsis-debugmcp]\nurl = "http://localhost:3001/sse"\nstartup_timeout_sec = 30\n\n[mcp_servers.cmsis-debugmcp.env]\nX = "1"\n',
+    'kimi-code': json({ mcpServers: { [LEGACY]: { transport: 'http', url: URL_3001 } } }),
     'claude-code': json({ numStartups: 1, mcpServers: { [LEGACY]: { type: 'http', url: URL_3001 } } }),
     'claude-desktop': json({ mcpServers: { [LEGACY]: { command: 'npx', args: ['-y', 'mcp-remote', URL_3001] } } }),
 });
@@ -1364,6 +1371,7 @@ const SEED_STALE = agentSeeds({
     'copilot-cli': json({ mcpServers: { [KEY]: { type: 'streamableHttp', url: 'http://localhost:9999/mcp' } } }),
     'cursor': json({ mcpServers: { [KEY]: { url: 'http://localhost:9999/sse' } } }),
     'codex': '[mcp_servers.cmsis-developer-assistant]\n  url = "http://localhost:9999/mcp" # old port\nstartup_timeout_sec = 10\n',
+    'kimi-code': json({ mcpServers: { [KEY]: { url: 'http://localhost:9999/mcp', enabledTools: ['read_memory'] } } }),
     'claude-code': json({ mcpServers: { [KEY]: { type: 'http', url: 'http://localhost:9999/mcp', headers: { a: 'b' } } } }),
     'claude-desktop': json({ mcpServers: { [KEY]: { command: 'npx', args: ['-y', 'mcp-remote', 'http://localhost:9999/mcp'], env: { X: '1' } } } }),
 });
@@ -1462,25 +1470,30 @@ function agentScenarios() {
         { id: 'agents/pure-helpers', about: 'exported TOML helpers and agentConfigHasServer', run: async () => pureHelperCases() },
 
         // --- roster: where each agent's file lives -----------------------------------------
-        { id: 'agents/roster-darwin', about: 'configure all eight on darwin, no files yet; the skills go to the personal directories', ...configureAll() },
+        { id: 'agents/roster-darwin', about: 'configure all nine on darwin, no files yet; the skills go to the personal directories', ...configureAll() },
         { id: 'agents/roster-win32-appdata', platform: 'win32', env: { APPDATA: '<w>/appdata' }, ...configureAll() },
         { id: 'agents/roster-win32-no-appdata', platform: 'win32', ...configureAll() },
         { id: 'agents/roster-linux-xdg', platform: 'linux', env: { XDG_CONFIG_HOME: '<w>/xdg' }, ...configureAll() },
         { id: 'agents/roster-linux-default', platform: 'linux', ...configureAll() },
         { id: 'agents/roster-unknown-platform', platform: 'aix', env: { APPDATA: '<w>/appdata' }, ...configureAll() },
         {
-            id: 'agents/roster-env-overrides', about: 'CODEX_HOME / COPILOT_HOME honoured, CLAUDE_CONFIG_DIR and XDG_CONFIG_HOME not (darwin)',
-            env: { CODEX_HOME: '<w>/codex-home', COPILOT_HOME: '<w>/copilot-home', CLAUDE_CONFIG_DIR: '<w>/claude-config', XDG_CONFIG_HOME: '<w>/xdg' },
+            id: 'agents/roster-env-overrides', about: 'CODEX_HOME / COPILOT_HOME / KIMI_CODE_HOME honoured, CLAUDE_CONFIG_DIR and XDG_CONFIG_HOME not (darwin)',
+            env: { CODEX_HOME: '<w>/codex-home', COPILOT_HOME: '<w>/copilot-home', KIMI_CODE_HOME: '<w>/kimi-home', CLAUDE_CONFIG_DIR: '<w>/claude-config', XDG_CONFIG_HOME: '<w>/xdg' },
             ...configureAll(),
         },
         {
             id: 'agents/roster-empty-env', about: 'empty variables count as unset (win32)', platform: 'win32',
-            env: { APPDATA: '', CODEX_HOME: '', COPILOT_HOME: '' }, ...configureAll(),
+            env: { APPDATA: '', CODEX_HOME: '', COPILOT_HOME: '', KIMI_CODE_HOME: '' }, ...configureAll(),
         },
 
         // --- configure over existing files ---------------------------------------------------
         { id: 'agents/configure-existing-other-servers', seed: SEED_OTHERS, ...configureAll() },
-        { id: 'agents/configure-legacy-key', about: 'configure adds the new key and leaves the legacy entry', seed: SEED_LEGACY, ...configureAll() },
+        { id: 'agents/configure-legacy-key', about: 'configure adds the new key; the legacy entries, all on our endpoint, go as duplicates', seed: SEED_LEGACY, ...configureAll() },
+        {
+            id: 'agents/configure-kimi-duplicate', about: 'Configure Agent → Kimi Code over a hand-written entry for the same server: ours replaces it, and the toast says so',
+            seed: agentSeeds({ 'kimi-code': json({ mcpServers: { 'CMSIS Developer Assistant': { url: 'http://localhost:3001/mcp' }, linear: { url: 'https://mcp.linear.app/mcp' } } }) }),
+            ...configureOne('Kimi Code'),
+        },
         { id: 'agents/configure-stale-entries', seed: SEED_STALE, ...configureAll() },
         {
             id: 'agents/configure-invalid-files', about: 'JSONC, empty, non-object and odd mcpServers values',
@@ -1574,6 +1587,58 @@ function agentScenarios() {
             run: migrate(),
         },
         { id: 'agents/migrate-other-port', about: 'constructed with port 4555 and timeout 42', seed: SEED_STALE, run: migrate(42, 4555) },
+        {
+            id: 'agents/migrate-kimi-adds-tool-timeout', about: 'a hand-written Kimi Code entry without toolTimeoutMs gets it and keeps its other fields; reported',
+            seed: agentSeeds({ 'kimi-code': json({ mcpServers: { [KEY]: { transport: 'http', url: URL_3001, headers: { a: 'b' } }, other: { url: 'http://other/mcp' } } }) }),
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-kimi-own-tool-timeout', about: 'a toolTimeoutMs the user set stays; nothing is written',
+            seed: agentSeeds({ 'kimi-code': json({ mcpServers: { [KEY]: { url: URL_3001, toolTimeoutMs: 120000 } } }) }),
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-kimi-sse', about: 'a Kimi Code entry on transport "sse" is replaced by the current shape',
+            seed: agentSeeds({ 'kimi-code': json({ mcpServers: { [KEY]: { transport: 'sse', url: 'http://localhost:3001/sse' } } }) }),
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-kimi-duplicate-entry',
+            about: 'the tester\'s file: a hand-written "CMSIS Developer Assistant" next to ours goes, a loopback entry on another port and a remote one stay; the toast names the key',
+            seed: agentSeeds({ 'kimi-code': json({ mcpServers: {
+                'CMSIS Developer Assistant': { url: 'http://localhost:3001/mcp', transport: 'http' },
+                [KEY]: { url: URL_3001, toolTimeoutMs: 630000 },
+                'other-local': { url: 'http://127.0.0.1:4000/mcp' },
+                linear: { url: 'https://mcp.linear.app/mcp' },
+            } }) }),
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-duplicates-merge-autoapprove',
+            about: 'Roo Code: entries at 127.0.0.1:3001/mcp/ and localhost:3001/sse next to ours go, their autoApprove lists join ours; Claude Desktop: an mcp-remote bridge to our port goes',
+            seed: agentSeeds({
+                'roo': json({ mcpServers: {
+                    [KEY]: { autoApprove: ['a'], disabled: false, timeout: 180, type: 'streamableHttp', url: URL_3001 },
+                    mine: { url: 'http://127.0.0.1:3001/mcp/', autoApprove: ['b', 'a'] },
+                    old: { url: 'http://localhost:3001/sse' },
+                } }),
+                'claude-desktop': json({ mcpServers: {
+                    [KEY]: { command: 'npx', args: ['-y', 'mcp-remote', URL_3001] },
+                    bridge: { command: 'npx', args: ['mcp-remote', 'http://localhost:3001/mcp'] },
+                } }),
+            }),
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-duplicate-without-ours', about: 'a hand-written entry alone is no duplicate: nothing is written',
+            seed: agentSeeds({ 'kimi-code': json({ mcpServers: { 'CMSIS Developer Assistant': { url: URL_3001 } } }) }),
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-kimi-odd-entry', about: 'a non-object entry under our key is left alone',
+            seed: agentSeeds({ 'kimi-code': json({ mcpServers: { [KEY]: 'not an entry' } }) }),
+            run: migrate(),
+        },
         {
             id: 'agents/migrate-cursor-old-location', about: 'the entry an earlier release wrote where Cursor does not read moves to ~/.cursor/mcp.json; the old file goes',
             seed: { [OLD_CURSOR_FILE]: json({ mcpServers: { [KEY]: { autoApprove: [], disabled: false, timeout: 180, type: 'streamableHttp', url: URL_3001 } } }) },
@@ -1679,6 +1744,13 @@ function agentScenarios() {
             run: async (h) => { await h.manager().runSetupFlow(); },
         },
         {
+            id: 'agents/rules-kimi-code', about: 'Kimi Code: its user AGENTS.md under KIMI_CODE_HOME is preselected, the workspace AGENTS.md is offered unchecked',
+            folders: [{ name: 'wsA' }],
+            env: { KIMI_CODE_HOME: '<w>/kimi-home' },
+            ui: { agents: ['Kimi Code'], rules: 'keep', message: answerWhen(/tool rules/) },
+            run: async (h) => { await h.manager().runSetupFlow(); },
+        },
+        {
             id: 'agents/rules-preview-declined', about: 'the diff is shown and the dialog dismissed: no rule file is written',
             ui: { agents: ['Claude Code'], rules: 'keep' },
             run: async (h) => { await h.manager().runSetupFlow(); },
@@ -1732,22 +1804,43 @@ function agentScenarios() {
             extensionPath: '<w>/extension-without-contract', ui: { agents: ['Claude Code'] },
             run: async (h) => { const m = h.manager(); await m.runSetupFlow(); return { shouldShowPopupAfter: await m.shouldShowPopup() }; },
         },
-        {
-            id: 'agents/rules-refresh', about: 'activation: a recorded stale block is updated in place (CRLF kept); a missing file and a deleted block are forgotten, not recreated; an unrecorded file is left',
-            folders: [{ name: 'wsA' }],
-            seed: () => ({
+        ...(() => {
+            const seed = () => ({
                 'home/.codex/AGENTS.md': `# Before\r\n\r\n${rulesBlock(OLDER_RULES, '\r\n')}\r\n\r\n# After\r\n`,
                 'home/.claude/CLAUDE.md': `${rulesBlock()}\n`,
                 'wsA/AGENTS.md': '# The user took the block out\n',
                 'home/.gemini/AGENTS.md': `${rulesBlock(OLDER_RULES)}\n`,
-            }),
-            state: (w) => ({
+            });
+            const records = (w) => ({
                 [RULES_KEY]: ['home/.codex/AGENTS.md', 'home/.claude/CLAUDE.md', 'wsA/AGENTS.md', 'home/.copilot/copilot-instructions.md'].map((rel) => ({
                     file: path.join(w.root, rel), scope: rel.startsWith('home/') ? 'user' : 'workspace', form: 'block', agents: ['codex'], created: false, createdDirs: [],
                 })),
-            }),
-            run: async (h) => { await h.manager().refreshAgentRules(); },
-        },
+            });
+            const refresh = { folders: [{ name: 'wsA' }], seed, run: async (h) => { await h.manager().refreshAgentRules(); } };
+            return [
+                {
+                    ...refresh, id: 'agents/rules-refresh',
+                    about: 'activation: Review, then Write updates a recorded stale block in place (CRLF kept); a missing file and a deleted block are forgotten, not recreated; an unrecorded file is left',
+                    state: (w) => ({ ...popupDone, ...records(w) }), ui: { message: 0 },
+                },
+                {
+                    ...refresh, id: 'agents/rules-refresh-not-now',
+                    about: 'activation: Not Now writes nothing; the offer is not repeated for the same rules',
+                    state: (w) => ({ ...popupDone, ...records(w) }), ui: { message: 1 },
+                    run: async (h) => { const m = h.manager(); await m.refreshAgentRules(); await m.refreshAgentRules(); },
+                },
+                {
+                    ...refresh, id: 'agents/rules-refresh-declined',
+                    about: 'activation: Review, then the preview declined: the stale block stays',
+                    state: (w) => ({ ...popupDone, ...records(w) }), ui: { message: seq(0, undefined) },
+                },
+                {
+                    ...refresh, id: 'agents/rules-refresh-setup-due',
+                    about: 'activation while the setup is due: no offer, the setup step offers the update',
+                    state: records, ui: { message: 0 },
+                },
+            ];
+        })(),
         {
             id: 'agents/rules-refresh-never', about: 'agentRules.install "never": activation leaves a recorded stale block alone',
             seed: () => ({ 'home/.codex/AGENTS.md': `${rulesBlock(OLDER_RULES)}\n` }),
@@ -2122,12 +2215,56 @@ function packageContributions() {
     };
 }
 
+/**
+ * The Serial Monitor (ms-vscode.vscode-serial-monitor 0.13), active: its
+ * exports hold only getApi(version, context), which accepts version 0 and
+ * throws without the caller's extension context. Every request is recorded.
+ */
+function fakeSerialMonitor() {
+    const requests = [];
+    const extension = {
+        id: 'ms-vscode.vscode-serial-monitor',
+        isActive: true,
+        exports: {
+            getApi(version, context) {
+                requests.push({ version: u(version), context: context === S.context ? '<context>' : explicit(context), extensionId: u(context?.extension?.id) });
+                if (version !== 0) { throw new Error('Invalid serial monitor API version.'); }
+                if (!context) { throw new Error('In order to use this API, you must pass your extension\'s extensionContext.'); }
+                return { listAvailablePorts: async () => [], startMonitoringPort: async () => undefined, stopMonitoringPort: async () => true, dispose() {} };
+            },
+        },
+        activate: async () => extension.exports,
+    };
+    return { extension, requests };
+}
+
+/**
+ * Ask the window's Serial Monitor bridge for its status when the coordinator
+ * is first started, that is before the MCP server serves the serial tools.
+ */
+function probeSerialMonitorAtStart(m, monitor) {
+    const bridge = load('core/serialMonitorBridge.js').serialMonitorBridge;
+    const startServing = m.wc.WindowCoordinator.prototype.start;
+    const probe = {};
+    let probed = false;
+    m.wc.WindowCoordinator.prototype.start = function (...a) {
+        if (probed) { return startServing.apply(this, a); }
+        probed = true;
+        return bridge.status().then((status) => {
+            probe.status = explicit(status);
+            probe.getApi = monitor.requests.slice();
+            return startServing.apply(this, a);
+        });
+    };
+    return probe;
+}
+
 function extensionScenarios() {
     const fakeSession = { id: 'session-1', name: 'fake', type: 'gdbtarget', configuration: { name: 'fake', type: 'gdbtarget', request: 'launch' }, customRequest: async () => ({}) };
     return [
         { id: 'extension/package-contributions', about: 'package.json: entry point, provider id, commands, palette, settings defaults', run: async () => packageContributions() },
         {
-            id: 'extension/activate-router', about: 'fallback settings except the port; first run; the listeners, commands and timer driven afterwards',
+            id: 'extension/activate-router', about: 'fallback settings except the port; first run; the Serial Monitor\'s API as the coordinator starts; the listeners, commands and timer driven afterwards',
             seed: agentSeeds({ cline: json({ mcpServers: { [LEGACY]: { type: 'streamableHttp', url: URL_3001 } } }) }),
             ui: {
                 agents: seq(['Claude Code'], null),
@@ -2138,8 +2275,12 @@ function extensionScenarios() {
                 const port = await freePort();
                 PORTS.add(port);
                 S.settings.global.set(SETTING('serverPort'), port);
+                const monitor = fakeSerialMonitor();
+                S.ui = { ...S.ui, extension: (id) => (id === monitor.extension.id ? monitor.extension : undefined) };
                 const { ext, m } = loadExtension();
-                const out = { activation: await activateRecorded(h, ext, m) };
+                // F14: the bridge reaches the API only with this extension's context, handed over before the tools are served.
+                const serialMonitorAtCoordinatorStart = probeSerialMonitorAtStart(m, monitor);
+                const out = { activation: await activateRecorded(h, ext, m), serialMonitorAtCoordinatorStart };
                 step('debug session terminates');
                 await fire('debug.onDidTerminateDebugSession', fakeSession);
                 for (const keys of [

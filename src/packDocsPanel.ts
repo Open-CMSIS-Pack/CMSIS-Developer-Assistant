@@ -34,9 +34,9 @@
  *  - Tools: any of the tools, run in-process with hand-written arguments.
  */
 
+import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
 import { BuildInfoHandler } from './buildInfoHandler';
 import { CachedDoc, PackDocsLog, TargetArgs, buildChapterIndex, docState } from './core/packDocs';
 import { renderToolReplyHtml } from './core/packDocs/toolLinks';

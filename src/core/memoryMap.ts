@@ -17,7 +17,8 @@
 /**
  * The Armv7-M / Armv8-M system address map. Used to say something useful
  * about an address the SVD does not cover ("that is SRAM, not a peripheral")
- * before a device-specific map from cbuild-run.yml is available.
+ * before a device-specific map from cbuild-run.yml is available, and which
+ * reads the executor makes word by word (the System Control Space).
  */
 
 export type MemoryKind = 'code' | 'sram' | 'peripheral' | 'external-ram' | 'external-device' | 'ppb' | 'vendor';
@@ -50,4 +51,35 @@ export function regionOf(address: number, regions: readonly MemoryRegion[] = def
 
 export function formatAddress(address: number): string {
     return `0x${(address >>> 0).toString(16).padStart(8, '0').toUpperCase()}`;
+}
+
+/**
+ * The System Control Space (SysTick, NVIC, SCB with the fault status
+ * registers, MPU, debug registers) and, on Armv8-M with the Security
+ * Extension, its Non-secure alias. Inclusive bounds.
+ */
+export const SYSTEM_CONTROL_SPACES: ReadonlyArray<{ start: number; end: number }> = [
+    { start: 0xE000_E000, end: 0xE000_EFFF },
+    { start: 0xE002_E000, end: 0xE002_EFFF },
+];
+
+/**
+ * The aligned 32-bit words to read one by one for `length` bytes from
+ * `start`, when the range touches the System Control Space; undefined when
+ * it does not (one block read serves it). Its registers are words, and the
+ * Corstone FVP's GDB server answers SCS reads longer than one word with
+ * zeros. `skip` is where the requested bytes begin in the first word.
+ */
+export function systemControlSpaceWords(start: bigint, length: number): { first: bigint; words: number; skip: number } | undefined {
+    if (length <= 0) {
+        return undefined;
+    }
+    const end = start + BigInt(length) - 1n;
+    const touches = SYSTEM_CONTROL_SPACES.some((space) => start <= BigInt(space.end) && end >= BigInt(space.start));
+    if (!touches) {
+        return undefined;
+    }
+    const first = start - (start % 4n);
+    const last = end - (end % 4n);
+    return { first, words: Number((last - first) / 4n) + 1, skip: Number(start - first) };
 }

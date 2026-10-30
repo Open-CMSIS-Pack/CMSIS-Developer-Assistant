@@ -1,5 +1,7 @@
 # CMSIS Developer Assistant — Feature Inventory & Agent-Usage Priority
 
+> **Historical product brief; retired as a current inventory (2026-10-27).** The tool counts, inheritance claims and transport description below belong to an earlier implementation and simulated usage study. They do not describe 2.7.0. Use the [README](../README.md), [user guide](user-guide.md) and [architecture pages](architecture/debugMCPServer.md) for the current product; the original study is preserved here.
+
 ## Product brief: Arm Keil MDK integration
 
 The MCP debug surface selected for direct integration into the Keil MDK toolchain — what it inherits from Microsoft's DebugMCP, what the CMSIS fork adds for Cortex-M, and which tools an AI agent actually reaches for, derived from a simulated driver-bring-up debug run.
@@ -45,7 +47,7 @@ Upstream has no concept of a GDB target server, hardware memory or registers, fa
 |------|----------|----------------------------|
 | `read_memory` | Memory | Read a byte range from SRAM / Flash / peripherals via DAP `readMemory` with multi-strategy GDB fallback. |
 | `read_core_registers` | Registers | R0–R15, xPSR, MSP, PSP, CONTROL, FAULTMASK, BASEPRI, PRIMASK — crash state & stack analysis. |
-| `read_peripheral_register` | Peripheral | Named peripheral/register reads backed by SVD (Peripheral Inspector API, with a standalone SVD-parser fallback). |
+| `read_peripheral_register` | Peripheral | Named peripheral/register reads backed by SVD (a standalone SVD parser). |
 | `diagnose_fault` | Fault | One-call triage: decoded fault registers + stacked exception frame + top frames + faulting address resolved against the SVD + ranked hypotheses with the next call; collapses the six-call HardFault loop. |
 | `lookup_peripheral` / `lookup_register` | Peripheral | SVD queries that touch nothing: peripheral list, register map, address → peripheral/register (resolve a BFAR), bit fields with enumerated values; work before the first session. |
 | `get_fault_info` | Fault | Read & decode CFSR / HFSR / DFSR / MMFAR / BFAR / AFSR bit-by-bit for HardFault / BusFault / MemManage / UsageFault. |
@@ -73,8 +75,8 @@ Upstream has no concept of a GDB target server, hardware memory or registers, fa
 | Tool | Category | Why it exists for embedded |
 |------|----------|----------------------------|
 | `serial_open` · `close` · `read` · `write` · `status` · `clear_buffer` | Serial | OWNED backend: the server holds a `serialport` connection and buffers RX. |
-| `serial_subscribe_monitor` · `unsubscribe` · `read(monitor)` · `open_monitor` | Serial | BRIDGE backend: taps the MS Serial Monitor extension so the agent reads the user's live UART session — no port fight. |
-| `serial_list_ports` | Serial | Enumerate ports (friendly names via the monitor API, else `serialport`). |
+| `serial_subscribe_monitor` · `unsubscribe` · `read(monitor)` · `open_monitor` | Serial | BRIDGE backend: would tap the MS Serial Monitor extension so the agent reads the user's live UART session — no port fight; its API (version 0) has no data event yet, so the subscription is refused with that reason. |
+| `serial_list_ports` | Serial | Enumerate ports with `serialport`: path, Windows friendly name, manufacturer, serial number, VID:PID. |
 | `serial_capture` | Serial | One call: open the port, read until a regex matches or the deadline, close — at most 16 kB back (#49). |
 
 ### Always-on infrastructure (not called — load-bearing every step)

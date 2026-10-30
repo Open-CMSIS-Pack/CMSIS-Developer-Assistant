@@ -19,7 +19,29 @@ import * as fs from 'fs';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
-import { attachEndpoints, isListening, silentAttachEndpoints } from '../core/gdbServerPorts';
+import {
+    activeLaunchConfigurations,
+    attachEndpoints,
+    cmsisLaunchConfigurations,
+    cmsisRunCommand,
+    commandLinePort,
+    configurationGdbPort,
+    folderCmsisRunCommand,
+    folderLaunchConfiguration,
+    gdbPortClaimsOf,
+    gdbServerKind,
+    isFvpDebugger,
+    isFvpSession,
+    launchAttachEndpoints,
+    launchCbuildRun,
+    runCommandKind,
+    runTaskCbuildRun,
+    runTaskGdbPorts,
+    sessionGdbPorts,
+    taskCommandWords,
+    windowGdbPorts,
+} from '../core/gdbServerPorts';
+import { cbuildRunGdbPorts } from '../core/packDocs/cbuildRun';
 
 /** A launch.json as CMSIS Solution writes it: a launch and an attach configuration, with a comment. */
 function launchJson(port: number | string, host?: string): string {
@@ -34,20 +56,21 @@ function launchJson(port: number | string, host?: string): string {
 }`;
 }
 
-/** A port nothing listens on: bound once, then closed. */
-async function closedPort(): Promise<number> {
-    const server = net.createServer();
-    await new Promise<void>((ready) => server.listen(0, '127.0.0.1', ready));
-    const port = (server.address() as net.AddressInfo).port;
-    await new Promise<void>((done) => server.close(() => done()));
-    return port;
-}
+/** The CMSIS Run task of each adapter template of CMSIS Solution 1.72.0, as its tasks.json runs it. */
+const PYOCD_RUN = ['pyocd', 'gdbserver', '--probe', 'cmsisdap:', '--persist', '--reset-run', '--cbuild-run',
+    '${command:cmsis-csolution.getCbuildRunFile}', '--quiet', '--log', '*.cbuild_run,*server=info'];
+const JLINK_RUN = ['/Applications/SEGGER/JLink/JLinkGDBServerCLExe', '-device', 'STM32F401RE', '-endian', 'little', '-if', 'swd',
+    '-speed', '4000', '-nohalt', '-noir', '-nogui', '-localhostonly', '-silent', '-port', '3333', '-TelnetPort', '4444'];
+const FVP_RUN = ['FVP_Corstone_SSE-300_Ethos-U55', '-f', 'board/fvp_config.txt', '-a', 'out/Blinky/MPS3/Debug/Blinky.axf'];
+/** A custom debug setup: its own adapter template starts pyOCD's gdbserver through Python and a wrapper script. */
+const CUSTOM_SERVER = ['/usr/local/bin/python3.11', '/Users/u/debug-setup/scripts/pyocd_wrapper.py',
+    'gdbserver', '--probe', 'cmsisdap:', '--cbuild-run', '${command:cmsis-csolution.getCbuildRunFile}', '--quiet'];
 
 /**
- * Where a CMSIS attach connects and whether a GDB server listens there: an
- * attach with none fails after GDB's 15 s connect timeout with a modal
- * "could not connect: Operation timed out." dialog, so cmsis_action refuses
- * it first.
+ * Where a CMSIS attach connects, and whether the window's CMSIS Run can serve
+ * it: decided from launch.json and the task's command line, never by a
+ * connection, which a GDB server takes as a client (pyOCD halts the target
+ * for it and, without --persist, shuts down when it leaves).
  */
 suite('GDB server ports of the attach configurations', () => {
     test('only gdbtarget attach configurations with a numeric port count; the host defaults to localhost', () => {
@@ -59,39 +82,288 @@ suite('GDB server ports of the attach configurations', () => {
         assert.deepStrictEqual(attachEndpoints('{"configurations": 3}'), []);
     });
 
-    test('a listening port answers, a closed one does not, and neither rejects', async () => {
-        const server = net.createServer((socket) => socket.destroy());
+    test('launchAttachEndpoints reads launch.json and leaves the GDB server alone', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-attach-'));
+        let connections = 0;
+        const server = net.createServer((socket) => {
+            connections++;
+            socket.destroy();
+        });
         await new Promise<void>((ready) => server.listen(0, '127.0.0.1', ready));
         try {
+            assert.deepStrictEqual(await launchAttachEndpoints(dir), [], 'no launch.json');
             const port = (server.address() as net.AddressInfo).port;
-            assert.strictEqual(await isListening('127.0.0.1', port), true);
+            fs.mkdirSync(path.join(dir, '.vscode'));
+            fs.writeFileSync(path.join(dir, '.vscode', 'launch.json'), launchJson(port, '127.0.0.1'));
+            assert.deepStrictEqual(await launchAttachEndpoints(dir), [{ name: 'STLink@pyOCD (attach)', host: '127.0.0.1', port }]);
+            await new Promise<void>((settle) => setTimeout(settle, 100));
+            assert.strictEqual(connections, 0, 'a connection is a GDB client to the server');
         } finally {
             await new Promise<void>((done) => server.close(() => done()));
+            fs.rmSync(dir, { recursive: true, force: true });
         }
-        assert.strictEqual(await isListening('127.0.0.1', await closedPort()), false);
     });
 
-    test('silentAttachEndpoints names the silent endpoints, and nothing when one listens or there is nothing to check', async () => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-attach-'));
-        try {
-            assert.strictEqual(await silentAttachEndpoints(dir), undefined, 'no launch.json');
-            fs.mkdirSync(path.join(dir, '.vscode'));
-            const silent = await closedPort();
-            fs.writeFileSync(path.join(dir, '.vscode', 'launch.json'), launchJson(silent, '127.0.0.1'));
-            assert.deepStrictEqual(await silentAttachEndpoints(dir), [{ name: 'STLink@pyOCD (attach)', host: '127.0.0.1', port: silent }]);
+    test('taskCommandWords: the program and arguments of a shell or process execution', () => {
+        assert.deepStrictEqual(taskCommandWords({ execution: { command: 'pyocd', args: ['gdbserver', '--persist'] } }), ['pyocd', 'gdbserver', '--persist']);
+        assert.deepStrictEqual(taskCommandWords({
+            execution: { command: { value: 'C:\\Program Files\\Arm\\FVP_MPS2_Cortex-M3.exe', quoting: 1 }, args: [{ value: '-a', quoting: 3 }, 'out/a.axf', 7] },
+        }), ['C:\\Program Files\\Arm\\FVP_MPS2_Cortex-M3.exe', '-a', 'out/a.axf'], 'quoted strings; a non-string argument is left out');
+        assert.deepStrictEqual(taskCommandWords({ execution: { commandLine: '"/opt/Arm FVP/FVP_Corstone_SSE-300" -f \'my config.txt\' -a x.axf' } }),
+            ['/opt/Arm FVP/FVP_Corstone_SSE-300', '-f', 'my config.txt', '-a', 'x.axf']);
+        assert.deepStrictEqual(taskCommandWords({ execution: { process: 'JLinkGDBServerCLExe', args: ['-nohalt'] } }), ['JLinkGDBServerCLExe', '-nohalt']);
+        assert.deepStrictEqual(taskCommandWords({ execution: { command: 'pyocd' } }), ['pyocd']);
+        for (const none of [undefined, {}, { execution: undefined }, { execution: {} }, { execution: { commandLine: '   ' } }, { execution: { command: ' ' } }]) {
+            assert.strictEqual(taskCommandWords(none), undefined, JSON.stringify(none));
+        }
+    });
 
-            const server = net.createServer((socket) => socket.destroy());
-            await new Promise<void>((ready) => server.listen(0, '127.0.0.1', ready));
-            try {
-                fs.writeFileSync(path.join(dir, '.vscode', 'launch.json'), launchJson((server.address() as net.AddressInfo).port, '127.0.0.1'));
-                assert.strictEqual(await silentAttachEndpoints(dir), undefined, 'a server listens');
-            } finally {
-                await new Promise<void>((done) => server.close(() => done()));
-            }
-            fs.writeFileSync(path.join(dir, '.vscode', 'launch.json'), '{"configurations": []}');
-            assert.strictEqual(await silentAttachEndpoints(dir), undefined, 'no attach configuration');
+    test('runCommandKind: a GDB server word wins, an FVP model without one is the bare model, the rest does not tell', () => {
+        assert.strictEqual(runCommandKind(PYOCD_RUN), 'gdbServer');
+        assert.strictEqual(runCommandKind(JLINK_RUN), 'gdbServer');
+        assert.strictEqual(runCommandKind(['cs320sim', 'gdbserver', '--port', '3333', '--persist']), 'gdbServer');
+        assert.strictEqual(runCommandKind(FVP_RUN), 'bareModel');
+        assert.strictEqual(runCommandKind(['C:\\Program Files\\Arm\\FVP\\FVP_MPS2_Cortex-M3.exe', '-a', 'x.axf']), 'bareModel');
+        assert.strictEqual(runCommandKind(['/opt/avh/VHT_Corstone_SSE-300_Ethos-U55', '-a', 'x.axf']), 'bareModel');
+        assert.strictEqual(runCommandKind(['FVP_Corstone_SSE-320', '-D', '--plugin', '/opt/fvp/plugins/GDBServer.so', '-C', 'GDBServer.port=3333']),
+            'gdbServer', 'the model with its GDBServer plugin');
+        assert.strictEqual(runCommandKind(['/w/.vscode/fvp.sh', '-f', 'board/fvp_config.txt', '-a', 'x.axf']), 'unknown', 'a model shim');
+        assert.strictEqual(runCommandKind(['openocd', '-f', 'board.cfg']), 'unknown');
+        assert.strictEqual(runCommandKind([]), 'unknown');
+        assert.strictEqual(runCommandKind(undefined), 'unknown');
+    });
+
+    test('isFvpSession: a CMSIS Debugger session on an Arm FVP by its name, its model or its GDBServer plugin', () => {
+        const target = (server: unknown, serverParameters?: unknown[]): unknown => ({ type: 'gdbtarget', name: 'Mine', target: { server, serverParameters } });
+        assert.strictEqual(isFvpSession({ type: 'gdbtarget', name: 'Arm-FVP@GDB (launch)' }), true);
+        assert.strictEqual(isFvpSession({ type: 'gdbtarget', name: ' arm-fvp@gdb (attach)', target: { port: '3333' } }), true);
+        assert.strictEqual(isFvpSession(target('/opt/fvp/FVP_Corstone_SSE-300')), true);
+        assert.strictEqual(isFvpSession(target('C:\\FVP\\FVP_MPS2_Cortex-M3.exe')), true);
+        assert.strictEqual(isFvpSession(target('VHT_Corstone_SSE-300_Ethos-U55')), true);
+        assert.strictEqual(isFvpSession(target('/w/.vscode/fvp.sh', ['-D', '--plugin', '/opt/fvp/plugins/GDBServer.so', '-f', 'fvp_config.txt'])), true);
+        assert.strictEqual(isFvpSession(target('fvp.cmd', ['--plugin', 'C:\\FVP\\plugins\\GDBServer.dll'])), true);
+        assert.strictEqual(isFvpSession(target('model.sh', ['-C', 'GDBServer.port=3334'])), true);
+        assert.strictEqual(isFvpSession(target('pyocd', ['--port', '3333'])), false);
+        assert.strictEqual(isFvpSession(target('JLinkGDBServerCL', ['-device', 'STM32F401RE'])), false);
+        assert.strictEqual(isFvpSession(target('/opt/MyGDBServer.so')), false, 'the plugin is a parameter of the model, not the server');
+        assert.strictEqual(isFvpSession({ type: 'cortex-debug', name: 'Arm-FVP@GDB (launch)' }), false);
+        assert.strictEqual(isFvpSession(undefined), false);
+    });
+
+    test('isFvpDebugger: the FVP adapter by its cbuild-run.yml name', () => {
+        assert.strictEqual(isFvpDebugger('Arm-FVP'), true);
+        assert.strictEqual(isFvpDebugger(' arm-fvp '), true);
+        assert.strictEqual(isFvpDebugger('CMSIS-DAP@pyOCD'), false);
+        assert.strictEqual(isFvpDebugger('J-Link Server'), false);
+        assert.strictEqual(isFvpDebugger(undefined), false);
+    });
+});
+
+/** The launch configuration of the eval fixture's FVP: the port detection waits for the banner, the plugin's parameter fixes the port. */
+const FVP_LAUNCH = {
+    name: 'Arm-FVP@GDB (launch)', type: 'gdbtarget', request: 'launch',
+    target: {
+        server: '${workspaceFolder}/.vscode/fvp.sh',
+        serverParameters: ['-D', '--plugin', '${env:AVH_FVP_PLUGINS}/GDBServer.so', '-C', 'GDBServer.port=3333', '-f', 'fvp_config.txt'],
+        port: '', serverPortRegExp: 'GDBServer: Listening .*port=([0-9]+)',
+    },
+    cmsis: { cbuildRunFile: '${command:cmsis-csolution.getCbuildRunFile}' },
+};
+
+/**
+ * The local GDB port a server will listen on, read from the configuration and
+ * the command line, never by a connection: what each window publishes, and
+ * what a launch asks about before it starts (two windows on one GDB port).
+ */
+suite('GDB ports of launch configurations, sessions and CMSIS Run tasks', () => {
+    test('configurationGdbPort: target.port, else the port the launch\'s GDB server sets; none on another host or without a fixed port', () => {
+        assert.deepStrictEqual(configurationGdbPort(FVP_LAUNCH), { port: 3333, server: 'Arm FVP' });
+        assert.deepStrictEqual(configurationGdbPort({ type: 'gdbtarget', request: 'launch', target: { server: 'pyocd', port: '3333' } }), { port: 3333, server: 'pyOCD' });
+        assert.deepStrictEqual(configurationGdbPort({ type: 'gdbtarget', request: 'launch', target: { server: 'JLinkGDBServerCL.exe', port: '',
+            serverParameters: ['-device', 'STM32F401RE', '-port', '2335'] } }), { port: 2335, server: 'J-Link' });
+        assert.deepStrictEqual(configurationGdbPort({ type: 'gdbtarget', request: 'attach', target: { port: 3333 } }), { port: 3333 });
+        assert.deepStrictEqual(configurationGdbPort({ type: 'gdbtarget', request: 'attach', target: { host: 'LocalHost', port: '50000' } }), { port: 50000 });
+        assert.strictEqual(configurationGdbPort({ type: 'gdbtarget', request: 'attach', target: { host: '192.168.1.7', port: '3333' } }), undefined);
+        assert.strictEqual(configurationGdbPort({ type: 'gdbtarget', request: 'launch', target: { server: 'pyocd', port: '' } }), undefined, 'the port detection decides');
+        assert.strictEqual(configurationGdbPort({ type: 'gdbtarget', request: 'launch', target: { server: 'pyocd', port: '${config:port}' } }), undefined);
+        assert.strictEqual(configurationGdbPort({ type: 'gdbtarget', request: 'attach', target: { serverParameters: ['-C', 'GDBServer.port=3333'] } }), undefined,
+            'an attach starts no server');
+        assert.strictEqual(configurationGdbPort({ type: 'cortex-debug', request: 'launch', target: { port: '3333' } }), undefined);
+        assert.strictEqual(configurationGdbPort(undefined), undefined);
+    });
+
+    test('commandLinePort and gdbServerKind: the FVP\'s GDBServer.port, pyOCD\'s --port and -p, J-Link\'s -port', () => {
+        assert.strictEqual(commandLinePort(['FVP_Corstone_SSE-300', '-CGDBServer.port=3334']), 3334);
+        assert.strictEqual(commandLinePort(['pyocd', 'gdbserver', '--port=4444']), 4444);
+        assert.strictEqual(commandLinePort(['pyocd', 'gdbserver', '-p', '5555']), 5555);
+        assert.strictEqual(commandLinePort(['openocd', '-p', '5555']), undefined, '-p is pyOCD\'s alone');
+        assert.strictEqual(commandLinePort(JLINK_RUN), 3333);
+        assert.strictEqual(commandLinePort(['JLinkGDBServer', '-TelnetPort', '4444', '-SWOPort', '2332']), undefined);
+        assert.strictEqual(commandLinePort(['pyocd', 'gdbserver', '--port', 'x']), undefined);
+        assert.strictEqual(gdbServerKind(PYOCD_RUN), 'pyOCD');
+        assert.strictEqual(gdbServerKind(JLINK_RUN), 'J-Link');
+        assert.strictEqual(gdbServerKind(['C:\\SEGGER\\JLinkGDBServerCL.exe']), 'J-Link');
+        assert.strictEqual(gdbServerKind(FVP_RUN), 'Arm FVP');
+        assert.strictEqual(gdbServerKind(['/w/.vscode/fvp.sh', '-C', 'GDBServer.port=3333']), 'Arm FVP', 'a model shim with the plugin\'s parameter');
+        assert.strictEqual(gdbServerKind(['openocd']), undefined);
+        assert.strictEqual(gdbServerKind([]), undefined);
+    });
+
+    test('runTaskGdbPorts: the port the Run sets, else pyOCD\'s from the cbuild-run file or 3333, J-Link\'s 2331; none for the FVP\'s bare model', () => {
+        assert.deepStrictEqual(runTaskGdbPorts(PYOCD_RUN), [3333]);
+        assert.deepStrictEqual(runTaskGdbPorts(PYOCD_RUN, [3333, 3334]), [3333, 3334]);
+        assert.deepStrictEqual(runTaskGdbPorts([...PYOCD_RUN, '--port', '4000'], [3333]), [4000]);
+        assert.deepStrictEqual(runTaskGdbPorts(JLINK_RUN), [3333]);
+        assert.deepStrictEqual(runTaskGdbPorts(['JLinkGDBServerCLExe', '-device', 'STM32F401RE']), [2331]);
+        assert.deepStrictEqual(runTaskGdbPorts(FVP_RUN), []);
+        assert.deepStrictEqual(runTaskGdbPorts(['FVP_Corstone_SSE-320', '--plugin', '/opt/fvp/plugins/GDBServer.so', '-C', 'GDBServer.port=3335']), [3335]);
+        assert.deepStrictEqual(runTaskGdbPorts(['pyocd', 'load', '--cbuild-run', 'x.yml']), []);
+        assert.deepStrictEqual(runTaskGdbPorts(undefined), []);
+        assert.strictEqual(runTaskCbuildRun(PYOCD_RUN), '${command:cmsis-csolution.getCbuildRunFile}');
+        assert.strictEqual(runTaskCbuildRun([...PYOCD_RUN, '--port', '4000']), undefined, 'a port of its own needs no file');
+        assert.strictEqual(runTaskCbuildRun(JLINK_RUN), undefined);
+    });
+
+    test('cbuildRunGdbPorts: the gdbserver list of the debugger node, one port per core', () => {
+        const run = (gdbserver: string): string => `cbuild-run:\n  generated-by: csolution\n  debugger:\n    name: ST-Link@pyOCD\n    protocol: swd\n${gdbserver}`
+            + '    device-settings:\n      port: 9\n  debug-vars:\n    vars: |\n      port: 7\n';
+        assert.deepStrictEqual(cbuildRunGdbPorts(run('    gdbserver:\n      - port: 3333\n')), [3333]);
+        assert.deepStrictEqual(cbuildRunGdbPorts(run('    gdbserver:\n      - port: 3333\n        pname: cm7\n      - pname: cm4\n        port: 3334\n')), [3333, 3334]);
+        assert.deepStrictEqual(cbuildRunGdbPorts(run('')), []);
+        assert.deepStrictEqual(cbuildRunGdbPorts('cbuild-run:\n  output:\n    - port: 3333\n'), []);
+    });
+
+    test('cmsisRunCommand and cmsisLaunchConfigurations: the CMSIS Run of tasks.json, and the GDB port of each launch', async () => {
+        const tasks = JSON.stringify({ version: '2.0.0', tasks: [
+            { label: 'CMSIS Load', type: 'shell', command: 'pyocd', args: ['load'] },
+            { label: 'CMSIS Run', type: 'shell', command: 'pyocd', args: PYOCD_RUN.slice(1) },
+        ] });
+        assert.deepStrictEqual(cmsisRunCommand(tasks), PYOCD_RUN);
+        assert.strictEqual(cmsisRunCommand('{"tasks": [{"label": "CMSIS Load", "command": "pyocd"}]}'), undefined);
+        assert.strictEqual(cmsisRunCommand('not json'), undefined);
+        const launch = JSON.stringify({ configurations: [FVP_LAUNCH, { name: 'Arm-FVP@GDB (attach)', type: 'gdbtarget', request: 'attach', target: { port: '3333' }, cmsis: {} }] });
+        assert.deepStrictEqual(cmsisLaunchConfigurations(launch).map((config) => [config.name, config.gdbPort, config.gdbServer, config.fvp]),
+            [['Arm-FVP@GDB (launch)', 3333, 'Arm FVP', true], ['Arm-FVP@GDB (attach)', undefined, undefined, true]]);
+
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-gdbports-'));
+        try {
+            assert.strictEqual(await folderCmsisRunCommand(dir), undefined, 'no tasks.json');
+            assert.strictEqual(await folderLaunchConfiguration(dir, 'Arm-FVP@GDB (launch)'), undefined, 'no launch.json');
+            fs.mkdirSync(path.join(dir, '.vscode'));
+            fs.writeFileSync(path.join(dir, '.vscode', 'tasks.json'), tasks);
+            fs.writeFileSync(path.join(dir, '.vscode', 'launch.json'), launch);
+            assert.deepStrictEqual(await folderCmsisRunCommand(dir), PYOCD_RUN);
+            assert.deepStrictEqual(await folderLaunchConfiguration(dir, 'Arm-FVP@GDB (launch)'), FVP_LAUNCH);
+            assert.strictEqual(await folderLaunchConfiguration(dir, 'Nope'), undefined);
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
+    });
+
+    /**
+     * Tester feedback on preview 4: Load & Debug of an STM32H7 reserved, and asked about, the port of an
+     * FVP configuration launch.json kept beside the board's, which CMSIS Solution never starts for that target.
+     */
+    test('activeLaunchConfigurations: the configurations of the active debugger on its cbuild-run ports, a filter without a match skipped', () => {
+        const launches = cmsisLaunchConfigurations(JSON.stringify({ configurations: [
+            { ...FVP_LAUNCH, target: { ...FVP_LAUNCH.target, serverParameters: ['-C', 'GDBServer.port=3334'] } },
+            { name: 'STLink@pyOCD (launch)', type: 'gdbtarget', request: 'launch', preLaunchTask: 'CMSIS Load', target: { server: 'pyocd', port: '3333' }, cmsis: {} },
+            { name: 'JLink (launch)', type: 'gdbtarget', request: 'launch', target: { server: 'JLinkGDBServerCL', port: '2331' }, cmsis: {} },
+        ] }));
+        const names = (debuggerName: string | undefined, ports: number[]): string[] =>
+            activeLaunchConfigurations(launches, debuggerName, ports).map((config) => config.name);
+        assert.deepStrictEqual(names('ST-Link@pyOCD', [3333]), ['STLink@pyOCD (launch)']);
+        assert.deepStrictEqual(names('Arm-FVP', [3334]), ['Arm-FVP@GDB (launch)']);
+        assert.deepStrictEqual(names('ST-Link@pyOCD', []), ['STLink@pyOCD (launch)', 'JLink (launch)'], 'no ports: every board configuration');
+        assert.deepStrictEqual(names('ST-Link@pyOCD', [4000]), ['STLink@pyOCD (launch)', 'JLink (launch)'], 'no configuration on the listed ports');
+        assert.deepStrictEqual(names(undefined, [3334]), ['Arm-FVP@GDB (launch)'], 'no debugger: the ports alone');
+        assert.deepStrictEqual(names(undefined, []), launches.map((config) => config.name));
+        assert.deepStrictEqual(activeLaunchConfigurations(launches.filter((config) => config.fvp), 'ST-Link@pyOCD', [3333]).map((config) => config.name),
+            ['Arm-FVP@GDB (launch)'], 'no configuration of the debugger\'s kind: all of them, as before');
+    });
+
+    /**
+     * Tester feedback on preview 4, an STM32H7 with a custom debug setup: its launch runs pyOCD through Python and a
+     * wrapper script, its target.port is rendered in quotes ("\"45343\""), and the port comes from the cbuild-run file.
+     * Neither the launch nor the session nor the CMSIS Run had a port, so nothing was reserved or published.
+     */
+    test('a custom debug setup: pyOCD behind Python, a quoted port, and a port that only the cbuild-run file names', async () => {
+        const [program, ...parameters] = CUSTOM_SERVER;
+        assert.strictEqual(gdbServerKind(CUSTOM_SERVER), 'pyOCD');
+        assert.strictEqual(gdbServerKind(['python3', 'start_server.py', 'gdbserver', '--cbuild-run', 'h7.cbuild-run.yml']), 'pyOCD',
+            'a gdbserver that reads a cbuild-run file is pyOCD\'s, whatever its wrapper is called');
+        assert.strictEqual(gdbServerKind(['python3', 'pyocd_wrapper.py', 'gdbserver', '--probe', 'cmsisdap:']), undefined, 'a wrapper\'s name proves nothing');
+        assert.strictEqual(gdbServerKind(['python3', '-m', 'pyocd', 'gdbserver', '--port', '3333']), undefined);
+        assert.strictEqual(commandLinePort(['python3', '-m', 'pyocd', 'gdbserver', '--port', '3333']), 3333, 'a port it sets is still read');
+        assert.strictEqual(gdbServerKind(['python3', 'start_server.py', 'load', '--cbuild-run', 'h7.cbuild-run.yml']), undefined, 'a Load hosts no GDB server');
+        assert.strictEqual(runTaskCbuildRun(CUSTOM_SERVER), '${command:cmsis-csolution.getCbuildRunFile}');
+        assert.deepStrictEqual(runTaskGdbPorts(CUSTOM_SERVER, [45343]), [45343]);
+
+        const launch = { type: 'gdbtarget', request: 'launch', target: { server: program, serverParameters: parameters, port: '"45343"' } };
+        assert.deepStrictEqual(configurationGdbPort(launch), { port: 45343, server: 'pyOCD' }, 'an explicit port, quoted, comes first');
+        assert.deepStrictEqual(configurationGdbPort({ type: 'gdbtarget', request: 'attach', target: { port: ' \'2331\' ' } }), { port: 2331 });
+        assert.strictEqual(configurationGdbPort({ type: 'gdbtarget', request: 'attach', target: { port: '"45343' } }), undefined);
+        assert.strictEqual(launchCbuildRun(launch), undefined, 'a fixed port needs no file');
+
+        const unfixed = { ...launch, target: { ...launch.target, port: '' } };
+        const resolved = { ...unfixed, target: { ...unfixed.target, serverParameters: parameters.map((word) => word.startsWith('${') ? '/w/out/h7+H7.cbuild-run.yml' : word) } };
+        assert.strictEqual(configurationGdbPort(unfixed), undefined);
+        assert.strictEqual(launchCbuildRun(unfixed), '${command:cmsis-csolution.getCbuildRunFile}');
+        assert.strictEqual(launchCbuildRun(resolved), '/w/out/h7+H7.cbuild-run.yml', 'a live session carries the resolved path');
+        assert.strictEqual(launchCbuildRun({ ...unfixed, request: 'attach' }), undefined);
+        assert.strictEqual(launchCbuildRun({ ...unfixed, target: { ...unfixed.target, host: '192.168.1.7' } }), undefined);
+        const files: string[] = [];
+        const read = async (file: string): Promise<number[]> => {
+            files.push(file);
+            return [45343];
+        };
+        assert.deepStrictEqual(await sessionGdbPorts(resolved, read), [{ port: 45343, server: 'pyOCD' }]);
+        assert.deepStrictEqual(await sessionGdbPorts(launch, read), [{ port: 45343, server: 'pyOCD' }]);
+        assert.deepStrictEqual(files, ['/w/out/h7+H7.cbuild-run.yml'], 'the file is read only when no port is fixed');
+
+        const configurations = cmsisLaunchConfigurations(JSON.stringify({ configurations: [{ ...unfixed, name: 'Custom@pyOCD (launch)', cmsis: {} }] }));
+        assert.strictEqual(configurations[0].cbuildRun, '${command:cmsis-csolution.getCbuildRunFile}');
+        assert.deepStrictEqual(activeLaunchConfigurations(configurations, 'Custom@pyOCD', [45343]).map((config) => [config.gdbPort, config.gdbServer]),
+            [[45343, 'pyOCD']], 'the active target\'s file names one port');
+        assert.deepStrictEqual(activeLaunchConfigurations(configurations, 'Custom@pyOCD', [45343, 45344]).map((config) => config.gdbPort), [undefined],
+            'several ports: no single one to reserve');
+    });
+
+    test('windowGdbPorts: the CMSIS Run tasks first, then the sessions, one claim per port; pyOCD\'s file is asked for its ports', async () => {
+        const files: string[] = [];
+        const claims = await windowGdbPorts(
+            [
+                { name: 'STLink@pyOCD (attach)', configuration: { type: 'gdbtarget', request: 'attach', target: { port: '3333' } } },
+                { name: 'Arm-FVP@GDB (launch)', configuration: { ...FVP_LAUNCH, target: { ...FVP_LAUNCH.target, serverParameters: ['-C', 'GDBServer.port=3340'] } } },
+                { name: 'Python', configuration: { type: 'debugpy', request: 'attach', connect: { port: 5678 } } },
+            ],
+            [{ name: 'CMSIS Run', words: PYOCD_RUN }, { name: 'CMSIS Run', words: undefined }],
+            async (file) => {
+                files.push(file);
+                return [3333];
+            },
+        );
+        assert.deepStrictEqual(claims, [
+            { port: 3333, source: 'cmsis-run', label: 'CMSIS Run', server: 'pyOCD' },
+            { port: 3340, source: 'session', label: 'Arm-FVP@GDB (launch)', server: 'Arm FVP' },
+        ]);
+        assert.deepStrictEqual(files, ['${command:cmsis-csolution.getCbuildRunFile}']);
+        assert.deepStrictEqual(await windowGdbPorts([], [], async () => []), []);
+    });
+
+    test('gdbPortClaimsOf: what an entry of any version holds, each field checked', () => {
+        assert.deepStrictEqual(gdbPortClaimsOf(undefined), [], 'an entry of an earlier version');
+        assert.deepStrictEqual(gdbPortClaimsOf('3333'), []);
+        assert.deepStrictEqual(gdbPortClaimsOf([
+            { port: 3333, source: 'cmsis-run', label: 'CMSIS Run', server: 'pyOCD', since: 5 },
+            { port: '3334', source: 'session', label: 'Arm-FVP@GDB (launch)', server: 'Renode' },
+            { port: 70000, source: 'session', label: 'x' },
+            { port: 3335, source: 'probe', label: 'x' },
+            { port: 3336, source: 'session' },
+            null,
+        ]), [
+            { port: 3333, source: 'cmsis-run', label: 'CMSIS Run', server: 'pyOCD' },
+            { port: 3334, source: 'session', label: 'Arm-FVP@GDB (launch)' },
+        ]);
     });
 });

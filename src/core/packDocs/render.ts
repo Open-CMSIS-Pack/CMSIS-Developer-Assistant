@@ -196,17 +196,43 @@ export function renderFetch(doc: DocRef, outcome: FetchOutcome | undefined, load
     return lines.join('\n');
 }
 
-/** A failed fetch_doc: the reason, what is known about the document, and the manual way out. */
-export function renderFetchFailure(doc: DocRef, outcome: Extract<FetchOutcome, { ok: false }>, dropFolder: string | undefined): string {
-    const lines: string[] = [`Could not fetch ${doc.id}: ${outcome.error}.`];
+/**
+ * A failed fetch_doc: the reason, what is known about the document, and the
+ * manual way out. `attempts`, the failed downloads of the document since the
+ * window started; from the second on, the manual way comes first.
+ */
+export function renderFetchFailure(
+    doc: DocRef, outcome: Extract<FetchOutcome, { ok: false }>, dropFolder: string | undefined, attempts = 1,
+): string {
+    const tries = attempts > 1 ? ` (${attempts} attempts failed)` : '';
+    const lines: string[] = [`Could not fetch ${doc.id}${tries}: ${outcome.error}.`];
+    if (attempts > 1 && dropFolder) {
+        lines.push(`Do not call fetch_doc for it again: ask the user to download the PDF into ${dropFolder} in the workspace; `
+            + 'list_target_docs then lists it as a workspace document.');
+    }
     const r = outcome.resolved;
     if (r) {
         const known = [r.title, r.versionLabel ? `edition ${r.versionLabel}` : undefined, r.version ? `version ${r.version}` : undefined].filter(Boolean).join(', ');
         if (known) { lines.push(`Document: ${known}.`); }
     }
     if (doc.url) { lines.push(`URL: ${doc.url}`); }
-    if (dropFolder) { lines.push(`Alternative: download the PDF yourself into ${dropFolder} in the workspace; list_target_docs then lists it as a workspace document.`); }
+    if (dropFolder && attempts <= 1) {
+        lines.push(`Alternative: download the PDF yourself into ${dropFolder} in the workspace; list_target_docs then lists it as a workspace document.`);
+    }
     return lines.join('\n');
+}
+
+/** A download that outlived the call that waited for it: how far it got, and that the next call picks it up. */
+export function renderDownloadRunning(doc: DocRef, bytes: number, total: number | undefined, elapsedMs: number): string {
+    let host = '';
+    try {
+        host = doc.url ? ` from ${new URL(doc.url).hostname}` : '';
+    } catch {
+        host = '';
+    }
+    const got = bytes === 0 ? 'no bytes yet' : `${formatBytes(bytes)}${total ? ` of ${formatBytes(total)}` : ''}`;
+    return `Downloading ${doc.id}${host}: ${got} after ${Math.round(elapsedMs / 1000)} s. The download goes on without this call; `
+        + `call fetch_doc { doc: '${doc.id}' } again to wait for it and index it. Calls meanwhile join the same download.`;
 }
 
 /** "519", "519-521", "519,523" → 1-based page numbers within [1, max]. */

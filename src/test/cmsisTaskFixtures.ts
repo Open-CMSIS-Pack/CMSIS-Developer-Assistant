@@ -17,7 +17,7 @@
 /**
  * Helpers of the CMSIS task tests: the recorded task sequences under
  * `src/test/fixtures/cmsisTasks/` (derived from the installed CMSIS Solution
- * 1.70.1, see each file's `derivedFrom`), a fake `vscode.tasks` that fires
+ * 1.70.1 and 1.72.0, see each file's `derivedFrom`), a fake `vscode.tasks` that fires
  * their events, and a clock the test moves by hand.
  */
 
@@ -32,7 +32,9 @@ const FIXTURE_DIR = path.resolve(__dirname, '..', '..', '..', 'src', 'test', 'fi
 export interface FixtureTask {
     name: string;
     source: string;
-    definition: { type: string; setup?: boolean; [key: string]: unknown };
+    definition: { type: string; setup?: boolean; clean?: boolean; rebuild?: boolean; [key: string]: unknown };
+    /** `vscode.Task.execution`: what a shell task runs (`command` and `args`). */
+    execution?: unknown;
 }
 
 export interface FixtureEvent {
@@ -84,7 +86,10 @@ function toJobEvent(fixture: TaskFixture, step: FixtureEvent, keys: Map<string, 
         return undefined;
     }
     const task = fixture.tasks[step.task];
-    const kind = classifyCmsisTask({ name: task.name, source: task.source, type: task.definition.type, setup: task.definition.setup === true });
+    const kind = classifyCmsisTask({
+        name: task.name, source: task.source, type: task.definition.type, setup: task.definition.setup === true,
+        clean: task.definition.clean === true, rebuild: task.definition.rebuild === true,
+    });
     const key = keys.get(step.task) ?? 0;
     if (!kind) {
         return undefined;

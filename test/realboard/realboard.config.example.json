@@ -13,12 +13,6 @@
   "peripheralProbe": { "peripheral": "GPIO0" },
   "evaluateProbe":   { "expression": "$pc" },
 
-  "serial": {
-    "path": "/dev/tty.example",
-    "baudRate": 115200,
-    "skipIfMissing": true
-  },
-
   "preferCmsisLoadAndDebug": true,
 
   "globalCapMs": 60000,

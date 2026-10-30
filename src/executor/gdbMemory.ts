@@ -15,9 +15,10 @@
  */
 
 /**
- * Memory helpers of the executor: how addresses are spelled, how one 32-bit
- * word is read through GDB when the adapter's `readMemory` request fails,
- * and what a failed read means (#3).
+ * Memory helpers of the executor: how addresses are spelled, where the bytes
+ * of a DAP `readMemory` reply lie, how one 32-bit word is read through GDB
+ * when the adapter's `readMemory` request fails, and what a failed read
+ * means (#3).
  *
  * The word read tries evaluate requests in turn and keeps the first answer it
  * can parse: a watch expression that dereferences the address, then raw GDB
@@ -31,7 +32,8 @@
  * On the CMSIS Debugger, `explainReadFailure` then reads DHCSR once
  * (`probeDebugPort`) and turns the failure into `PROBE_WEDGED` or
  * `INVALID_ARGUMENT` (src/core/probeWedge.ts); elsewhere the failure keeps
- * its causes and nothing more is read.
+ * its causes and nothing more is read. Every DHCSR read of a CMSIS Debugger
+ * session leaves its verdict with the session tracker.
  *
  * `readWord` in src/core/peripheralReader.ts is a similar ladder with its own
  * behaviour (no third form, `readMemory` first); the two stay separate.
@@ -39,13 +41,46 @@
 
 import * as vscode from 'vscode';
 import { bytesFromMiMemoryReply, CMSIS_DEBUGGER_TYPE, miReadMemoryCommand } from '../core/gdbDialect';
-import { attemptsText, CANARY_MS, classifyReadFailure, DebugPortProbe, DHCSR_ADDRESS, ReadAttempt } from '../core/probeWedge';
+import { attemptsText, CANARY_MS, classifyReadFailure, coreVerdict, DebugPortProbe, DHCSR_ADDRESS, ReadAttempt } from '../core/probeWedge';
+import { noteCoreVerdict } from '../utils/sessionStateTracker';
 import { customRequestWithTimeout, HardwareTimeoutError } from '../utils/timeout';
 import { EvaluateBody, FrameArg, messageOf, ReadMemoryBody } from './common';
+import type { MemoryRead } from './contract';
 
 /** An address written without `0x` gets it; anything else is used verbatim (no case change, no padding). */
 export function withHexPrefix(address: string): string {
     return /^0x/i.test(address) ? address : `0x${address}`;
+}
+
+/** The address of a DAP `readMemory` reply: hex after `0x`, decimal otherwise. */
+const REPLY_ADDRESS = /^(?:0x[0-9a-f]+|[0-9]+)$/i;
+
+/**
+ * The part of a DAP `readMemory` reply that lies in the `count` bytes from
+ * `first`, and how far after `first` it begins. The reply's `address` is
+ * that of its first byte (DAP). cdt-gdb-adapter sets it to where GDB's first
+ * readable block begins, which is later than asked when the start of the
+ * range cannot be read. A reply without an address begins at `first`;
+ * `unreadableBytes` counts bytes after the data and moves nothing. A string
+ * says why the reply holds no byte of the range.
+ */
+export function bytesInRange(reply: ReadMemoryBody | undefined, first: bigint, count: number): MemoryRead | string {
+    const data = reply?.data ? Buffer.from(reply.data, 'base64') : undefined;
+    if (!data || data.length === 0) {
+        return 'no data in the reply';
+    }
+    const spelled = String(reply?.address ?? '').trim();
+    if (spelled !== '' && !REPLY_ADDRESS.test(spelled)) {
+        return `the reply's address '${spelled}' is not a number`;
+    }
+    const begin = spelled === '' ? first : BigInt(spelled);
+    const end = first + BigInt(count);
+    const from = begin > first ? begin : first;
+    const to = begin + BigInt(data.length) < end ? begin + BigInt(data.length) : end;
+    if (to <= from) {
+        return `the reply's ${data.length} bytes at 0x${begin.toString(16)} lie outside the range`;
+    }
+    return { bytes: data.subarray(Number(from - begin), Number(to - begin)), offset: Number(from - first) };
 }
 
 /**
@@ -97,11 +132,6 @@ export function withEarlierAttempts(caught: unknown, earlier: readonly ReadAttem
         : caught;
 }
 
-/** The attempts a failure records; any other error counts as one attempt of `strategy`. */
-export function attemptsOf(caught: unknown, strategy: string): ReadAttempt[] {
-    return caught instanceof MemoryReadFailure ? [...caught.attempts] : [{ strategy, cause: messageOf(caught) }];
-}
-
 /** Why a query's reply held no word: its text, or that there was none. */
 function unreadableReply(answer: unknown): string {
     if (typeof answer !== 'string') {
@@ -150,9 +180,19 @@ export async function readWordThroughGdb(
 
 /**
  * Read DHCSR once, 4 bytes through DAP `readMemory` within at most 1 s: does
- * the debug port answer? Never rejects.
+ * the debug port answer? On the CMSIS Debugger the session tracker keeps the
+ * verdict for `get_session_status` (`noteCoreVerdict`). Never rejects.
  */
 export async function probeDebugPort(session: vscode.DebugSession, budgetMs: number): Promise<DebugPortProbe> {
+    const probe = await readDhcsr(session, budgetMs);
+    if (session.type === CMSIS_DEBUGGER_TYPE) {
+        noteCoreVerdict(session, coreVerdict(probe));
+    }
+    return probe;
+}
+
+/** `probeDebugPort` without the verdict kept. */
+async function readDhcsr(session: vscode.DebugSession, budgetMs: number): Promise<DebugPortProbe> {
     try {
         const reply = await customRequestWithTimeout<ReadMemoryBody | undefined>(session, 'readMemory',
             { memoryReference: DHCSR_ADDRESS, count: 4 }, Math.min(budgetMs, CANARY_MS));

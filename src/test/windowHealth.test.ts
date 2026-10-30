@@ -26,6 +26,7 @@ import {
     busyCallsOf,
     busyText,
     lagText,
+    portAnswers,
     portSilent,
     secondsText,
 } from '../core/windowHealth';
@@ -156,6 +157,28 @@ suite('Window health', () => {
                 await new Promise<void>((closed) => held.close(() => closed()));
             }
             assert.strictEqual(await portSilent(answeringPort, 1_000), false, 'nothing listens there any more');
+        });
+
+        test('a port answers when anything accepts a connection on it; a free port does not, and the probe does not wait', async () => {
+            // A worker asks before it builds a server: an accepting socket is a router, a free port is a bid.
+            const accepting = net.createServer();
+            await new Promise<void>((ready) => accepting.listen(0, '127.0.0.1', ready));
+            const busyPort = (accepting.address() as AddressInfo).port;
+            const freePort = await new Promise<number>((found) => {
+                const probe = net.createServer();
+                probe.listen(0, '127.0.0.1', () => {
+                    const port = (probe.address() as AddressInfo).port;
+                    probe.close(() => found(port));
+                });
+            });
+            try {
+                assert.strictEqual(await portAnswers(busyPort, 1_000), true);
+                const began = Date.now();
+                assert.strictEqual(await portAnswers(freePort, 1_000), false);
+                assert.ok(Date.now() - began < 1_000);
+            } finally {
+                await new Promise<void>((closed) => accepting.close(() => closed()));
+            }
         });
     });
 });

@@ -16,21 +16,24 @@
 
 /**
  * Bridge to the Microsoft Serial Monitor extension
- * (`ms-vscode.vscode-serial-monitor`).
+ * (`ms-vscode.vscode-serial-monitor`), which the CMSIS Debugger's extension
+ * pack installs.
  *
- * The extension publishes a typed API package
- * (`@microsoft/vscode-serial-monitor-api`) that VS Code returns from
- * `extensions.getExtension(...).exports`. The current public surface
- * (v0.1.7) is centred on **port enumeration** and **port-set change
- * notifications** — RX byte streaming is captured internally and forwarded
- * to the webview, but is NOT (yet) exposed publicly.
+ * The extension's exports are not its API: they hold `getApi(version,
+ * context)`, which hands one out for version 0 (`Version.v0` of
+ * `@microsoft/vscode-serial-monitor-api`, the only version it accepts) and
+ * the extension context of the caller, whose `extension.id` it records. The
+ * CMSIS Solution extension asks for it the same way. extension.ts hands this
+ * extension's context to the bridge at activation (`attach()`).
  *
- * This bridge probes the exports object at runtime so:
- *
- *   - We use whatever the API offers today (port list, port-changed events).
- *   - If Microsoft adds a data-subscription event in a later release
- *     (`onDidReceiveData`, `onSerialData`, `subscribeData`, …) we light up
- *     automatically — no extra build required.
+ * That API lists ports, starts and stops monitoring a serial port or a TCP
+ * connection and clears the output; it has no event for the bytes the
+ * monitor receives, so no other extension can read the user's session.
+ * `serial_subscribe_monitor` is therefore refused, with that reason. The
+ * bridge still looks for a data event on the API object (`onDidReceiveData`,
+ * `onSerialData`, …) and subscribes when a later build has one.
+ * `serial_list_ports` does not ask the API: its list is serialport's own,
+ * without the serial numbers.
  *
  * The bridge buffers received bytes the same way the standalone
  * `serialController` does, so `serial_read` (with `from: 'monitor'`) can
@@ -40,7 +43,7 @@
  * src/core/serialLease.ts): it ends after `serial.idleCloseSeconds` without
  * a serial call and when the MCP session that subscribed ends, and then
  * drops its buffer. Each such end is journaled as info (source `serial`).
- * Tests hand in the extension lookup and the timers.
+ * Tests hand in the extension lookup, the context and the timers.
  */
 
 import * as vscode from 'vscode';
@@ -50,12 +53,16 @@ import { LeaseTimers, REAL_TIMERS, RuleRelease, SerialLease } from './serialLeas
 
 const MAX_BUFFER_BYTES = 1 * 1024 * 1024;
 
-export interface BridgePort {
-    portName: string;
-    friendlyName?: string;
-    vid?: string;
-    pid?: string;
-}
+/** The version the bridge asks `getApi` for: `Version.v0`, the only one the Serial Monitor (0.13) accepts. */
+const SERIAL_MONITOR_API_VERSION = 0;
+
+/** The data events the bridge looks for on the API; version 0 has none of them. */
+const DATA_EVENTS = ['onDidReceiveData', 'onDataReceived', 'onData', 'onSerialData', 'onDidReadData', 'subscribeData'];
+
+/** Why a subscription is refused when the API has no data event, and what to do instead. */
+const NO_DATA_EVENT = 'The Serial Monitor\'s API (version 0) has no data event: it lists ports and starts or stops '
+    + 'monitoring, but does not pass on what it receives. Ask the user to stop monitoring the port in the Serial Monitor, '
+    + 'then read it with serial_capture or serial_open.';
 
 export interface BridgeStatus {
     extensionInstalled: boolean;
@@ -74,9 +81,16 @@ export interface BridgeExtension {
     activate(): Thenable<unknown>;
 }
 
-/** Where the bridge finds the extension, its timers and its problem journal; each defaults to the real thing. */
+/** What `getApi` is handed besides the version: an extension context, of which the Serial Monitor reads `extension.id`. */
+export interface MonitorConsumer {
+    readonly extension: { readonly id: string };
+}
+
+/** Where the bridge finds the extension, its context, its timers and its problem journal; each but the context defaults to the real thing. */
 export interface SerialMonitorBridgeDeps {
     lookup?: (id: string) => BridgeExtension | undefined;
+    /** The context `getApi` is handed; the window's bridge gets the extension's at activation (`attach()`). */
+    consumer?: MonitorConsumer;
     timers?: LeaseTimers;
     journal?: (problem: ProblemInput) => void;
 }
@@ -92,9 +106,29 @@ export interface SubscribeTerms {
 /** The origin of the bridge's problem records. */
 const BRIDGE_ORIGIN = 'Serial Monitor';
 
+/**
+ * The methods and accessors of the API object, its prototypes included: the
+ * Serial Monitor's API is a class instance, whose own keys hold only its state.
+ */
+function apiMembers(api: object): string[] {
+    const names = new Set<string>();
+    for (let level: object | null = api; level !== null && level !== Object.prototype; level = Reflect.getPrototypeOf(level)) {
+        for (const name of Object.getOwnPropertyNames(level)) {
+            const member = Object.getOwnPropertyDescriptor(level, name);
+            if (name !== 'constructor' && (typeof member?.value === 'function' || member?.get !== undefined)) {
+                names.add(name);
+            }
+        }
+    }
+    return [...names];
+}
+
 export class SerialMonitorBridge {
     private extId = 'ms-vscode.vscode-serial-monitor';
-    private api: any = null;
+    private api: object | null = null;
+    /** Why the last request for the API gave none. */
+    private unavailable = '';
+    private consumer: MonitorConsumer | undefined;
     private subscription: vscode.Disposable | null = null;
     private buffer: Buffer = Buffer.alloc(0);
     private dataEventName: string | null = null;
@@ -105,41 +139,64 @@ export class SerialMonitorBridge {
 
     constructor(deps: SerialMonitorBridgeDeps = {}) {
         this.lookup = deps.lookup ?? ((id) => vscode.extensions.getExtension(id));
+        this.consumer = deps.consumer;
         this.timers = deps.timers ?? REAL_TIMERS;
         this.journal = deps.journal ?? ((problem) => { problemJournal().append(problem); });
     }
 
-    /** Lazily activates the Microsoft Serial Monitor and grabs its exports. */
-    private async getApi(): Promise<any> {
-        if (this.api) { return this.api; }
-        const ext = this.lookup(this.extId);
-        if (!ext) { return null; }
-        if (!ext.isActive) {
-            try { await ext.activate(); }
-            catch (err) {
-                logger.warn(`Serial Monitor activation failed: ${err}`);
-                return null;
-            }
-        }
-        this.api = ext.exports ?? null;
-        return this.api;
+    /** Hand in the extension context that the Serial Monitor's `getApi` requires; extension.ts does at activation. */
+    attach(consumer: MonitorConsumer): void {
+        this.consumer = consumer;
     }
 
     /**
-     * Probe the API object for any plausible data-subscription event. If the
-     * MS extension exposes one in this build we wire it up; otherwise the
-     * bridge cleanly reports "data subscription not available".
+     * The Serial Monitor's API: `getApi(0, context)` of its exports, asked once
+     * and kept; the extension is activated first when it is not yet. Null when
+     * the extension is missing or fails to activate, its exports have no
+     * `getApi`, `getApi` refuses, or no context is attached; `unavailable`
+     * then says which.
      */
-    private findDataEvent(api: any): string | null {
-        if (!api || typeof api !== 'object') { return null; }
-        const candidates = [
-            'onDidReceiveData', 'onDataReceived', 'onData',
-            'onSerialData', 'onDidReadData', 'subscribeData',
-        ];
-        for (const name of candidates) {
-            if (typeof api[name] === 'function') { return name; }
+    private async getApi(): Promise<object | null> {
+        if (this.api) { return this.api; }
+        const ext = this.lookup(this.extId);
+        if (!ext) { return this.noApi(`Extension '${this.extId}' is not installed or failed to activate.`); }
+        if (!this.consumer) {
+            return this.noApi('The Serial Monitor bridge has no extension context yet; try again once the extension has activated.');
         }
+        let exports: unknown;
+        try {
+            exports = ext.isActive ? ext.exports : await ext.activate();
+        } catch (err) {
+            logger.warn(`Serial Monitor activation failed: ${err}`);
+            return this.noApi(`Extension '${this.extId}' is not installed or failed to activate.`);
+        }
+        const getApi: unknown = typeof exports === 'object' && exports !== null ? Reflect.get(exports, 'getApi') : undefined;
+        if (typeof getApi !== 'function') {
+            return this.noApi(`Extension '${this.extId}' exports no getApi(version, context): it failed to activate, or this build has no API.`);
+        }
+        try {
+            const api: unknown = getApi.call(exports, SERIAL_MONITOR_API_VERSION, this.consumer);
+            if (typeof api !== 'object' || api === null) {
+                return this.noApi(`The Serial Monitor's getApi(${SERIAL_MONITOR_API_VERSION}) returned no API.`);
+            }
+            this.api = api;
+            return api;
+        } catch (err) {
+            logger.info(`The Serial Monitor refused API version ${SERIAL_MONITOR_API_VERSION}`, err);
+            return this.noApi(`The Serial Monitor refused API version ${SERIAL_MONITOR_API_VERSION}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
+
+    /** No API: remember why. */
+    private noApi(reason: string): null {
+        this.unavailable = reason;
         return null;
+    }
+
+    /** The first of the data events the bridge knows that the API has; version 0 has none. */
+    private findDataEvent(api: object | null): string | null {
+        if (!api) { return null; }
+        return DATA_EVENTS.find((name) => typeof Reflect.get(api, name) === 'function') ?? null;
     }
 
     async status(): Promise<BridgeStatus> {
@@ -150,8 +207,8 @@ export class SerialMonitorBridge {
         let dataAvailable = false;
         if (activated) {
             const api = await this.getApi();
-            if (api && typeof api === 'object') {
-                keys = Object.keys(api).slice(0, 30);
+            if (api) {
+                keys = apiMembers(api).slice(0, 30);
             }
             this.dataEventName = this.findDataEvent(api);
             dataAvailable = this.dataEventName !== null;
@@ -168,29 +225,6 @@ export class SerialMonitorBridge {
     }
 
     /**
-     * Best-effort port enumeration via the public API. Returns null when the
-     * extension isn't installed or the API doesn't expose listing.
-     */
-    async listPorts(): Promise<BridgePort[] | null> {
-        const api = await this.getApi();
-        if (!api) { return null; }
-        // Typical names in v0.1.x
-        const fns = ['getAvailableSerialPorts', 'listPorts', 'getPorts', 'getSerialPorts'];
-        for (const name of fns) {
-            const fn = api[name];
-            if (typeof fn === 'function') {
-                try {
-                    const ports = await fn.call(api);
-                    return Array.isArray(ports) ? ports : [];
-                } catch (err) {
-                    logger.warn(`Serial Monitor.${name} threw: ${err}`);
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
      * Subscribe to the Serial Monitor's data event when its API has one. The
      * subscription is held for `terms.owner` and ends after `terms.idleSeconds`
      * without a serial call (#49); a repeated call keeps the one that exists.
@@ -202,21 +236,15 @@ export class SerialMonitorBridge {
         }
         const api = await this.getApi();
         if (!api) {
-            return { ok: false, reason: `Extension '${this.extId}' is not installed or failed to activate.` };
+            return { ok: false, reason: this.unavailable };
         }
         const eventName = this.findDataEvent(api);
         if (!eventName) {
-            return {
-                ok: false,
-                reason: `The installed Microsoft Serial Monitor build does not expose a public data-subscription event ` +
-                    `(probed: onDidReceiveData / onDataReceived / onData / onSerialData / onDidReadData / subscribeData). ` +
-                    `Use serial_open and serial_read to own the port instead, or update the Serial Monitor ` +
-                    `extension when MS adds the API.`,
-            };
+            return { ok: false, reason: NO_DATA_EVENT };
         }
         try {
-            const event = api[eventName] as (cb: (arg: any) => void) => vscode.Disposable;
-            this.subscription = event.call(api, (evt: any) => this.onData(evt));
+            const event = Reflect.get(api, eventName) as (cb: (arg: unknown) => void) => vscode.Disposable;
+            this.subscription = event.call(api, (evt: unknown) => this.onData(evt));
             this.dataEventName = eventName;
             this.lease = new SerialLease({ owner: terms.owner, rule: 'idle', idleSeconds: terms.idleSeconds ?? 0 }, this.timers,
                 () => { this.endByRule('idle'); });

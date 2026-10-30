@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
+import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
-import { defaultPackRoot, expandPackRoot } from './packDocs/cbuildRun';
+import { cbuildRunFilePath, defaultPackRoot, expandPackRoot } from './packDocs/cbuildRun';
 import { effectiveToolchainPackRoot } from '../utils/toolchainPackRoot';
 
 /**
@@ -181,10 +181,10 @@ export async function resolveSvdPath(ctx: SvdResolveContext): Promise<SvdResolut
     return { path: null, tried };
 }
 
-/** The SVD entries of a cbuild-run file, in order. */
+/** The SVD entries of a cbuild-run file, in order; LF or CRLF, as csolution writes it on Windows. */
 export function svdEntriesFromCbuildRun(content: string): { file: string; pname?: string }[] {
     const entries: { file: string; pname?: string }[] = [];
-    const lines = content.split('\n');
+    const lines = content.split(/\r?\n/);
     for (let i = 0; i < lines.length; i++) {
         const fileLine = lines[i].match(/^\s*-\s*file:\s*(.+)$/);
         if (!fileLine) { continue; }
@@ -225,7 +225,7 @@ function findSvdInCbuildRun(filePath: string, packRoot: string, pname?: string, 
         const entries = svdEntriesFromCbuildRun(fs.readFileSync(filePath, 'utf-8'));
         const entry = selectSvdEntry(entries, pname, sessionName);
         if (!entry) { return null; }
-        const resolved = path.normalize(expandPackRoot(entry.file, packRoot));
+        const resolved = cbuildRunFilePath(entry.file, filePath, packRoot);
         return fs.existsSync(resolved) ? resolved : null;
     } catch {
         return null;
@@ -263,25 +263,38 @@ function sessionContext(session: vscode.DebugSession): Partial<SvdResolveContext
     };
 }
 
-/** Locate the SVD file for the active debug session; null without one. */
-export async function findSvdFile(): Promise<string | null> {
-    const session = vscode.debug.activeDebugSession;
-    if (!session) { return null; }
+/**
+ * Locate the SVD file of `session`, the session a read goes to (the
+ * executor's `resolveActiveSession()`, which need not be the one VS Code
+ * has focused); null when none is found.
+ */
+export async function findSvdFile(session: vscode.DebugSession): Promise<string | null> {
     return (await resolveSvdPath({ ...sessionContext(session), ...workspaceContext() })).path;
 }
 
+/** What a lookup asks for: an explicit path or core, and the session the executor acts on, if any. */
+export interface SvdLookupOptions {
+    svdFile?: string;
+    pname?: string;
+    session?: vscode.DebugSession;
+}
+
 /**
- * Locate an SVD for a lookup: the explicit path first, then the active
- * session's sources when there is one, then the workspace — so the lookup
- * tools work before the first session and agree with the reader during one.
+ * Locate an SVD for a lookup: the tool's `svdFile`; else, unless the call
+ * names a core with `pname`, the launch `svdFile` of `session`, which
+ * describes that session's own core; then that session's cbuild-run file
+ * and cwd when there is one, then the workspace — so the lookup tools work
+ * before the first session and agree with the reader during one.
  */
-export async function resolveSvdForLookup(opts: { svdFile?: string; pname?: string }): Promise<SvdResolution> {
-    const session = vscode.debug.activeDebugSession;
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+export async function resolveSvdForLookup(opts: SvdLookupOptions): Promise<SvdResolution> {
+    const sources: Partial<SvdResolveContext> = opts.session
+        ? sessionContext(opts.session)
+        : { cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath };
     return resolveSvdPath({
-        ...(session ? sessionContext(session) : { cwd }),
+        ...sources,
         ...workspaceContext(),
-        svdFile: opts.svdFile,
+        // A named core takes its entry of the cbuild-run, never the session core's launch svdFile.
+        svdFile: opts.svdFile ?? (opts.pname ? undefined : sources.svdFile),
         pname: opts.pname,
     });
 }
@@ -299,9 +312,9 @@ export function loadSvdFromPath(svdPath: string): SvdDevice | null {
     }
 }
 
-/** The active session's device description, or null. */
-export async function loadSvd(): Promise<SvdDevice | null> {
-    const svdPath = await findSvdFile();
+/** The device description of `session`, or null. */
+export async function loadSvd(session: vscode.DebugSession): Promise<SvdDevice | null> {
+    const svdPath = await findSvdFile(session);
     return svdPath ? loadSvdFromPath(svdPath) : null;
 }
 
@@ -310,7 +323,7 @@ export type SvdLookupLoad =
     | { device: null; path: string | null; tried: string[] };
 
 /** The device description for a lookup tool, with what was tried on failure. */
-export async function loadSvdForLookup(opts: { svdFile?: string; pname?: string }): Promise<SvdLookupLoad> {
+export async function loadSvdForLookup(opts: SvdLookupOptions): Promise<SvdLookupLoad> {
     const resolution = await resolveSvdForLookup(opts);
     if (!resolution.path) { return { device: null, path: null, tried: resolution.tried }; }
     const device = loadSvdFromPath(resolution.path);

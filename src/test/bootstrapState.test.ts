@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// What an empty window lacks, as the refusals and status lines say it, and the csolution walk of open_solution.
+// What an empty window lacks, as the refusals and status lines say it; path comparison, the CMSIS Solution extension's csolution search and the csolution walk of open_solution.
 
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -24,6 +24,8 @@ import {
     bootstrapStatusLines,
     isSolutionFile,
     liesInside,
+    LISTED_SOLUTION_GLOB,
+    listedSolutionExclude,
     missingSolutionExtensionRefusal,
     noSolutionRefusal,
     noWorkspaceRefusal,
@@ -86,6 +88,34 @@ suite('Bootstrap state', () => {
         assert.ok(liesInside(base, base));
         assert.ok(!liesInside(`${base}-other`, base));
         assert.ok(!liesInside(path.dirname(base), base));
+    });
+
+    test('the platform named decides the path syntax and the letter case, whatever the host is', () => {
+        // Windows: separators, the drive letter and the letter case do not count.
+        assert.ok(samePath('C:/Work/App/Blinky.csolution.yml', 'c:\\work\\app\\Blinky.csolution.yml', 'win32'));
+        assert.ok(liesInside('C:/Work/App/Blinky.csolution.yml', 'c:\\work', 'win32'));
+        assert.ok(liesInside('c:\\work', 'C:/Work/', 'win32'));
+        assert.ok(liesInside('C:\\w\\app', 'c:\\', 'win32'));
+        assert.ok(!liesInside('C:/Work2/Blinky.csolution.yml', 'c:\\work', 'win32'));
+        assert.ok(!liesInside('D:/work/Blinky.csolution.yml', 'c:\\work', 'win32'));
+        // macOS: the letter case does not count, in the folder's own part either.
+        assert.ok(samePath('/Users/me/Work/Blinky.csolution.yml', '/users/me/work/blinky.csolution.yml', 'darwin'));
+        assert.ok(liesInside('/Users/me/WORK/app/Blinky.csolution.yml', '/Users/me/work', 'darwin'));
+        assert.ok(!liesInside('/Users/me/work-other/Blinky.csolution.yml', '/Users/me/work', 'darwin'));
+        // Linux: it does.
+        assert.ok(!samePath('/home/me/Work', '/home/me/work', 'linux'));
+        assert.ok(!liesInside('/home/me/WORK/app', '/home/me/work', 'linux'));
+        assert.ok(liesInside('/home/me/work/app', '/home/me/work/', 'linux'));
+        assert.ok(liesInside('/w/app', '/', 'linux'));
+    });
+
+    test('the CMSIS Solution extension\'s csolution search: its include, hidden folders always left out, the exclude setting added', () => {
+        assert.strictEqual(LISTED_SOLUTION_GLOB, '**/*.csolution.{yaml,yml}');
+        assert.strictEqual(listedSolutionExclude(undefined), '**/.*/**');
+        assert.strictEqual(listedSolutionExclude('  '), '**/.*/**');
+        assert.strictEqual(listedSolutionExclude(42), '**/.*/**');
+        assert.strictEqual(listedSolutionExclude(' **/legacy/** '), '{**/.*/**,**/legacy/**}');
+        assert.strictEqual(listedSolutionExclude('{**/a/**, **/b/**}'), '{**/.*/**,**/a/**, **/b/**}');
     });
 
     suite('the csolution walk', () => {

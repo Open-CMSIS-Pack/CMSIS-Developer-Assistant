@@ -34,9 +34,10 @@ Each exits non-zero if any check failed.
   with 404.
 - The tool contract (#50): the `instructions` start with the tool rules, the
   first `get_session_status` of a session repeats them in one line and the
-  second does not, and `tools/list` keeps its pinned size to the byte — the
-  contract never goes into a tool description. A deliberate change to a
-  description or schema updates `TOOLS_LIST_BYTES` in the same commit.
+  second does not, and `tools/list` stays within the single-window and
+  all-groups byte budgets — the contract never goes into a tool description.
+  Review deliberate schema/description changes against those budgets and
+  update the surface snapshot in the same change.
 - No tool of the single-window list takes the router's `window` argument
   (#16).
 - The problem journal (#48) on the server without a router:
@@ -87,9 +88,11 @@ same code path the extension uses — and drives the router over MCP:
   session is pinned to, never from the router or the other window.
 - The control channel's fences (#14): with a tool timeout of 1 s and
   shortened margins (`timings`), a worker whose handler never answers
-  returns `WORKER_TIMEOUT` inside the router's 3 s budget, shows its user one
-  warning (the stub's `showWarningMessage` is replaced to catch it) and
-  turns its status-bar item to the warning background. After failover the
+  returns `WORKER_TIMEOUT` inside the router's 3 s budget and turns its
+  status-bar item to the warning background. A debugging op's hint names the
+  debug adapter and shows the user nothing; an op that can wait for a picker
+  (`restart_debugging`) names the picker and shows its user one warning (the
+  stub's `showWarningMessage` is replaced to catch it). After failover the
   new router answers the old router's session id with 404 and `-32001`, and
   a new session works.
 
@@ -104,7 +107,7 @@ single-window server against a scripted `gdbtarget` session and compares with
 `dap-scenarios.snapshot.json`; `--update` rewrites the snapshot and
 `--only=<name>` prints one scenario. About 40 s, no window, network or probe.
 
-Each of the 37 scenarios gets a fresh server and fake session (pyOCD or J-Link
+Each scenario gets a fresh server and fake session (pyOCD or J-Link
 launch/attach configuration, cbuild-run file, SVD under a fake pack root) and
 records, per tool call, the reply and its traffic: DAP requests with the
 scripted answer, VS Code commands, breakpoint and start/stop API calls, the
@@ -122,7 +125,9 @@ JSON. The scripted GDB behind it keeps a breakpoint table (`dprintf`,
 resets the core on `monitor reset …` without telling GDB until the register
 cache is flushed, and prints `$lr` as an int, so EXC_RETURN reads "-7". A
 wedged probe fails every memory read, DHCSR included, while GDB still answers
-from its caches. The header of the harness lists the other fidelity choices.
+from its caches. While GDB connects, and once the GDB server has exited, the
+adapter answers every request with an empty success that carries no body.
+The header of the harness lists the other fidelity choices.
 
 ## `config-scenarios.js`: configuration behaviour oracle
 
@@ -175,7 +180,8 @@ Runs the characterization cases of
 [docs/provenance/specs/debuggingExecutor.md](../../docs/provenance/specs/debuggingExecutor.md)
 against the compiled executor with scripted fake debug sessions: the DAP
 requests and their arguments, the UI fallbacks and GDB's refusals, restart,
-timeouts, reset verification, the GDB command prefixes and output capture,
+timeouts, the readiness probe on an adapter that takes no requests, reset
+verification, the GDB command prefixes and output capture,
 breakpoint bindings and the GDB memory-read ladder. About 40 s, mostly deliberate timeouts; no
 window, network or probe. It complements `dap-scenarios.js`, which reaches the
 executor only through the handler.

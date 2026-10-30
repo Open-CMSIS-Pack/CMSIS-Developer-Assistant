@@ -30,7 +30,10 @@
  *
  * Since 2.5.1 an entry also says what the window is doing: its role, the
  * extension version, the event-loop delay of the last heartbeat interval and
- * the agent calls running there for more than 10 s (#14).
+ * the agent calls running there for more than 10 s (#14). Since 2.7.0 it
+ * lists the local GDB ports the window's live debug sessions and CMSIS Run
+ * tasks use (`gdbPorts`), so that a launch elsewhere on the same port is
+ * refused (`src/core/gdbPortGuard.ts`).
  *
  * The files carry each window's control token, so only this user may read
  * them (#19): the directory is 0700 and the files 0600. Where the temp
@@ -47,6 +50,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { gdbPortClaimsOf, type GdbPortClaim } from '../core/gdbServerPorts';
 import { busyText, lagText } from '../core/windowHealth';
 import { isTempPath, writeFileAtomic, writeFileAtomicSync } from './atomicFile';
 import { logger } from './logger';
@@ -94,6 +98,12 @@ export interface WindowRegistration {
     lagMs?: EventLoopLag;
     /** The agent calls running here for more than 10 s at the last heartbeat; none when there are none. */
     busy?: BusyCall[];
+    /**
+     * The local GDB ports this window's live debug sessions and CMSIS Run
+     * tasks use; since 2.7.0, none when there are none. Read it through
+     * `gdbPortClaimsOf()`, which drops what it does not know.
+     */
+    gdbPorts?: GdbPortClaim[];
     /** First in the file, for whoever opens it: it says the file is internal. Readers ignore it. */
     _note?: string;
 }
@@ -107,7 +117,7 @@ export type HeartbeatPatch = Partial<Pick<WindowRegistration, 'busy' | 'lagMs'>>
  * the default target, the one debugging window, the one window. It shows up
  * in the routing log line and in the router's status bar.
  */
-export type ResolutionReason = 'window-arg' | 'path' | 'pinned' | 'cached' | 'default' | 'active-session' | 'only-window';
+export type ResolutionReason = 'window-arg' | 'path' | 'pinned' | 'cached' | 'default' | 'active-session' | 'only-window' | 'router-window';
 
 /**
  * The window the user chose with Select Target Window (#16), for the agent
@@ -202,7 +212,8 @@ export function resolveRegistryDir(context: RegistryDirContext): string {
     return (mode & OTHERS_WRITE) !== 0 ? `${shared}-${context.uid}` : shared;
 }
 
-function defaultRegistryDir(): string {
+/** This user's shared registry directory, also the parent of cross-window launch reservations. */
+export function defaultRegistryDir(): string {
     return resolveRegistryDir({ platform: process.platform, tmpdir: os.tmpdir(), uid: process.getuid?.(), stat: fs.statSync });
 }
 
@@ -304,7 +315,7 @@ function discardIfAbandoned(file: string): void {
 }
 
 /** A folder list that is safe to iterate, whatever the file held. */
-function foldersOf(entry: WindowRegistration): string[] {
+export function foldersOf(entry: WindowRegistration): string[] {
     return Array.isArray(entry.workspaceFolders) ? entry.workspaceFolders : [];
 }
 
@@ -364,6 +375,11 @@ function defaultTargetOf(parsed: unknown): DefaultTarget | undefined {
 }
 
 export class WorkspaceRegistry {
+    /** Private shared directory for launch reservations; separate from the versioned window records. */
+    gdbReservationDirectory(): string {
+        return path.join(this.registryDir, 'gdb-port-reservations');
+    }
+
     private readonly ownFile: string;
     private readonly defaultFile: string;
     private readonly owner: RegistryOwner;
@@ -663,8 +679,9 @@ export class WorkspaceRegistry {
 /**
  * One line naming a window for agents: pid, folders, `router` for the window
  * that serves MCP, the debug session, the CMSIS solution, the calls busy
- * there and a noticeable event-loop lag (#14), joined by ` | `. Port and
- * token never appear. `now` dates the busy calls.
+ * there, a noticeable event-loop lag (#14) and the GDB ports its sessions
+ * and CMSIS Run tasks use, joined by ` | `. The control port and token never
+ * appear. `now` dates the busy calls.
  */
 export function describeWindow(entry: WindowRegistration, now: number = Date.now()): string {
     const folders = foldersOf(entry);
@@ -688,6 +705,10 @@ export function describeWindow(entry: WindowRegistration, now: number = Date.now
     const lag = lagText(entry.lagMs);
     if (lag.length > 0) {
         parts.push(lag);
+    }
+    const ports = gdbPortClaimsOf(entry.gdbPorts);
+    if (ports.length > 0) {
+        parts.push(`GDB port ${ports.map((claim) => `${claim.port} (${claim.label})`).join(', ')}`);
     }
     return parts.join(' | ');
 }

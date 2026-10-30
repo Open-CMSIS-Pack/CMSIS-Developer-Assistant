@@ -14,21 +14,30 @@
  * limitations under the License.
  */
 
-import * as assert from 'assert';
 import * as vscode from 'vscode';
+import * as assert from 'assert';
 import { ProblemJournal, type ProblemRecord } from '../core/problemJournal';
 import {
+    adoptedBreakpointsOf,
+    armFocusWatch,
+    armStartFocusWatch,
     awaitBreakpointsApplied,
     captureOutput,
+    coreSilentSince,
     createSessionTracker,
+    endRequestOf,
     expectAgentStart,
+    type FocusSource,
+    forgetAdoptedBreakpoints,
     forgetAgentStarts,
     forgetGdbLogpoints,
     gdbLogpointsOf,
     getLiveSessionNames,
     isAgentStarted,
+    noteCoreVerdict,
     noteOwnRequest,
     quietStartFailure,
+    registrySession,
     rememberGdbLogpoint,
     waitForSessionEnd,
     waitForStopEvent,
@@ -59,6 +68,45 @@ function track(type = 'gdbtarget', journal?: ProblemJournal): Tracked {
 }
 
 const delay = (ms: number): Promise<void> => new Promise((wake) => setTimeout(wake, ms));
+
+type StackItem = ReturnType<FocusSource['current']>;
+
+/** VS Code's focused stack item as a test drives it: `select` fires the change event, `hold` does not. */
+interface FakeFocus {
+    source: FocusSource;
+    select(item: StackItem): void;
+    hold(item: StackItem): void;
+    listeners(): number;
+}
+
+function fakeFocus(initial: StackItem = undefined): FakeFocus {
+    let item = initial;
+    const listeners = new Set<(next: StackItem) => void>();
+    return {
+        source: {
+            current: () => item,
+            onDidChange: (listener) => {
+                listeners.add(listener);
+                return { dispose: () => listeners.delete(listener) };
+            },
+        },
+        select: (next) => {
+            item = next;
+            for (const listener of [...listeners]) {
+                listener(next);
+            }
+        },
+        hold: (next) => {
+            item = next;
+        },
+        listeners: () => listeners.size,
+    };
+}
+
+/** A stack frame of `session`, as VS Code makes a new one for every focus it reports. */
+function frameOf(session: vscode.DebugSession, frameId = 1000): StackItem {
+    return { session, threadId: 1, frameId } as unknown as vscode.DebugStackFrame;
+}
 
 /**
  * The session tracker's hooks for #13 and #56: the output a GDB command
@@ -218,6 +266,85 @@ suite('Session state tracker', () => {
         });
     });
 
+    suite('the last DHCSR read that got no answer (#3)', () => {
+        test('kept with its time per session; a read that answers forgets it, one that tells nothing changes nothing', () => {
+            const a = track();
+            const b = track();
+            assert.strictEqual(coreSilentSince(a.session), undefined);
+            noteCoreVerdict(a.session, 'silent', 1_000);
+            noteCoreVerdict(a.session, 'unknown', 2_000);
+            assert.strictEqual(coreSilentSince(a.session), 1_000);
+            assert.strictEqual(coreSilentSince(b.session), undefined, 'the other session has its own');
+            noteCoreVerdict(a.session, 'silent', 3_000);
+            assert.strictEqual(coreSilentSince(a.session), 3_000, 'the last read counts');
+            noteCoreVerdict(a.session, 'answers', 4_000);
+            assert.strictEqual(coreSilentSince(a.session), undefined);
+        });
+
+        test('a stop event forgets it, a continued event does not', () => {
+            const a = track();
+            noteCoreVerdict(a.session, 'silent', 1_000);
+            a.event('continued', { threadId: 1 });
+            assert.strictEqual(coreSilentSince(a.session), 1_000);
+            a.event('stopped', { reason: 'step', threadId: 1 });
+            assert.strictEqual(coreSilentSince(a.session), undefined);
+        });
+
+        test('forgotten when the session ends and when an adapter starts in it again', () => {
+            for (const end of ['terminated', 'stop']) {
+                const a = track();
+                noteCoreVerdict(a.session, 'silent', 1_000);
+                if (end === 'stop') {
+                    a.tracker.onWillStopSession?.();
+                } else {
+                    a.event(end);
+                }
+                assert.strictEqual(coreSilentSince(a.session), undefined, end);
+            }
+            const b = track();
+            noteCoreVerdict(b.session, 'silent', 1_000);
+            const again = createSessionTracker(b.session);
+            assert.strictEqual(coreSilentSince(b.session), undefined, 'a relaunch in the same session');
+            again.onWillStopSession?.();
+        });
+    });
+
+    suite('a session asked to end', () => {
+        test('a disconnect or terminate request to the adapter is kept with its time; other requests are not', () => {
+            const a = track();
+            const b = track();
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 1, command: 'threads', arguments: {} });
+            assert.strictEqual(endRequestOf(a.session), undefined);
+            const before = Date.now();
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 2, command: 'terminate', arguments: {} });
+            const ending = endRequestOf(a.session);
+            assert.strictEqual(ending?.command, 'terminate');
+            assert.ok(ending !== undefined && ending.at >= before && ending.at <= Date.now());
+            assert.strictEqual(endRequestOf(b.session), undefined, 'the other session has its own');
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 3, command: 'disconnect', arguments: { restart: false } });
+            assert.strictEqual(endRequestOf(a.session)?.command, 'disconnect', 'the last request counts');
+        });
+
+        test('forgotten when the adapter refuses it, when the session ends and when an adapter starts in it again', () => {
+            const a = track();
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 1, command: 'terminate', arguments: {} });
+            a.tracker.onDidSendMessage?.({ type: 'response', request_seq: 1, command: 'terminate', success: true });
+            assert.strictEqual(endRequestOf(a.session)?.command, 'terminate', 'a terminate that succeeds still waits for the end');
+            a.tracker.onDidSendMessage?.({ type: 'response', request_seq: 1, command: 'terminate', success: false, message: 'not now' });
+            assert.strictEqual(endRequestOf(a.session), undefined);
+
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 2, command: 'disconnect', arguments: {} });
+            a.event('terminated');
+            assert.strictEqual(endRequestOf(a.session), undefined);
+
+            const b = track();
+            b.tracker.onWillReceiveMessage?.({ type: 'request', seq: 1, command: 'disconnect', arguments: { restart: true } });
+            const again = createSessionTracker(b.session);
+            assert.strictEqual(endRequestOf(b.session), undefined, 'a relaunch in the same session');
+            again.onWillStopSession?.();
+        });
+    });
+
     suite('session end', () => {
         test('the wait resolves when the session ends, false when it does not, true for a session that is gone', async () => {
             const a = track();
@@ -244,6 +371,141 @@ suite('Session state tracker', () => {
             again.onDidSendMessage?.({ type: 'event', event: 'stopped', body: { reason: 'breakpoint', threadId: 1 } });
             assert.deepStrictEqual(await stop, { kind: 'stopped', reason: 'breakpoint', threadId: 1 });
             again.onWillStopSession?.();
+        });
+    });
+
+    suite('the frame VS Code selects after a stop', () => {
+        test('a frame object other than the one focused when the watch was armed counts at once; the stale one never does', async () => {
+            const a = track();
+            const before = frameOf(a.session);
+            const focus = fakeFocus(before);
+            const watch = armFocusWatch(a.session, focus.source);
+            // VS Code has not yet heard the stop of a request sent as a custom request: it still holds the frame from before.
+            const began = Date.now();
+            assert.strictEqual(await watch.selected(80), false);
+            assert.ok(Date.now() - began >= 70, 'the wait ran to its bound');
+            assert.strictEqual(focus.listeners(), 0, 'the subscription went with the wait');
+
+            focus.hold(frameOf(a.session));
+            assert.strictEqual(await armFocusWatch(a.session, focus.source).selected(0), false, 'armed now, the new frame is the stale one');
+            assert.strictEqual(await watch.selected(0), true, 'for the watch armed before, it is the stop\'s');
+        });
+
+        test('a frame of the session delivered by the change event ends the wait; threads and other sessions\' frames do not', async () => {
+            const a = track();
+            const b = track();
+            const focus = fakeFocus();
+            const pending = armFocusWatch(a.session, focus.source).selected(2_000);
+            let settled: boolean | undefined;
+            void pending.then((selected) => {
+                settled = selected;
+            });
+            focus.select({ session: a.session, threadId: 1 } as unknown as vscode.DebugThread);
+            focus.select(frameOf(b.session));
+            await delay(20);
+            assert.strictEqual(settled, undefined, 'a thread item and another session\'s frame leave it waiting');
+            const began = Date.now();
+            focus.select(frameOf(a.session));
+            assert.strictEqual(await pending, true);
+            assert.ok(Date.now() - began < 500, 'the event ends the wait, no poll');
+            assert.strictEqual(focus.listeners(), 0);
+        });
+
+        test('the end of the session ends the wait; a session that has ended and a bound of 0 answer at once', async () => {
+            const a = track();
+            const focus = fakeFocus();
+            const pending = armFocusWatch(a.session, focus.source).selected(5_000);
+            const began = Date.now();
+            a.tracker.onWillStopSession?.();
+            assert.strictEqual(await pending, false);
+            assert.ok(Date.now() - began < 500);
+            assert.strictEqual(focus.listeners(), 0);
+            assert.strictEqual(await armFocusWatch(a.session, focus.source).selected(5_000), false, 'ended before the wait');
+
+            const b = track();
+            assert.strictEqual(await armFocusWatch(b.session, focus.source).selected(0), false);
+            assert.strictEqual(focus.listeners(), 0, 'nothing subscribed for a wait of 0');
+        });
+    });
+
+    suite('the frame VS Code selects for a session that came up', () => {
+        test('a stopped session waits for a frame of its own; a frame of an earlier session focused at arming does not count', async () => {
+            const old = track();
+            const a = track();
+            const focus = fakeFocus(frameOf(old.session));
+            const watch = armStartFocusWatch(focus.source, () => a.session, () => true);
+            assert.strictEqual(await watch.settled(30), 'none', 'no frame of the new session yet');
+            const pending = watch.settled(2_000);
+            focus.select(frameOf(a.session));
+            assert.strictEqual(await pending, 'selected');
+            assert.strictEqual(focus.listeners(), 0);
+            // Armed after VS Code focused it, that frame is the stale item: the watch is taken before the start.
+            focus.hold(frameOf(a.session));
+            assert.strictEqual(await armStartFocusWatch(focus.source, () => a.session, () => true).settled(0), 'none',
+                'the item focused when armed is never the start\'s');
+        });
+
+        test('a target that runs needs no frame, and without a session there is none', async () => {
+            const a = track();
+            const focus = fakeFocus();
+            assert.strictEqual(await armStartFocusWatch(focus.source, () => a.session, () => false).settled(5_000), 'running');
+            assert.strictEqual(await armStartFocusWatch(focus.source, () => undefined, () => true).settled(5_000), 'none');
+            assert.strictEqual(focus.listeners(), 0);
+        });
+    });
+
+    suite('the breakpoints VS Code adopts from an adapter', () => {
+        teardown(() => forgetAdoptedBreakpoints());
+
+        test('a new breakpoint at a source line is adopted for the window, past the session\'s end; its removal by the same adapter forgets it', () => {
+            forgetAdoptedBreakpoints();
+            const a = track();
+            const at = (id: number, line: number): unknown => ({ reason: 'new', breakpoint: { id, verified: true, source: { name: 'startup.c', path: '/w/startup.c' }, line } });
+            a.event('breakpoint', at(1, 53));
+            a.event('breakpoint', at(2, 54));
+            a.event('breakpoint', { reason: 'new', breakpoint: { id: 3, verified: true, instructionReference: '0x10000100' } });
+            a.event('breakpoint', { reason: 'changed', breakpoint: { id: 1, verified: true, source: { path: '/w/startup.c' }, line: 53 } });
+            assert.deepStrictEqual(adoptedBreakpointsOf(), [
+                { path: '/w/startup.c', line: 53, sessionName: a.session.name },
+                { path: '/w/startup.c', line: 54, sessionName: a.session.name },
+            ], 'no source line, nothing VS Code can adopt; a change adopts nothing');
+            const b = track();
+            b.event('breakpoint', { reason: 'removed', breakpoint: { id: 2, verified: false } });
+            assert.strictEqual(adoptedBreakpointsOf().length, 2, 'another session\'s id 2 is another breakpoint');
+            a.event('breakpoint', { reason: 'removed', breakpoint: { id: 2, verified: false } });
+            assert.deepStrictEqual(adoptedBreakpointsOf().map((bp) => bp.line), [53]);
+            a.tracker.onWillStopSession?.();
+            assert.deepStrictEqual(adoptedBreakpointsOf().map((bp) => bp.line), [53], 'VS Code keeps it after the session');
+            forgetAdoptedBreakpoints();
+            assert.deepStrictEqual(adoptedBreakpointsOf(), []);
+        });
+    });
+
+    suite('the session the window\'s registry entry names', () => {
+        test('the focused session while it is live; not while its end is announced, nor once the tracker saw it end', () => {
+            const a = track();
+            assert.strictEqual(registrySession(a.session), a.session);
+            assert.strictEqual(registrySession(a.session, a.session), undefined, 'VS Code still has it focused while onDidTerminateDebugSession runs');
+            a.tracker.onWillStopSession?.();
+            assert.strictEqual(registrySession(a.session), undefined, 'a focus VS Code has not moved yet');
+            assert.strictEqual(registrySession(undefined), undefined);
+        });
+
+        test('of two sessions, the one that stays when the other ends, focused or not', () => {
+            const first = track();
+            const second = track();
+            assert.strictEqual(registrySession(undefined), second.session, 'none focused: the most recent live session');
+            assert.strictEqual(registrySession(first.session), first.session, 'the focused one, though older');
+            assert.strictEqual(registrySession(second.session, second.session), first.session);
+            second.event('terminated');
+            assert.strictEqual(registrySession(second.session), first.session);
+            assert.strictEqual(registrySession(undefined), first.session);
+        });
+
+        test('a focused session the tracker never saw counts as VS Code has it, until its end is announced', () => {
+            const elsewhere = { id: 'other-host', name: 'Python', type: 'debugpy', configuration: { name: 'Python: Current File' } } as unknown as vscode.DebugSession;
+            assert.strictEqual(registrySession(elsewhere), elsewhere);
+            assert.strictEqual(registrySession(elsewhere, elsewhere), undefined);
         });
     });
 
@@ -350,6 +612,27 @@ suite('Session state tracker', () => {
             ]);
         });
 
+        test('an evaluate the views sent on their own (Watch, hover, Live Watch) that fails is info; a tool\'s stays a warning', () => {
+            const a = journaled();
+            // A tester's Watch expressions while the target ran, and Live Watch without a frame.
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 21, command: 'evaluate', arguments: { expression: 'huart2', context: 'watch' } });
+            a.tracker.onDidSendMessage?.({ type: 'response', request_seq: 21, command: 'evaluate', success: false });
+            a.tracker.onDidSendMessage?.({ type: 'response', command: 'evaluate', success: false,
+                message: 'Evaluation of expression without frameId is not supported.' });
+            noteOwnRequest(a.session, 'evaluate');
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 22, command: 'evaluate', arguments: { expression: 'x' } });
+            a.tracker.onDidSendMessage?.({ type: 'response', request_seq: 22, command: 'evaluate', success: false, message: 'No symbol "x" in current context.' });
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 23, command: 'readMemory' });
+            a.tracker.onDidSendMessage?.({ type: 'response', request_seq: 23, command: 'readMemory', success: false, message: 'Unable to read memory.' });
+            assert.deepStrictEqual(journal.query().records.map((record) => [record.severity, record.message]), [
+                ['info', 'error response to \'evaluate\': <no message>'],
+                ['info', 'error response to \'evaluate\': Evaluation of expression without frameId is not supported.'],
+                ['warning', 'error response to \'evaluate\': No symbol "x" in current context.'],
+                ['error', 'error response to \'readMemory\': Unable to read memory.'],
+            ]);
+            assert.strictEqual(journal.counters().errors, 1, 'only the readMemory counts as an error');
+        });
+
         test('a cancelled request and a successful response are no problem', () => {
             const a = journaled();
             a.tracker.onDidSendMessage?.({ type: 'response', command: 'stackTrace', success: false, message: 'cancelled' });
@@ -386,6 +669,71 @@ suite('Session state tracker', () => {
                 ['error', 'gdb-server', 'DAP_POWER_UP_FAILED', 'Failed to power up DAP'],
                 ['info', 'gdb-server', '-', 'gdbserver exited with code 1'],
             ]);
+        });
+
+        test('a GDB-server line keeps the level pyOCD gave it, without its colour codes', () => {
+            // A tester's pyOCD on Windows (CMSIS Debugger 1.10.0), whose STDIO file folder did not exist.
+            const a = journaled();
+            a.output([
+                '0000652 I Target device: STM32F746ZGTx [cbuild_run]',
+                '0000992 E Unhandled exception in \'gdbserver\' subcommand [gdbserver_cmd]',
+                '\x1b[2mTraceback (most recent call last):',
+                'FileNotFoundError: Directory D:\\Test\\DUT\\out\\reports for STDIO file usart-validation.log does not exist\x1b[0m',
+                '0001001 C Error: Directory D:\\Test\\DUT\\out\\reports for STDIO file usart-validation.log does not exist [__main__]',
+                'gdbserver exited with code 1',
+            ].join('\r\n') + '\r\n', 'server');
+            // The same prefix outside the GDB server's category weighs nothing.
+            a.output('0000992 E not the server\'s\n', 'console');
+            assert.deepStrictEqual(journal.query().records.map((record) => [record.severity, record.source, record.message]), [
+                ['info', 'gdb-server', '0000652 I Target device: STM32F746ZGTx [cbuild_run]'],
+                ['error', 'gdb-server', '0000992 E Unhandled exception in \'gdbserver\' subcommand [gdbserver_cmd]'],
+                ['info', 'gdb-server', 'Traceback (most recent call last):'],
+                ['info', 'gdb-server', 'FileNotFoundError: Directory D:\\Test\\DUT\\out\\reports for STDIO file usart-validation.log does not exist'],
+                ['error', 'gdb-server', '0001001 C Error: Directory D:\\Test\\DUT\\out\\reports for STDIO file usart-validation.log does not exist [__main__]'],
+                ['info', 'gdb-server', 'gdbserver exited with code 1'],
+                ['info', 'dap', '0000992 E not the server\'s'],
+            ]);
+        });
+
+        test('a line the GDB server writes in pieces is one record once its newline comes; categories keep their own pieces', () => {
+            // The Corstone FVP's output reached the journal as "Bl", "in", "ky i", ... one record each.
+            const a = journaled();
+            for (const piece of ['= Bl', 'in', 'ky i', 's running =', '\r', '\nFailed to po', 'wer up DAP\nListening']) {
+                a.output(piece, 'server');
+            }
+            a.output('Reading sym', 'console');
+            a.output('bols\n', 'console');
+            assert.deepStrictEqual(journal.query().records.map((record) => [record.source, record.code ?? '-', record.message]), [
+                ['gdb-server', '-', '= Blinky is running ='],
+                ['gdb-server', 'DAP_POWER_UP_FAILED', 'Failed to power up DAP'],
+                ['dap', '-', 'Reading symbols'],
+            ]);
+            a.output(' on port 3333\n', 'server');
+            assert.strictEqual(journal.query().records.at(-1)?.message, 'Listening on port 3333');
+            a.output('hello', 'stdout');
+            a.output(' target\n', 'stdout');
+            assert.strictEqual(journal.size, 4, 'the target\'s stdout is still left out');
+        });
+
+        test('the start of a line is journaled as it is after a short wait, at the session\'s end, or when it is very long', async () => {
+            const a = journaled();
+            a.output('gdbserver exited with code 1', 'server');
+            assert.strictEqual(journal.size, 0, 'it waits for its end');
+            await delay(700);
+            assert.deepStrictEqual(journal.query().records.map((record) => record.message), ['gdbserver exited with code 1']);
+
+            const b = journaled();
+            b.output('Remote connection closed', 'console');
+            b.event('terminated');
+            assert.strictEqual(journal.query().records.at(-1)?.message, 'Remote connection closed', 'the session\'s end journals it at once');
+            await delay(700);
+            assert.strictEqual(journal.query().records.filter((record) => record.message === 'Remote connection closed').length, 1, 'and only once');
+
+            const c = journaled();
+            const before = journal.size;
+            c.output('x'.repeat(5_000), 'server');
+            assert.strictEqual(journal.size, before + 1, 'a very long piece is not held');
+            assert.ok(journal.query().records.at(-1)?.message.startsWith('xxxx'));
         });
 
         test('an adapter error is an error', () => {

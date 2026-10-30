@@ -21,7 +21,11 @@
  *
  *   - builds: its own task type `cmsis-csolution.build` (a CustomExecution,
  *     labelled `cbuild <solution> --active <target> …`); `cbuild setup` is the
- *     same type with `setup: true` and is never the result of a build;
+ *     same type with `setup: true` and is never the result of a build. Its
+ *     Rebuild and Clean commands (1.72.0) run the same type with
+ *     `rebuild: true` (`--rebuild`) or `clean: true` (`--clean`, no
+ *     `--active`), and each of these four is a kind of its own, so that one
+ *     never answers for another;
  *   - the panel's Load, Run, Load+Run, Erase and TargetInfo buttons: tasks the
  *     debugger adapter template writes into `.vscode/tasks.json`, so VS Code
  *     reports them with source `Workspace` under the exact labels
@@ -46,12 +50,22 @@ export interface TaskFacts {
     type?: string;
     /** `definition.setup` of a build task. */
     setup?: boolean;
+    /** `definition.clean` and `definition.rebuild` of a build task: CMSIS Solution's Clean and Rebuild commands. */
+    clean?: boolean;
+    rebuild?: boolean;
 }
 
-export type CmsisTaskKind = 'build' | 'setup' | 'load' | 'run' | 'loadRun' | 'erase' | 'targetInfo';
+export type CmsisTaskKind = 'build' | 'rebuild' | 'clean' | 'setup' | 'load' | 'run' | 'loadRun' | 'erase' | 'targetInfo';
 
 /** The task type of CMSIS Solution builds (and of `cbuild setup`). */
 export const BUILD_TASK_TYPE = 'cmsis-csolution.build';
+/** The kinds of the build task type; CMSIS Solution runs one at a time, and its Stop Build ends any of them. */
+export const BUILD_TASK_KINDS: ReadonlySet<CmsisTaskKind> = new Set<CmsisTaskKind>(['build', 'rebuild', 'clean', 'setup']);
+/**
+ * The exit code CMSIS Solution (1.72.0) closes a build task with when it is
+ * stopped: its task runner's `terminateProcess`, behind Stop Build.
+ */
+export const BUILD_STOPPED_EXIT_CODE = 130;
 /** The single Load+Run task of the Arm Debugger adapter templates. */
 export const ARM_DEBUGGER_FLASH_TYPE = 'arm-debugger.flash';
 /** The source VS Code gives tasks from tasks.json. */
@@ -74,7 +88,13 @@ export const CMSIS_TASK_LABELS: ReadonlyMap<string, CmsisTaskKind> = new Map<str
  */
 export function classifyCmsisTask(facts: TaskFacts): CmsisTaskKind | undefined {
     if (facts.type === BUILD_TASK_TYPE) {
-        return facts.setup === true ? 'setup' : 'build';
+        if (facts.setup === true) {
+            return 'setup';
+        }
+        if (facts.clean === true) {
+            return 'clean';
+        }
+        return facts.rebuild === true ? 'rebuild' : 'build';
     }
     if (facts.type === ARM_DEBUGGER_FLASH_TYPE && facts.name === 'CMSIS Load+Run') {
         return 'loadRun';
@@ -106,7 +126,20 @@ export function classifyByLabelLoosely(facts: TaskFacts): CmsisTaskKind | undefi
 // ── Jobs ─────────────────────────────────────────────────────────────────────
 
 /** The `cmsis_action` actions that run a CMSIS task and are followed as jobs. */
-export type JobAction = 'build' | 'load' | 'erase' | 'run' | 'load_and_run' | 'load_and_debug';
+export type JobAction = 'build' | 'rebuild' | 'clean' | 'load' | 'erase' | 'run' | 'load_and_run' | 'load_and_debug';
+
+/** The job actions that run the build task type; CMSIS Solution starts one only after the one before has ended. */
+export const BUILD_ACTIONS: readonly JobAction[] = ['build', 'rebuild', 'clean'];
+
+/** Whether the action runs the build task type: build, rebuild or clean. */
+export function isBuildAction(action: string): action is 'build' | 'rebuild' | 'clean' {
+    return (BUILD_ACTIONS as readonly string[]).includes(action);
+}
+
+/** Whether `labels`, the tasks of a solution's tasks.json, hold any task of the CMSIS panel. */
+export function hasCmsisTasks(labels: ReadonlySet<string>): boolean {
+    return [...labels].some((label) => CMSIS_TASK_LABELS.has(label));
+}
 
 /** A job this window's cmsis_action began, or an execution started elsewhere (the panel) that the tracker adopted. */
 export type JobOrigin = 'call' | 'adopted';
@@ -129,7 +162,7 @@ interface ActionPhase {
 
 /**
  * What each action waits for (#47, step 3):
- *   - build, load, erase: the bound execution's process ends;
+ *   - build, rebuild, clean, load, erase: the bound execution's process ends;
  *   - run: `CMSIS Run` alone (the panel's Run button: the GDB server without
  *     a Load) — its process started and is still alive 2 s later; ending at
  *     all is a failure (#73);
@@ -142,6 +175,8 @@ interface ActionPhase {
  */
 export const ACTION_PHASES: Readonly<Record<JobAction, ActionPhase>> = {
     build: { roles: { main: 'build' }, settle: 'main-ends' },
+    rebuild: { roles: { main: 'rebuild' }, settle: 'main-ends' },
+    clean: { roles: { main: 'clean' }, settle: 'main-ends' },
     load: { roles: { main: 'load' }, settle: 'main-ends', label: 'CMSIS Load' },
     erase: { roles: { main: 'erase' }, settle: 'main-ends', label: 'CMSIS Erase' },
     run: { roles: { run: 'run' }, settle: 'run-stays-up', label: 'CMSIS Run' },
@@ -167,6 +202,8 @@ export interface JobExecution {
     processEndedAt?: number;
     exitCode?: number;
     endedAt?: number;
+    /** `cmsis_action stop_build` asked for its end: however it ends, it was stopped. */
+    stopRequested?: boolean;
 }
 
 export interface Job {
@@ -222,9 +259,12 @@ export interface BuildMessage {
  *   - `failed`: csolution recorded errors, or the check re-run failed; the
  *     job then counts as failed (`withDiagnosis`);
  *   - `unverified`: an image was not rewritten and the check could not
- *     decide (no re-run possible, or it was stopped).
+ *     decide (no re-run possible, or it was stopped); for a clean, an image
+ *     it was to remove is still there;
+ *   - `cleaned`: a clean that exited 0 left none of the images the active
+ *     target had before it started.
  */
-export type BuildCheck = 'rebuilt' | 'up-to-date' | 'failed' | 'unverified';
+export type BuildCheck = 'rebuilt' | 'up-to-date' | 'failed' | 'unverified' | 'cleaned';
 
 /**
  * What the extension found out about a build after its task ended, attached
@@ -295,6 +335,7 @@ export type JobEvent =
     | ({ type: 'identity' } & Sighting)
     | { type: 'processEnd'; key: number; exitCode: number | undefined; at: number }
     | { type: 'taskEnd'; key: number; at: number }
+    | { type: 'stopRequested'; key: number; at: number }
     | { type: 'issued'; at: number }
     | { type: 'tick'; at: number };
 
@@ -423,6 +464,9 @@ export function reduceJob(job: Job, event: JobEvent): Job {
         case 'taskEnd':
             next = withExecution(job, event.key, (execution) => execution.endedAt !== undefined ? execution : { ...execution, endedAt: event.at });
             break;
+        case 'stopRequested':
+            next = withExecution(job, event.key, (execution) => ({ ...execution, stopRequested: true }));
+            break;
     }
     return isSettled(next.state) ? next : judged(next, event.at);
 }
@@ -448,8 +492,19 @@ function judged(job: Job, now: number): Job {
     return { ...job, state: verdict.state, decidedBy: verdict.by, settledAt: isSettled(verdict.state) ? now : undefined };
 }
 
-/** ok for exit 0, failed for another code, cancelled when the task ended without one. */
+/**
+ * Whether an execution that ended was stopped: `cmsis_action stop_build` asked
+ * for it, or a build task closed with the code of CMSIS Solution's Stop Build.
+ */
+export function wasStopped(execution: JobExecution): boolean {
+    return execution.stopRequested === true || (BUILD_TASK_KINDS.has(execution.kind) && execution.exitCode === BUILD_STOPPED_EXIT_CODE);
+}
+
+/** ok for exit 0, failed for another code, cancelled when the task ended without one or was stopped. */
 function byExitCode(execution: JobExecution): Verdict {
+    if (wasStopped(execution)) {
+        return { state: 'cancelled', by: execution.key };
+    }
     if (execution.exitCode === 0) {
         return { state: 'ok', by: execution.key };
     }
@@ -554,7 +609,8 @@ export interface ProbeOwner {
 
 /** The actions the guard judges: every cmsis_action action and flash. */
 export type GuardedAction =
-    | 'build' | 'status' | 'detach' | 'stop_run' | 'load' | 'erase' | 'run' | 'load_and_run' | 'load_and_debug' | 'attach' | 'flash';
+    | 'build' | 'rebuild' | 'clean' | 'refresh' | 'activate_environment' | 'stop_build' | 'status' | 'detach' | 'stop_run' | 'load' | 'erase' | 'run'
+    | 'load_and_run' | 'load_and_debug' | 'attach' | 'flash';
 
 /**
  * Why an action may not touch the probe: CMSIS Run (or Load+Run) hosts a GDB
@@ -568,7 +624,8 @@ const SERVER_KINDS: ReadonlySet<string> = new Set(['run', 'loadRun']);
 /** Hold it until they end on their own. */
 const TRANSIENT_KINDS: ReadonlySet<string> = new Set(['load', 'erase', 'targetInfo', 'flash']);
 /** Never touch the probe (a target switch under a session is refused elsewhere). */
-const PROBE_FREE_ACTIONS: ReadonlySet<GuardedAction> = new Set<GuardedAction>(['build', 'status', 'detach', 'stop_run']);
+const PROBE_FREE_ACTIONS: ReadonlySet<GuardedAction> = new Set<GuardedAction>(['build', 'rebuild', 'clean', 'refresh', 'activate_environment', 'stop_build',
+    'status', 'detach', 'stop_run']);
 
 /**
  * The guard matrix of #46. `attach` may run beside a live Run task: it

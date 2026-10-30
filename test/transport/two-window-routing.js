@@ -43,10 +43,14 @@
 //      count in get_session_status come from the window the session targets.
 //  12. The control channel's fences (#14): a worker whose handler never
 //      answers returns WORKER_TIMEOUT inside the router's budget (a small
-//      timeoutInSeconds and shortened margins), tells its user once, and
-//      shows the call past its fence in its status bar. After failover the
+//      timeoutInSeconds and shortened margins) and shows the call past its
+//      fence in its status bar; only for an op that can wait for a picker or
+//      dialog does it tell its user, once. After failover the
 //      new router answers a session id of the old one with 404 and -32001,
 //      the answer that tells a client to initialize again.
+//  13. Two windows on one GDB port: each window publishes the GDB ports its
+//      sessions and CMSIS Run tasks use (an injected source here), the other
+//      window reads them from the registry, and the listing names them.
 
 const stub = require('./vscode-stub.js');
 
@@ -176,9 +180,12 @@ async function main() {
     // which is what two real windows look like. A tool timeout of 1 s and a
     // forward margin of 2 s make a forward's budget 3 s, and the worker's
     // fence 1 s inside it (#14): the check of the fence waits 2 s, not 190.
+    // Beta's CMSIS Run serves pyOCD's port; alpha uses none.
+    const betaPorts = [{ port: 3333, source: 'cmsis-run', label: 'CMSIS Run', server: 'pyOCD' }];
     const makeCoordinator = (win) => new WindowCoordinator({
         port: PORT, timeoutInSeconds: 1, hardwareTimeouts: {}, registry: win.registry, journal: win.journal,
         timings: { forwardMarginMs: 2_000, fenceMarginMs: 1_000 },
+        gdbPorts: async () => (win === beta ? betaPorts : []),
     });
 
     const c1 = makeCoordinator(alpha);
@@ -205,7 +212,7 @@ async function main() {
     // The stub keeps its items in creation order, and alpha's coordinator started first.
     const [alphaItem, betaItem] = stub.statusBarItems;
     check('each window shows its role in the status bar, and a click on it selects the target window',
-        alphaItem?.text === `$(plug) CDA ${roleOf(c1)}` && betaItem?.text === `$(plug) CDA ${roleOf(c2)}`
+        alphaItem?.text === `$(cda-robot) ${c1.isRouter() ? 'R' : 'W'}` && betaItem?.text === `$(cda-robot) ${c2.isRouter() ? 'R' : 'W'}`
             && alphaItem.visible && betaItem.visible && alphaItem.name === 'CMSIS Developer Assistant'
             && alphaItem.command === 'cmsis-developer-assistant.selectTargetWindow',
         `${alphaItem?.text} / ${betaItem?.text}`);
@@ -218,7 +225,9 @@ async function main() {
     // rides along on every agent turn. 47 tools measured 30 104 bytes in
     // 2.5.0; the budget leaves room for the 2.5.1 additions
     // (get_recent_problems, serial_capture, the window argument).
-    const ROUTED_TOOLS_LIST_BUDGET_BYTES = 34_000;
+    // Raised from 34 000 for the knowledge tools, which are on in every session (35 301 measured).
+    // Raised from 36 000 for cmsis_query and cmsis_action create_solution (36 373 measured).
+    const ROUTED_TOOLS_LIST_BUDGET_BYTES = 37_000;
     const routedList = await post(PORT, { 'mcp-session-id': sid }, { jsonrpc: '2.0', id: 90, method: 'tools/list', params: {} });
     const routedTools = parseSse(routedList.body)?.result?.tools ?? [];
     const routedBytes = Buffer.byteLength(JSON.stringify(routedTools));
@@ -234,6 +243,11 @@ async function main() {
     check('list_debug_windows reports both windows and marks the router',
         listing.includes(alphaDir) && listing.includes(betaDir) && rowOf(listing, c1.isRouter() ? alphaDir : betaDir).includes(' | router'),
         listing.replace(/\n/g, ' | '));
+    const betaSeen = alpha.registry.list().find((entry) => entry.pid === beta.pid);
+    check('a window\'s GDB ports reach the other window through the registry, and the listing names them',
+        JSON.stringify(betaSeen?.gdbPorts) === JSON.stringify(betaPorts) && rowOf(listing, betaDir).includes(' | GDB port 3333 (CMSIS Run)')
+            && !rowOf(listing, alphaDir).includes('GDB port'),
+        `${JSON.stringify(betaSeen?.gdbPorts)} | ${rowOf(listing, betaDir)}`);
 
     // #16: two idle windows are a tie for a path-less call.
     const idleTie = await callToolResult(PORT, sid, 'read_memory', { address: '0x20000000', length: 4 }, 20);
@@ -243,6 +257,14 @@ async function main() {
             && (idleData.candidates ?? []).length === 2
             && (idleData.candidates ?? []).every((c) => c.isDefault === false && c.role === published[c.pid]),
         JSON.stringify(idleData.candidates));
+
+    // The knowledge index needs no window: a tie sends knowledge_search to the router's own window instead of refusing it.
+    // Without pack-docs handlers in this harness the worker answers TOOL_DISABLED, which shows the call was routed.
+    const idleSearch = await callToolResult(PORT, sid, 'knowledge_search', { query: 'HardFault' }, 120);
+    const idleSearchData = idleSearch.structuredContent ?? {};
+    check('knowledge_search runs in the router\'s own window when two idle windows tie, instead of AMBIGUOUS_WINDOW',
+        idleSearchData.error_code === 'TOOL_DISABLED' && /not available in this window/.test(idleSearch.content?.[0]?.text ?? ''),
+        `${idleSearchData.error_code}: ${(idleSearch.content?.[0]?.text ?? '').split('\n')[0]}`);
 
     // The window argument names the window for one call, by pid or by path, and re-aims the session.
     const tooltipCall = (item) => (item.tooltip ?? '').split('\n').find((line) => line.startsWith('Last agent call here:')) ?? '';
@@ -274,7 +296,7 @@ async function main() {
         saved.pid === beta.pid && saved.workspaceFolder === betaDir && saved.name === 'beta' && typeof saved.setAt === 'number'
             && (process.platform === 'win32' || (fs.statSync(defaultFile).mode & 0o777) === 0o600),
         JSON.stringify(saved));
-    check('the window that was chosen says so in its status bar at once', betaItem.text === `$(plug) CDA ${roleOf(c2)} · default`,
+    check('the window that was chosen says so in its status bar at once', betaItem.text === `$(cda-robot) ${c2.isRouter() ? 'R' : 'W'} · default`,
         betaItem.text);
 
     const defaultSid = await openSession(PORT);
@@ -373,11 +395,15 @@ async function main() {
     const workerItem = c1.isRouter() ? betaItem : alphaItem;
     const workerWindow = c1.isRouter() ? beta : alpha;
 
-    // #14: a worker whose handler never answers, as when a picker waits for a
-    // person nobody is. Its fence answers WORKER_TIMEOUT inside the router's
-    // 3 s budget; the call runs on there, so the worker tells its user and
-    // its status bar item turns to the warning background.
-    worker.localHandler.handleGetDeviceInfo = () => new Promise(() => { /* waits for a picker nobody answers */ });
+    // #14: a worker whose handler never answers. Its fence answers
+    // WORKER_TIMEOUT inside the router's 3 s budget and the call runs on
+    // there, so its status bar item turns to the warning background. A
+    // debugging op waits for the debug adapter: the hint says so and the
+    // user, who could not answer it, is not told. An op that can wait for a
+    // picker or dialog, as restart_debugging for a preLaunchTask's prompt,
+    // says so in its hint and tells the user once.
+    worker.localHandler.handleGetDeviceInfo = () => new Promise(() => { /* the debug adapter never answers */ });
+    worker.localHandler.handleRestart = () => new Promise(() => { /* waits for a picker nobody answers */ });
     const warnings = [];
     const showWarning = stub.window.showWarningMessage;
     stub.window.showWarningMessage = (message, ...items) => { warnings.push({ message, items }); return Promise.resolve(undefined); };
@@ -387,18 +413,28 @@ async function main() {
     const hung = await callToolResult(PORT, hangSid, 'get_device_info', {}, 61);
     const hungMs = Date.now() - hangBegan;
     const hungText = hung.content?.[0]?.text ?? '';
-    check('a worker whose handler never answers returns WORKER_TIMEOUT inside the budget',
+    check('a worker whose handler never answers returns WORKER_TIMEOUT inside the budget, the hint naming the debug adapter',
         hung.isError === true && hung.structuredContent?.error_code === 'WORKER_TIMEOUT' && hungMs >= 1_800 && hungMs < 3_000
-            && /^\[WORKER_TIMEOUT\] 'get_device_info' did not finish within 2 s in window pid \d+( \(.+\))?; it is still running there\.\n/.test(hungText),
+            && /^\[WORKER_TIMEOUT\] 'get_device_info' did not finish within 2 s in window pid \d+( \(.+\))?; it is still running there\.\n/.test(hungText)
+            && hungText.includes('\nThe debug adapter or GDB has not answered: call get_session_status, then check_target_connection.'),
         `${hungMs} ms: ${hungText.replace(/\n/g, ' | ')}`);
-    const again = await callToolResult(PORT, hangSid, 'get_device_info', {}, 62);
-    check('the user is told once, with the log a click away; the status bar shows the call past its fence',
-        again.structuredContent?.error_code === 'WORKER_TIMEOUT' && warnings.length === 1
-            && /: an agent's get_device_info has been waiting 2 s in this window; the agent was told it timed out\./.test(warnings[0].message)
-            && warnings[0].items.join() === 'Show Log'
+    check('a debugging op past its fence: no warning for the user; the status bar shows the call past its fence',
+        warnings.length === 0
             && workerItem.backgroundColor?.id === 'statusBarItem.warningBackground'
-            && /get_device_info for \d+ s \(the agent was told it timed out/.test(workerItem.tooltip ?? ''),
-        `${warnings.map((w) => w.message).join(' | ')} / ${workerItem.backgroundColor?.id}`);
+            && /get_device_info for \d+ s \(the agent was told it timed out\)/.test(workerItem.tooltip ?? ''),
+        `${warnings.map((w) => w.message).join(' | ')} / ${workerItem.backgroundColor?.id} / `
+            + `${(workerItem.tooltip ?? '').split('\n').find((line) => line.startsWith('Running here')) ?? ''}`);
+    const restarted = await callToolResult(PORT, hangSid, 'restart_debugging', {}, 62);
+    const restartedText = restarted.content?.[0]?.text ?? '';
+    const again = await callToolResult(PORT, hangSid, 'restart_debugging', {}, 63);
+    check('an op that can wait for a picker: the hint names it, the user is told once, with the log a click away',
+        restarted.structuredContent?.error_code === 'WORKER_TIMEOUT' && again.structuredContent?.error_code === 'WORKER_TIMEOUT'
+            && restartedText.includes('\nA picker or dialog may be open in that window: ask the user, or call get_session_status.')
+            && warnings.length === 1
+            && /: an agent's restart_debugging has been waiting 2 s in this window; the agent was told it timed out\. A picker or dialog here may be waiting for you\./.test(warnings[0].message)
+            && warnings[0].items.join() === 'Show Log'
+            && /restart_debugging for \d+ s \(the agent was told it timed out; a picker or dialog here may be waiting for you\)/.test(workerItem.tooltip ?? ''),
+        `${restartedText.replace(/\n/g, ' | ')} / ${warnings.map((w) => w.message).join(' | ')}`);
     stub.window.showWarningMessage = showWarning;
     await router.dispose();
     check('the router released the port', !router.isRouter());
@@ -410,7 +446,7 @@ async function main() {
         `isRouter=${worker.isRouter()}`);
     const promotedEntry = workerWindow.registry.list().find((w) => w.pid === workerWindow.pid);
     check('the promoted window publishes and shows its new role',
-        promotedEntry?.role === 'router' && workerItem.text.startsWith('$(plug) CDA router'),
+        promotedEntry?.role === 'router' && workerItem.text.startsWith('$(cda-robot) R'),
         `${promotedEntry?.role} / ${workerItem.text}`);
 
     // #14: the old router's session id means nothing to the new one; 404 tells the client to start over.

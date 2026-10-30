@@ -1,4 +1,0 @@
-interface:
-  display_name: "CMSIS: Pack Documentation"
-  short_description: "Look up registers, peripherals, errata and board facts in the target's manuals, with page citations"
-  default_prompt: "Use $cmsis-pack-docs to find what this register bit does in the reference manual."

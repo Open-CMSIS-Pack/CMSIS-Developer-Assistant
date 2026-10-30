@@ -358,6 +358,93 @@ suite('PackDocsHandler (end to end)', () => {
         assert.match(textOf(late), /list_target_docs timed out after 100 ms/);
     });
 
+    test('fetch_doc: a download outlives the call that waited for it, later calls join it, and the one after it ends indexes it', async () => {
+        const bytes = fs.readFileSync(path.join(FIXTURES, 'test-rm.pdf'));
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        let downloads = 0;
+        const url = 'https://slow.example/manual.pdf';
+        const { fn } = fakeFetch({
+            [url]: (init) => {
+                const head = { 'content-type': 'application/pdf', 'content-length': String(bytes.length) };
+                if (init?.method === 'HEAD') { return new Response(null, { status: 200, headers: head }); }
+                downloads++;
+                const half = Math.floor(bytes.length / 2);
+                const body = new ReadableStream<Uint8Array>({
+                    async start(controller) {
+                        controller.enqueue(new Uint8Array(bytes.subarray(0, half)));
+                        await gate;
+                        controller.enqueue(new Uint8Array(bytes.subarray(half)));
+                        controller.close();
+                    },
+                });
+                return new Response(body, { status: 200, headers: head });
+            },
+        });
+        const h = new PackDocsHandler({ ...world.host, storageDir: path.join(world.root, 'store-slow'), fetchFn: fn },
+            { timeoutMs: 1_800, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['1 Intro\nslow manual']) });
+
+        const first = await h.handleFetchDoc({ url });
+        assert.strictEqual(typeof first === 'object' && first.status, 'running', textOf(first));
+        assert.match(textOf(first), /^Downloading web\/slow-example\/[0-9a-f]{12} from slow\.example: \d+ (B|kB) of \d+ (B|kB) after \d+ s\. The download goes on without this call; call fetch_doc \{ doc: 'web\/slow-example\/[0-9a-f]{12}' \} again/);
+        const second = await h.handleFetchDoc({ url });
+        assert.strictEqual(typeof second === 'object' && second.status, 'running');
+        assert.strictEqual(downloads, 1, 'the second call joined the first download');
+
+        release();
+        const done = textOf(await h.handleFetchDoc({ url }));
+        assert.match(done, /^Fetched web\/slow-example\/[0-9a-f]{12} — manual\.pdf/);
+        assert.strictEqual(downloads, 1);
+        assert.match(textOf(await h.handleFetchDoc({ url })), /^Already fetched /);
+    });
+
+    test('fetch_doc: a failed download is counted; from the second failure on the reply sends the user to the docs folder', async () => {
+        const url = 'https://broken.example/manual.pdf';
+        const { fn } = fakeFetch({ [url]: () => new Response('nope', { status: 500 }) });
+        const h = new PackDocsHandler({ ...world.host, storageDir: path.join(world.root, 'store-broken'), fetchFn: fn },
+            { timeoutMs: 5_000, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['x']) });
+        const first = textOf(await h.handleFetchDoc({ url }));
+        assert.match(first, /^Could not fetch web\/broken-example\/[0-9a-f]{12}: .*HTTP 500\.\n/);
+        assert.match(first, /\nAlternative: download the PDF yourself into \.agent-artifacts\/docs/);
+        const second = textOf(await h.handleFetchDoc({ url }));
+        assert.match(second, /^Could not fetch web\/broken-example\/[0-9a-f]{12} \(2 attempts failed\): .*HTTP 500\.\nDo not call fetch_doc for it again: ask the user to download the PDF into \.agent-artifacts\/docs in the workspace/);
+        assert.doesNotMatch(second, /Alternative:/);
+    });
+
+    test('fetch_doc: dispose stops a running download and leaves no part file', async () => {
+        const bytes = fs.readFileSync(path.join(FIXTURES, 'test-rm.pdf'));
+        const url = 'https://stalled.example/manual.pdf';
+        const { fn } = fakeFetch({
+            [url]: (init) => {
+                const head = { 'content-type': 'application/pdf', 'content-length': String(bytes.length) };
+                if (init?.method === 'HEAD') { return new Response(null, { status: 200, headers: head }); }
+                const body = new ReadableStream<Uint8Array>({
+                    start(controller) {
+                        controller.enqueue(new Uint8Array(bytes.subarray(0, 64)));
+                        init?.signal?.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError')));
+                    },
+                });
+                return new Response(body, { status: 200, headers: head });
+            },
+        });
+        const store = path.join(world.root, 'store-stalled');
+        const h = new PackDocsHandler({ ...world.host, storageDir: store, fetchFn: fn },
+            { timeoutMs: 1_700, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['x']) });
+        const first = await h.handleFetchDoc({ url });
+        assert.strictEqual(typeof first === 'object' && first.status, 'running', textOf(first));
+        h.dispose();
+        await new Promise(resolve => setTimeout(resolve, 50));
+        const parts: string[] = [];
+        const walk = (dir: string): void => {
+            for (const entry of fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : []) {
+                if (entry.isDirectory()) { walk(path.join(dir, entry.name)); } else if (entry.name.endsWith('.part')) { parts.push(entry.name); }
+            }
+        };
+        walk(store);
+        assert.deepStrictEqual(parts, []);
+        assert.match(textOf(await h.handleFetchDoc({ url })), /^Could not fetch web\/stalled-example\/[0-9a-f]{12}: download of .* failed: stopped/);
+    });
+
     // Last: these extract a document the listing tests above expect unindexed.
     test('read_doc_pages and fetch_doc report an ambiguous short id instead of picking one', async () => {
         await handler.handleListTargetDocs({});

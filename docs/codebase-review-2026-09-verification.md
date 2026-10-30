@@ -1,5 +1,7 @@
 # Second-pass verification — codebase review 2026-09
 
+> **Historical review record.** Findings and line references below describe the September 2026 checkout, not open defects in 2.7.0. Later fixes and the independent rewrite supersede parts of the implementation plan. Preserve the original evidence; review any remaining work through the [2026-10-28 review](reviews/2026-10-28-knowledge-and-docs.md) and current [architecture](architecture/debugMCPServer.md).
+
 Date: 2026-09-07. Branch: `fix/pdfjs-timeout-race` (including the uncommitted pack-root diff).
 
 This is an independent read-only verification of `docs/codebase-review-2026-09.md`

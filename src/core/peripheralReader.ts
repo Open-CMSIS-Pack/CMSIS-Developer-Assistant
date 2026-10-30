@@ -14,6 +14,15 @@
  * limitations under the License.
  */
 
+/**
+ * Reads peripheral register values: the device SVD gives each register's
+ * address and bit fields, DAP readMemory (else GDB) reads the word.
+ *
+ * The Peripheral Inspector extension is not asked: its API registers SVD
+ * files and parsers and reloads its view, and has no call that reads a
+ * register.
+ */
+
 import * as vscode from 'vscode';
 import {
     loadSvd, findPeripheral, findRegister, listPeripheralNames,
@@ -30,14 +39,6 @@ import { customRequestWithTimeout, HardwareTimeoutError } from '../utils/timeout
  */
 const DEFAULT_DAP_TIMEOUT_MS = 10000;
 
-/**
- * Reads peripheral register values.
- *
- * Strategy:
- *  1. Try the Peripheral Inspector extension API (eclipse-cdt.peripheral-inspector)
- *  2. Parse SVD file and read registers via DAP readMemory / GDB evaluate
- */
-
 export interface PeripheralRegisterInfo {
     name: string;
     address: string;
@@ -46,90 +47,7 @@ export interface PeripheralRegisterInfo {
 }
 
 /**
- * Attempt to read peripheral registers via the Peripheral Inspector extension API.
- * Returns null if the extension is not available or does not expose a read API.
- */
-export async function tryReadPeripheralViaExtension(
-    peripheral: string,
-    register?: string
-): Promise<string | null> {
-    const piExtension = vscode.extensions.getExtension('eclipse-cdt.peripheral-inspector');
-    if (!piExtension) {
-        return null;
-    }
-
-    if (!piExtension.isActive) {
-        try {
-            await piExtension.activate();
-        } catch {
-            return null;
-        }
-    }
-
-    const api = piExtension.exports;
-    if (!api) {
-        return null;
-    }
-
-    // Try common API patterns the Peripheral Inspector might expose
-    try {
-        if (typeof api.getPeripherals === 'function') {
-            const peripherals = await api.getPeripherals();
-            const target = peripherals?.find((p: any) =>
-                p.name?.toUpperCase() === peripheral.toUpperCase()
-            );
-            if (!target) {
-                return `Peripheral '${peripheral}' not found in SVD data. Available: ${(peripherals || []).map((p: any) => p.name).join(', ')}`;
-            }
-
-            if (register) {
-                if (typeof api.getRegisterValue === 'function') {
-                    const regValue = await api.getRegisterValue(peripheral, register);
-                    return formatRegisterValue(peripheral, register, regValue);
-                }
-            }
-
-            if (typeof api.getRegisters === 'function') {
-                const registers = await api.getRegisters(peripheral);
-                return formatRegisterList(peripheral, registers);
-            }
-        }
-    } catch {
-        // API not available in expected shape, fall through to null
-    }
-
-    return null;
-}
-
-function formatRegisterValue(peripheral: string, register: string, regValue: any): string {
-    if (!regValue) {
-        return `Register ${peripheral}.${register}: <unavailable>`;
-    }
-    let result = `${peripheral}.${register} = 0x${(regValue.value ?? 0).toString(16).padStart(8, '0')}`;
-    if (regValue.fields && Array.isArray(regValue.fields)) {
-        result += '\n  Fields:\n';
-        for (const field of regValue.fields) {
-            result += `    ${field.name}: ${field.value} [bits ${field.bitOffset}:${field.bitOffset + field.bitWidth - 1}]\n`;
-        }
-    }
-    return result;
-}
-
-function formatRegisterList(peripheral: string, registers: any[]): string {
-    if (!registers || registers.length === 0) {
-        return `No registers found for peripheral '${peripheral}'`;
-    }
-    let result = `=== ${peripheral} Registers ===\n`;
-    for (const reg of registers) {
-        const addr = reg.address ?? reg.addressOffset ?? '?';
-        const val = reg.value !== undefined ? `0x${reg.value.toString(16).padStart(8, '0')}` : '<not read>';
-        result += `  ${(reg.name || 'unknown').padEnd(20)} @ ${addr}  = ${val}\n`;
-    }
-    return result;
-}
-
-/**
- * Fallback: Read peripheral registers by parsing the SVD file and using
+ * Read peripheral registers by parsing the SVD file and using
  * DAP readMemory / GDB evaluate to fetch actual register values.
  */
 export async function readPeripheralViaMemory(
@@ -139,8 +57,8 @@ export async function readPeripheralViaMemory(
     frameId?: number | null,
     dapTimeoutMs: number = DEFAULT_DAP_TIMEOUT_MS,
 ): Promise<string> {
-    // Try SVD-based read
-    const device = await loadSvd();
+    // The SVD of the session the read goes to, which need not be VS Code's focused one.
+    const device = await loadSvd(session);
     if (!device) {
         return noSvdFallback(peripheral);
     }

@@ -47,8 +47,9 @@ import type * as http from 'http';
 import express from 'express';
 import type { Express, NextFunction, Request, Response } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
+import { isInitializeRequest, type Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { ConfigurationManager, DebuggingExecutor, DebuggingHandler, type IDebuggingHandler } from '.';
+import { offersNoGetStream } from './core/clientHosting';
 import type { MeasuredMcpServer } from './core/measuredMcpServer';
 import type { SerialOpName } from './core/opTable';
 import { ToolMetrics, formatBytes, type ToolSample } from './core/toolMetrics';
@@ -149,6 +150,10 @@ const SESSION_NOT_FOUND_CODE = -32001;
 const REQUEST_FAILED = 'The MCP server failed while handling this request.';
 const SSE_RETIRED = 'The legacy SSE endpoint /sse has been retired.';
 const SSE_SUCCESSOR = 'Connect over Streamable HTTP instead: POST /mcp.';
+/** The answer to a GET of a client that is offered no stream (NO_GET_STREAM_CLIENTS). */
+const NO_GET_STREAM = 'This server offers this client no SSE stream at GET /mcp; results come with each POST.';
+/** The answer on any other path, such as an entry that names the port without /mcp; the client shows it. */
+const NOT_THE_ENDPOINT = 'is not the MCP endpoint of the CMSIS Developer Assistant: it serves Streamable HTTP at';
 const START_FAILED = 'Could not start the CMSIS Developer Assistant MCP server';
 /** A session idle this long ends (#49), unless it holds a GET stream; the sweep looks this often. */
 const SESSION_IDLE_MS = 30 * 60_000;
@@ -203,11 +208,30 @@ function refuse(reply: Response, status: number, code: number, message: string):
     reply.status(status).json({ jsonrpc: '2.0', error: { code, message }, id: null });
 }
 
+/** A client as the log names it: the name and version it sent with `initialize`. */
+function describeClient(client: Implementation): string {
+    const name = client.name.trim() || '(unnamed client)';
+    const version = client.version.trim();
+    return version ? `${name} ${version}` : name;
+}
+
 /** Close the halves of a session that never opened, ignoring whatever they report. */
 async function discard(session: McpSession): Promise<void> {
     await session.transport.close().catch(() => undefined);
     await session.server.close().catch(() => undefined);
 }
+
+/**
+ * How long an idle keep-alive connection to the endpoint stays open. Node's
+ * default of 5 s races a client that keeps pooled connections longer, as
+ * Codex's HTTP client does: a request sent while the server closes the idle
+ * socket fails with "error sending request". Above the clients' own pool
+ * timeouts, the client closes first. `closeHttpServer` still drops idle
+ * sockets when the server is disposed.
+ */
+const KEEP_ALIVE_MS = 120_000;
+/** Above the keep-alive, so that the header timeout never ends an idle socket first. */
+const HEADERS_TIMEOUT_MS = KEEP_ALIVE_MS + 5_000;
 
 /**
  * Bind the app to the loopback address. Success is the `listening` event,
@@ -217,6 +241,8 @@ async function discard(session: McpSession): Promise<void> {
 function listenOnLoopback(app: Express, port: number): Promise<http.Server> {
     return new Promise<http.Server>((bound, failed) => {
         const listener = app.listen(port, LOOPBACK_V4);
+        listener.keepAliveTimeout = KEEP_ALIVE_MS;
+        listener.headersTimeout = HEADERS_TIMEOUT_MS;
         const onError = (problem: Error): void => {
             listener.removeListener('listening', onListening);
             listener.close();
@@ -253,6 +279,15 @@ function jsonlSink(file: string): (sample: ToolSample) => void {
     };
 }
 
+/** The tool rules read by the first server of this process; a window builds a server for each port bid. */
+let sharedToolRules: { rules: string | undefined } | undefined;
+
+/** The tool rules of the process, read from the shipped contract on first use. */
+function processToolRules(docs: ShippedDocs): string | undefined {
+    sharedToolRules ??= { rules: loadToolRules(docs) };
+    return sharedToolRules.rules;
+}
+
 /** Without a factory: one debugging handler, built now and shared by every session. */
 function singleWindowHandlers(timeoutInSeconds: number, hardwareTimeouts?: Partial<HardwareTimeouts>): () => SessionHandlers {
     const debug = new DebuggingHandler(new DebuggingExecutor(hardwareTimeouts), new ConfigurationManager(), timeoutInSeconds);
@@ -270,8 +305,8 @@ export class DebugMCPServer {
     private readonly instanceTotals = new ToolMetrics(INSTANCE_SAMPLES);
     private readonly sink: ((sample: ToolSample) => void) | undefined;
     private readonly docs = new ShippedDocs();
-    /** The tool rules every session's instructions start with, read once for the instance (#50). */
-    private readonly toolRules = loadToolRules(this.docs);
+    /** The tool rules every session's instructions start with, read once per process (#50). */
+    private readonly toolRules = processToolRules(this.docs);
     private readonly sessions = new Map<string, McpSession>();
     private listener: http.Server | undefined;
     private boundPort: number | undefined;
@@ -323,7 +358,8 @@ export class DebugMCPServer {
      * bind means another window serves MCP, reported as `PortInUseError`.
      */
     async start(): Promise<void> {
-        logger.info(`Opening the MCP endpoint on ${LOOPBACK_V4}:${this.port}`);
+        // A worker bids for the port every 10 s: the attempt and its usual outcome are debug lines, the bind itself is news.
+        logger.debug(`Opening the MCP endpoint on ${LOOPBACK_V4}:${this.port}`);
         try {
             this.listener = await listenOnLoopback(this.buildApp(), this.port);
             const where = this.listener.address();
@@ -336,7 +372,7 @@ export class DebugMCPServer {
             logger.info(`MCP endpoint ready at http://${LOOPBACK_V4}:${where.port}${MCP_ROUTE}`);
         } catch (failure) {
             if ((failure as NodeJS.ErrnoException | undefined)?.code === 'EADDRINUSE') {
-                logger.info(`Port ${this.port} is taken; another window serves MCP`);
+                logger.debug(`Port ${this.port} is taken; another window serves MCP`);
                 throw new PortInUseError(this.port);
             }
             logger.error('The MCP endpoint did not start', failure);
@@ -369,8 +405,11 @@ export class DebugMCPServer {
             this.listener = undefined;
             this.boundPort = undefined;
             await closeHttpServer(listener);
+            logger.info('MCP endpoint stopped');
+        } else {
+            // The release after a failed bind, or a second stop: nothing was serving.
+            logger.debug('MCP endpoint stopped (it was not listening)');
         }
-        logger.info('MCP endpoint stopped');
     }
 
     /** The bound port while listening (the OS's pick when 0 was configured), else the configured one. */
@@ -426,6 +465,11 @@ export class DebugMCPServer {
         app.get('/sse', (_req: Request, res: Response) => {
             res.status(410).json({ error: SSE_RETIRED, message: SSE_SUCCESSOR, newEndpoint: MCP_ROUTE });
         });
+        // Every other path gets JSON that names the endpoint, not Express's HTML "Cannot POST /".
+        app.use((req: Request, res: Response) => {
+            const endpoint = `http://localhost:${req.socket.localPort ?? this.port}${MCP_ROUTE}`;
+            refuse(res, 404, -32000, `${req.method} ${req.path} ${NOT_THE_ENDPOINT} ${endpoint}.`);
+        });
         return app;
     }
 
@@ -444,11 +488,12 @@ export class DebugMCPServer {
                 refuse(res, 404, SESSION_NOT_FOUND_CODE, SESSION_NOT_FOUND);
                 return;
             }
-            if (!isInitializeRequest(req.body)) {
+            const initialize: unknown = req.body;
+            if (!isInitializeRequest(initialize)) {
                 refuse(res, 400, -32000, NO_SESSION_FOR_POST);
                 return;
             }
-            opened = this.openSession();
+            opened = this.openSession(initialize.params.clientInfo);
             await opened.server.connect(opened.transport);
             await opened.transport.handleRequest(req, res, req.body);
         } catch (failure) {
@@ -473,6 +518,12 @@ export class DebugMCPServer {
             return;
         }
         this.seen(live, res);
+        if (req.method === 'GET' && offersNoGetStream(live.server.server.getClientVersion()?.name)) {
+            // For this client a stream that drops when the server restarts ends the server for good (Kimi Code).
+            res.set('Allow', 'POST, DELETE');
+            refuse(res, 405, -32000, NO_GET_STREAM);
+            return;
+        }
         if (req.method === 'GET') {
             // An open stream keeps the session from expiring, however long nothing is asked.
             live.openStreams += 1;
@@ -487,8 +538,11 @@ export class DebugMCPServer {
         res.on('close', () => { session.lastSeenAt = this.now(); });
     }
 
-    /** A transport and server for a new session; it joins the map once the SDK assigns its id. */
-    private openSession(): McpSession {
+    /**
+     * A transport and server for a new session of `client`; it joins the map
+     * once the SDK assigns its id.
+     */
+    private openSession(client: Implementation): McpSession {
         const ring = new ToolMetrics(SESSION_SAMPLES, (sample) => this.observe(sample));
         // Made here rather than inside the build, so that the session keeps them for describeSessions().
         const handlers = this.handlersFor();
@@ -508,7 +562,7 @@ export class DebugMCPServer {
             openStreams: 0,
             transport: new StreamableHTTPServerTransport({
                 sessionIdGenerator: mintSessionId,
-                onsessioninitialized: (id) => this.adopt(session, id),
+                onsessioninitialized: (id) => this.adopt(session, id, client),
             }),
         };
         // Assigned before connect: the SDK chains its own close handling onto the handler present at that moment.
@@ -516,10 +570,15 @@ export class DebugMCPServer {
         return session;
     }
 
-    private adopt(session: McpSession, id: string): void {
+    /**
+     * The SDK assigned the session's id: it joins the map. The SDK calls this
+     * before its server has read the initialize request, so the client is
+     * named from that request (`clientInfo`), the same object the server keeps.
+     */
+    private adopt(session: McpSession, id: string, client: Implementation): void {
         session.adopted = true;
         this.sessions.set(id, session);
-        logger.info(`MCP session ${id} opened`);
+        logger.info(`MCP session ${id} opened by ${describeClient(client)}`);
     }
 
     private release(session: McpSession): void {

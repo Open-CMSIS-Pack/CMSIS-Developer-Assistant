@@ -20,7 +20,14 @@
  * `0100`); every URL form a pdsc uses for them — developer.arm.com,
  * support.arm.com, the documentation-service API, the dead infocenter — maps
  * to that pair, and so does the store id `arm/<id>-<version>`.
+ *
+ * The tables — the document catalogue, the listing order of its kinds, the
+ * core-to-architecture map and the NPUs of Arm's subsystems — live in
+ * `armDocs.json` beside this file; this module holds the types that give
+ * them meaning and the functions over them.
  */
+
+import { coreArch, docs, kindOrder, knownNpus } from './armDocs.json';
 
 export interface ArmDocRef {
     /** Lower-case document id: `ddi0553`, `ihi0031`, `100230`. */
@@ -112,72 +119,72 @@ export interface ArmDocEntry {
     note?: string;
 }
 
-const V = '2026-08-27';
+const ARCHS: readonly ArmArch[] = ['Armv6-M', 'Armv7-M', 'Armv8-M', 'Armv8.1-M'];
+const KINDS: readonly ArmDocKind[] = ['arch', 'adi', 'coresight', 'etm', 'trm', 'npu', 'gug'];
+const FORMATS: readonly ArmDocEntry['format'][] = ['pdf', 'html'];
+
+function isArch(value: string): value is ArmArch {
+    return (ARCHS as readonly string[]).includes(value);
+}
+
+function isKind(value: string): value is ArmDocKind {
+    return (KINDS as readonly string[]).includes(value);
+}
+
+/** One `docs` entry of `armDocs.json`, as TypeScript reads the file; `toEntry` narrows the enumerated fields. */
+type RawDocEntry = typeof docs[number];
+
+/** The entry with its `kind`, `format` and `archs` checked; a typo in the JSON fails here, at load. */
+function toEntry(raw: RawDocEntry): ArmDocEntry {
+    const { kind, format, archs, ...rest } = raw;
+    if (!isKind(kind)) {
+        throw new Error(`armDocs.json: ${raw.docId} has the unknown kind "${kind}"`);
+    }
+    if (!(FORMATS as readonly string[]).includes(format)) {
+        throw new Error(`armDocs.json: ${raw.docId} has the unknown format "${format}"`);
+    }
+    const checkedArchs = archs?.map(a => {
+        if (!isArch(a)) {
+            throw new Error(`armDocs.json: ${raw.docId} names the unknown architecture "${a}"`);
+        }
+        return a;
+    });
+    return { ...rest, kind, format: format as ArmDocEntry['format'], ...(checkedArchs ? { archs: checkedArchs } : {}) };
+}
 
 /**
- * The Arm documents the debug/trace bring-up skills need, verified by hand
- * against documentation-service.arm.com on the date in `verified`. No script
- * re-checks them against the service: `src/test/armDocs.test.ts` checks,
- * offline, only that every entry has a unique id, a URL that parses back and
- * a date. To re-check before a release, open `armDocApiUrl()` of each entry
- * (or `fetch_doc` it) and update `verified`.
+ * The Arm documents the debug/trace bring-up skills need: the `docs` of
+ * `armDocs.json`, verified by hand against documentation-service.arm.com on
+ * the date in `verified`. No script re-checks them against the service:
+ * `src/test/armDocs.test.ts` checks, offline, only that every entry has a
+ * unique id, a URL that parses back and a date. To re-check before a release,
+ * open `armDocApiUrl()` of each entry (or `fetch_doc` it) and update
+ * `verified` in the JSON.
  * Generic User Guides are listed so pdsc-linked books get a title, but
  * `armDocsFor` does not add them on its own.
  */
-export const ARM_DOCS: ArmDocEntry[] = [
-    { docId: 'ddi0419', version: 'latest', title: 'Armv6-M Architecture Reference Manual', kind: 'arch', archs: ['Armv6-M'], format: 'pdf', verified: V },
-    { docId: 'ddi0403', version: 'latest', title: 'ARMv7-M Architecture Reference Manual', kind: 'arch', archs: ['Armv7-M'], format: 'pdf', verified: V },
-    { docId: 'ddi0553', version: 'latest', title: 'Armv8-M Architecture Reference Manual', kind: 'arch', archs: ['Armv8-M', 'Armv8.1-M'], format: 'pdf', verified: V },
-    { docId: 'ihi0031', version: 'latest', title: 'Arm Debug Interface Architecture Specification ADIv5.0 to ADIv5.2', kind: 'adi', all: true, format: 'pdf', verified: V },
-    { docId: 'ihi0074', version: 'latest', title: 'Arm Debug Interface Architecture Specification ADIv6.0', kind: 'adi', all: true, format: 'pdf', verified: V },
-    { docId: 'ihi0029', version: 'latest', title: 'Arm CoreSight Architecture Specification v3.0', kind: 'coresight', all: true, format: 'pdf', verified: V },
-    { docId: 'ddi0314', version: 'latest', title: 'CoreSight Components Technical Reference Manual', kind: 'coresight', all: true, format: 'pdf', verified: V },
-    { docId: 'ddi0480', version: 'latest', title: 'CoreSight SoC-400 Technical Reference Manual', kind: 'coresight', all: true, format: 'pdf', verified: V },
-    { docId: '100806', version: 'latest', title: 'CoreSight SoC-600 Technical Reference Manual', kind: 'coresight', all: true, format: 'pdf', verified: V },
-    { docId: 'ihi0014', version: 'latest', title: 'Embedded Trace Macrocell Architecture Specification (ETMv1.0 to ETMv3.5)', kind: 'etm', cores: ['Cortex-M3', 'Cortex-M4', 'SC300'], format: 'pdf', verified: V },
-    { docId: 'ihi0064', version: 'latest', title: 'Embedded Trace Macrocell Architecture Specification ETMv4.0 to ETM4.6', kind: 'etm', cores: ['Cortex-M7'], archs: ['Armv8-M', 'Armv8.1-M'], format: 'pdf', verified: V },
-    { docId: 'ddi0440', version: 'latest', title: 'CoreSight ETM-M4 Technical Reference Manual', kind: 'etm', cores: ['Cortex-M4'], format: 'pdf', verified: V },
-    { docId: 'ddi0494', version: 'latest', title: 'CoreSight ETM-M7 Technical Reference Manual', kind: 'etm', cores: ['Cortex-M7'], format: 'pdf', verified: V },
-    { docId: '100232', version: 'latest', title: 'CoreSight ETM-M33 Technical Reference Manual', kind: 'etm', cores: ['Cortex-M33'], format: 'pdf', verified: V },
-    { docId: 'ddi0486', version: 'latest', title: 'CoreSight MTB-M0+ Technical Reference Manual', kind: 'etm', cores: ['Cortex-M0+'], format: 'pdf', verified: V },
-    { docId: 'ddi0432', version: 'latest', title: 'Cortex-M0 Technical Reference Manual', kind: 'trm', cores: ['Cortex-M0'], format: 'pdf', verified: V },
-    { docId: 'ddi0484', version: 'latest', title: 'Cortex-M0+ Technical Reference Manual', kind: 'trm', cores: ['Cortex-M0+'], format: 'pdf', verified: V },
-    { docId: 'ddi0337', version: 'latest', title: 'Cortex-M3 Technical Reference Manual', kind: 'trm', cores: ['Cortex-M3'], format: 'pdf', verified: V },
-    { docId: 'ddi0439', version: 'b', title: 'Cortex-M4 Technical Reference Manual', kind: 'trm', cores: ['Cortex-M4'], format: 'pdf', verified: V, note: 'latest is "DDI0439B Errata 01"; b is r0p0' },
-    { docId: 'ddi0489', version: 'latest', title: 'Cortex-M7 Processor Technical Reference Manual', kind: 'trm', cores: ['Cortex-M7'], format: 'pdf', verified: V },
-    { docId: 'ddi0550', version: 'latest', title: 'Cortex-M23 Processor Technical Reference Manual', kind: 'trm', cores: ['Cortex-M23'], format: 'pdf', verified: V },
-    { docId: '100230', version: 'latest', title: 'Cortex-M33 Processor Technical Reference Manual', kind: 'trm', cores: ['Cortex-M33'], format: 'pdf', verified: V },
-    { docId: '101051', version: 'latest', title: 'Cortex-M55 Processor Technical Reference Manual', kind: 'trm', cores: ['Cortex-M55'], format: 'pdf', verified: V },
-    { docId: '101924', version: 'latest', title: 'Cortex-M85 Processor Technical Reference Manual', kind: 'trm', cores: ['Cortex-M85'], format: 'pdf', verified: V },
-    { docId: '102776', version: 'latest', title: 'Arm China Cortex-M52 Processor Technical Reference Manual', kind: 'trm', cores: ['Cortex-M52'], format: 'pdf', verified: V },
-    { docId: '102420', version: 'latest', title: 'Arm Ethos-U55 NPU Technical Reference Manual', kind: 'npu', npus: ['Ethos-U55'], format: 'pdf', verified: '2026-08-28' },
-    { docId: '102023', version: 'latest', title: 'Arm Ethos-U65 NPU Technical Reference Manual', kind: 'npu', npus: ['Ethos-U65'], format: 'pdf', verified: '2026-08-28' },
-    { docId: '102685', version: 'latest', title: 'Arm Ethos-U85 NPU Technical Reference Manual', kind: 'npu', npus: ['Ethos-U85'], format: 'pdf', verified: '2026-08-28' },
-    { docId: '102684', version: 'latest', title: 'Arm Ethos-U85 NPU Technical Overview', kind: 'npu', npus: ['Ethos-U85'], format: 'pdf', verified: '2026-08-28' },
-    { docId: 'dui1095', version: 'latest', title: 'Cortex-M23 Devices Generic User Guide', kind: 'gug', cores: ['Cortex-M23'], format: 'pdf', verified: '2026-08-28' },
-    { docId: 'dui0497', version: 'latest', title: 'Cortex-M0 Devices Generic User Guide', kind: 'gug', cores: ['Cortex-M0'], format: 'pdf', verified: V },
-    { docId: 'dui0662', version: 'latest', title: 'Cortex-M0+ Devices Generic User Guide', kind: 'gug', cores: ['Cortex-M0+'], format: 'pdf', verified: V },
-    { docId: 'dui0552', version: 'latest', title: 'Cortex-M3 Devices Generic User Guide', kind: 'gug', cores: ['Cortex-M3'], format: 'pdf', verified: V },
-    { docId: 'dui0553', version: 'latest', title: 'Cortex-M4 Devices Generic User Guide', kind: 'gug', cores: ['Cortex-M4'], format: 'pdf', verified: V },
-    { docId: 'dui0646', version: 'latest', title: 'Cortex-M7 Devices Generic User Guide', kind: 'gug', cores: ['Cortex-M7'], format: 'pdf', verified: V },
-    { docId: '100235', version: 'latest', title: 'Cortex-M33 Devices Generic User Guide', kind: 'gug', cores: ['Cortex-M33'], format: 'pdf', verified: V },
-    { docId: '101273', version: 'latest', title: 'Cortex-M55 Devices Generic User Guide', kind: 'gug', cores: ['Cortex-M55'], format: 'pdf', verified: V },
-    { docId: '101928', version: 'latest', title: 'Cortex-M85 Devices Generic User Guide', kind: 'gug', cores: ['Cortex-M85'], format: 'pdf', verified: V },
-];
+export const ARM_DOCS: ArmDocEntry[] = docs.map(toEntry);
 
-const KIND_ORDER: Record<ArmDocKind, number> = { arch: 0, adi: 1, coresight: 2, etm: 3, trm: 4, npu: 5, gug: 6 };
+/** `kindOrder` of `armDocs.json`: the listing rank of each kind. */
+const KIND_ORDER: Record<ArmDocKind, number> = kindOrder;
 
 /**
- * NPUs of Arm's own subsystems, whose packs declare only the Cortex core:
- * Corstone-300/310 carry an Ethos-U55, Corstone-315 an Ethos-U65,
- * Corstone-320 an Ethos-U85.
+ * `knownNpus` of `armDocs.json`: the NPUs of Arm's own subsystems, whose
+ * packs declare only the Cortex core (Corstone-300/310 carry an Ethos-U55,
+ * Corstone-315 an Ethos-U65, Corstone-320 an Ethos-U85), each as a
+ * case-insensitive pattern over the device name.
  */
-const KNOWN_NPUS: { pattern: RegExp; npu: string }[] = [
-    { pattern: /^SSE-30[0-9]\b/i, npu: 'Ethos-U55' },
-    { pattern: /^SSE-31[0-4]\b/i, npu: 'Ethos-U55' },
-    { pattern: /^SSE-31[5-9]\b/i, npu: 'Ethos-U65' },
-    { pattern: /^SSE-32[0-9]\b/i, npu: 'Ethos-U85' },
-];
+const KNOWN_NPUS: { pattern: RegExp; npu: string }[] = knownNpus.map(k => ({ pattern: new RegExp(k.pattern, 'i'), npu: k.npu }));
+
+/** `coreArch` of `armDocs.json`: lower-case core name → architecture. */
+const CORE_ARCH: Record<string, ArmArch | undefined> = Object.fromEntries(
+    Object.entries(coreArch).map(([core, arch]) => {
+        if (!isArch(arch)) {
+            throw new Error(`armDocs.json: core ${core} names the unknown architecture "${arch}"`);
+        }
+        return [core, arch];
+    }),
+);
 
 /** `Ethos-U85`, `ETHOS U55`, `ethos-u65` → the canonical NPU name, else undefined. */
 export function normalizeNpu(text: string): string | undefined {
@@ -190,14 +197,6 @@ export function knownNpuOf(deviceName: string | undefined): string | undefined {
     if (!deviceName) { return undefined; }
     return KNOWN_NPUS.find(k => k.pattern.test(deviceName))?.npu;
 }
-
-const CORE_ARCH: Record<string, ArmArch> = {
-    'cortex-m0': 'Armv6-M', 'cortex-m0+': 'Armv6-M', 'cortex-m0plus': 'Armv6-M', 'cortex-m1': 'Armv6-M', 'sc000': 'Armv6-M',
-    'cortex-m3': 'Armv7-M', 'cortex-m4': 'Armv7-M', 'cortex-m7': 'Armv7-M', 'sc300': 'Armv7-M',
-    'cortex-m23': 'Armv8-M', 'cortex-m33': 'Armv8-M', 'cortex-m35p': 'Armv8-M', 'armv8mbl': 'Armv8-M', 'armv8mml': 'Armv8-M',
-    'cortex-m52': 'Armv8.1-M', 'cortex-m55': 'Armv8.1-M', 'cortex-m85': 'Armv8.1-M', 'armv81mml': 'Armv8.1-M',
-    'star-mc1': 'Armv8-M', 'star-mc3': 'Armv8.1-M',
-};
 
 /** Listing order of Arm documents: architecture first, then debug interface, CoreSight, trace, core. */
 export function armKindOrder(kind: ArmDocKind | undefined): number {

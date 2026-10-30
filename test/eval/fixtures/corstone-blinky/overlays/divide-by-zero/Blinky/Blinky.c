@@ -8,6 +8,8 @@
  */
 
 #include "Blinky.h"
+#include "RTE_Components.h"
+#include CMSIS_device_header
 #include "led_port.h"
 #include "timeout.h"
 #include <cmsis_compiler.h>

@@ -10,7 +10,6 @@ on:
       - '.github/workflows/markdown.yml'
       - '.github/markdownlint.json'
       - '.github/markdownlint.jsonc'
-      - '.github/workflows/nightly.yml'
       - '.github/ISSUE_TEMPLATE/**'
 
 concurrency:

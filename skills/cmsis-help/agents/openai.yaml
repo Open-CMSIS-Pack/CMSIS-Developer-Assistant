@@ -1,4 +1,4 @@
 interface:
   display_name: "CMSIS: Help"
-  short_description: "List the CMSIS slash commands, VS Code commands, MCP tools and settings"
-  default_prompt: "Use $cmsis-help to list the CMSIS slash commands, VS Code commands, MCP tools and settings."
+  short_description: "Health check of the CMSIS Developer Assistant and where to find each procedure"
+  default_prompt: "Use $cmsis-help to check the CMSIS session and find the procedure for this task."

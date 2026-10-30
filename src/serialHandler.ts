@@ -84,6 +84,14 @@ function closedText(status: SerialStatus): string {
     return `closed (${released})${status.bufferedBytes > 0 ? `, ${status.bufferedBytes} byte(s) still buffered` : ''}`;
 }
 
+/** The refusal of a capture while the window holds a port: which one, and who holds it as `caller` sees it. */
+function slotTaken(owned: SerialController, caller: string | undefined): ToolError {
+    const hold = owned.hold();
+    const who = hold ? ` (held by ${holderWords(hold.owner, caller)})` : '';
+    return new ToolError('PORT_HELD',
+        `${owned.status().path} is open in this window${who}, so serial_capture cannot take the port.`, SLOT_HELD_HINT);
+}
+
 /**
  * Serial-tool handlers. Two backends:
  *
@@ -91,10 +99,10 @@ function closedText(status: SerialStatus): string {
  *      Use when the user is NOT running an MS Serial Monitor session for the
  *      same device path (one OS-level reader per tty).
  *
- *   2) `serialMonitorBridge` — taps the MS Serial Monitor extension's public
- *      API via runtime probing. Today the public API only exposes port
- *      enumeration and port-set events; if MS adds a data-subscription event
- *      the bridge picks it up automatically with no further changes.
+ *   2) `serialMonitorBridge` — asks the MS Serial Monitor extension for its
+ *      API (`getApi` version 0). That API has no data event, so
+ *      `serial_subscribe_monitor` is refused, saying so; a build whose API
+ *      has one is subscribed with no further changes.
  *
  * The agent picks: `serial_open` (own port) vs `serial_subscribe_monitor`
  * (tap user's UI session). The owned port is the `serialController`
@@ -119,25 +127,18 @@ export class SerialHandler {
 
     // ── Backend-agnostic helpers ────────────────────────────────────
 
+    /**
+     * `serial_list_ports`: the ports serialport finds, with the friendly name
+     * Windows gives a port, the manufacturer, the serial number and VID:PID.
+     * The Serial Monitor's API lists the same ports without the serial
+     * numbers, so it is not asked.
+     */
     async handleListPorts(): Promise<string> {
-        // Prefer the MS Serial Monitor API for listing — it tends to give
-        // friendlier names — falling back to our serialport when not available.
-        const fromBridge = await this.bridge.listPorts();
-        if (fromBridge && fromBridge.length > 0) {
-            const lines = [`Available serial ports (${fromBridge.length}, via Serial Monitor API):`];
-            for (const p of fromBridge) {
-                const id = [p.friendlyName, p.vid && p.pid ? `${p.vid}:${p.pid}` : null]
-                    .filter(Boolean).join(' / ');
-                lines.push(`  ${p.portName}${id ? `  — ${id}` : ''}`);
-            }
-            return lines.join('\n');
-        }
-
         const fromOwn = await this.owned.listPorts();
         if (fromOwn.length === 0) { return 'No serial ports detected.'; }
         const lines = [`Available serial ports (${fromOwn.length}, via serialport):`];
         for (const p of fromOwn) {
-            const id = [p.manufacturer, p.serialNumber].filter(Boolean).join(' / ');
+            const id = [p.friendlyName, p.manufacturer, p.serialNumber].filter(Boolean).join(' / ');
             const usb = p.vendorId && p.productId ? ` [VID:PID ${p.vendorId}:${p.productId}]` : '';
             lines.push(`  ${p.path}${id ? `  — ${id}` : ''}${usb}`);
         }
@@ -167,14 +168,10 @@ export class SerialHandler {
     async handleCapture(args: CaptureRequest): Promise<ToolText> {
         const until = untilPattern(args.until);
         const durationMs = captureDurationMs(args.durationMs);
-        if (this.owned.isOpen()) {
-            const hold = this.owned.hold();
-            const who = hold ? ` (held by ${holderWords(hold.owner, callingSession())})` : '';
-            throw new ToolError('PORT_HELD',
-                `${this.owned.status().path} is open in this window${who}, so serial_capture cannot take the port.`, SLOT_HELD_HINT);
-        }
+        const caller = callingSession();
+        // The slot is looked at in the open's turn, so a capture that waited for another open finds its port.
         const generation = await this.owned.open({ path: args.path, baudRate: args.baudRate },
-            { owner: callingSession(), rule: 'idle', idleSeconds: 0, capture: true });
+            { owner: caller, rule: 'idle', idleSeconds: 0, capture: true }, () => slotTaken(this.owned, caller));
         const opened = Date.now();
         const record = new CaptureRecord();
         // Set inside the read loop's closure, so it is typed as the union rather than narrowed to its first value.
@@ -213,12 +210,11 @@ export class SerialHandler {
     }
 
     async handleClose(): Promise<string> {
-        const wasOpen = this.owned.isOpen();
-        const released = releaseNote(this.owned.status());
-        await this.owned.close();
-        if (wasOpen) {
+        // Whether a port was open is answered in the close's turn, after an open in flight, whose port is closed too.
+        if (await this.owned.close()) {
             return 'Owned serial port closed.';
         }
+        const released = releaseNote(this.owned.status());
         return released ? `No owned serial port was open (${released}).` : 'No owned serial port was open.';
     }
 
@@ -346,7 +342,7 @@ export class SerialHandler {
      * directly. Never throws.
      */
     async sessionEnded(sessionId: string): Promise<string> {
-        const port = this.owned.sessionEnded(sessionId);
+        const port = await this.owned.sessionEnded(sessionId);
         const subscription = this.bridge.sessionEnded(sessionId);
         const done = [...(port ? [`released ${port}`] : []), ...(subscription ? ['ended the Serial Monitor subscription'] : [])];
         return `MCP session ${sessionId.slice(0, 8)} ended: ${done.length > 0 ? done.join(' and ') : 'it held no serial port in this window'}.`;

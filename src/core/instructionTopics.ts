@@ -29,8 +29,32 @@
  * Everything before the first marker is the overview. Pure: no vscode, no I/O.
  */
 
-export const TOPICS = ['overview', 'bootstrap', 'session', 'build', 'breakpoints', 'inspection', 'faults', 'troubleshooting'] as const;
+export const TOPICS = [
+    'overview', 'bootstrap', 'session', 'target', 'cmsis-action', 'flash', 'breakpoints', 'inspection', 'faults', 'troubleshooting',
+] as const;
 export type Topic = (typeof TOPICS)[number];
+
+/**
+ * Topic names the guide no longer fences, still accepted: a skill, a
+ * knowledge procedure or an agent's memory written before a split may ask
+ * for one. Each serves the topic that took over most of it, under one line
+ * that names where the rest went.
+ */
+export const RETIRED_TOPICS = ['build'] as const;
+export type RetiredTopic = (typeof RETIRED_TOPICS)[number];
+
+const SUCCESSORS: Readonly<Record<RetiredTopic, { serves: Topic; pointer: string }>> = {
+    // Split in 2.7.0: at 17 KB it was twice any other topic, and GitHub
+    // Copilot's agent writes a result over about 8 KB to a file to page through.
+    build: {
+        serves: 'cmsis-action',
+        pointer: 'Topic `build` is split in three: `target` (the CMSIS YAMLs, launch.json, which target, the pack documentation), ' +
+            '`cmsis-action` (below) and `flash` (the probe and its GDB port, `flash`, `start_debugging`, shell commands).',
+    },
+};
+
+/** Every name get_debug_instructions accepts: the topics, then the retired names. */
+export const TOPIC_NAMES = [...TOPICS, ...RETIRED_TOPICS] as const;
 
 export interface TopicSection {
     name: string;
@@ -66,10 +90,16 @@ export function listTopics(doc: string): Array<Pick<TopicSection, 'name' | 'blur
     return parseTopics(doc).sections.map(({ name, blurb }) => ({ name, blurb }));
 }
 
+/** The topic a retired name stands for and the line that says where the rest went, if `topic` is retired. */
+function successorOf(topic: string): { serves: Topic; pointer: string } | undefined {
+    return (RETIRED_TOPICS as readonly string[]).includes(topic) ? SUCCESSORS[topic as RetiredTopic] : undefined;
+}
+
 /**
  * The text get_debug_instructions returns. No topic, `overview`, or an unknown
  * name gives the overview plus the topic list — the tool never errors on a
- * name, it steers.
+ * name, it steers. A retired name gives its successor topic, the pointer line
+ * first.
  */
 export function sliceTopic(doc: string, topic?: string): string {
     const { preamble, sections } = parseTopics(doc);
@@ -82,11 +112,14 @@ export function sliceTopic(doc: string, topic?: string): string {
     if (!topic || topic === 'overview') {
         return overview;
     }
-    const hit = sections.find((s) => s.name === topic);
+    const successor = successorOf(topic);
+    const name = successor?.serves ?? topic;
+    const hit = sections.find((s) => s.name === name);
     if (!hit) {
         return `Unknown topic '${topic}'. Showing the overview.\n\n${overview}`;
     }
-    const others = sections.filter((s) => s.name !== topic).map((s) => `\`${s.name}\``).join(', ');
-    return `${hit.body}\n\n_Topic \`${hit.name}\` of the debugging guide — ${hit.blurb}. ` +
+    const others = sections.filter((s) => s.name !== name).map((s) => `\`${s.name}\``).join(', ');
+    const lead = successor ? `_${successor.pointer}_\n\n` : '';
+    return `${lead}${hit.body}\n\n_Topic \`${hit.name}\` of the debugging guide — ${hit.blurb}. ` +
         `Other topics: \`overview\`, ${others}._\n`;
 }

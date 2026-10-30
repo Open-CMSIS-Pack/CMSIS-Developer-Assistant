@@ -25,15 +25,18 @@
  * cbuild-run files, its `docs/` folder) exactly like a debug or serial op.
  */
 
-import { PackDocsOpName, isPackDocsDocOp } from './core/opTable';
-import type { ToolText } from './core/toolResult';
+import { PackDocsOpName, isKnowledgeOp, isPackDocsDocOp } from './core/opTable';
+import { ToolError, ToolText } from './core/toolResult';
 import type { PackDocsHandler } from './packDocsHandler';
 import type { BuildInfoHandler } from './buildInfoHandler';
+import type { KnowledgeHandler } from './knowledgeHandler';
 
 /** The two handlers one window owns; built by the extension, lazy until called. */
 export interface PackDocsHandlers {
     docs: PackDocsHandler;
     build: BuildInfoHandler;
+    /** The experimental knowledge tools; absent where a window is built without them (tests). */
+    knowledge?: KnowledgeHandler;
 }
 
 /** Runs one documentation or build-artefact op: a text, or a reply with a status; a failure rejects. */
@@ -42,7 +45,10 @@ export type PackDocsDispatch = (op: PackDocsOpName, args?: unknown) => Promise<T
 /** Single-window dispatch: straight to this window's handlers. */
 export function localPackDocsDispatch(handlers: PackDocsHandlers): PackDocsDispatch {
     return (op, args) => {
-        const owner = isPackDocsDocOp(op) ? handlers.docs : handlers.build;
+        const owner = isKnowledgeOp(op) ? handlers.knowledge : isPackDocsDocOp(op) ? handlers.docs : handlers.build;
+        if (owner === undefined) {
+            return Promise.reject(new ToolError('TOOL_DISABLED', `Pack docs op ${op}: the knowledge handler is not available in this window`));
+        }
         const target = owner as unknown as Record<string, unknown>;
         const method = target[op];
         if (typeof method !== 'function') {

@@ -21,6 +21,7 @@
  * host arrives through this interface.
  */
 
+import type { ActivePackFolders } from '../solutionAnswers';
 import { ActiveContextHint } from './cbuildRun';
 
 export interface PackDocsLog {
@@ -95,6 +96,22 @@ export interface PackDocsHost {
      * place; undefined, an empty answer or an error keep `packRoot`.
      */
     packRootFromToolchain?(): Promise<string | undefined>;
+    /**
+     * The `cbuild-run.yml` of the CMSIS Solution extension's active target
+     * (`cmsis-csolution.getCbuildRunFile`), when the host can ask and the
+     * extension answers with a path. `resolveTarget` takes it before the
+     * workspace scan when the call names no target, file or pack, and only
+     * when the file exists.
+     */
+    activeCbuildRunFile?(): Promise<string | undefined>;
+    /**
+     * The folders the CMSIS Solution extension names for the active target's
+     * DFP and BSP (`getDfpPath`, `getBspPath`), as it answers them: possibly
+     * outside the pack root (a csolution `packs:` entry with `path:`), and
+     * possibly relative to the cbuild.yml. A folder counts only when its
+     * PDSC is the pack being located.
+     */
+    activePackFolders?(): Promise<ActivePackFolders>;
 }
 
 /**

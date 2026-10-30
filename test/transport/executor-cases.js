@@ -56,6 +56,8 @@ const never = () => new Promise(() => {});
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const b64 = (bytes) => Buffer.from(bytes).toString('base64');
 const le = (w) => { const b = Buffer.alloc(4); b.writeUInt32LE(w >>> 0); return b; };
+/** What readMemory returned, as plain data: how far after the address its bytes begin, and the bytes. */
+const plain = (read) => ({ offset: read?.offset, bytes: read?.bytes ? [...read.bytes] : undefined });
 
 let seq = 0;
 const trackers = [];
@@ -95,7 +97,7 @@ async function rejects(p) { try { await p; return undefined; } catch (e) { retur
 
 async function main() {
     console.log(`SERVER_VERSION ${SERVER_VERSION} package ${pkg.version}`);
-    check('SERVER_VERSION equals package.json', SERVER_VERSION === pkg.version);
+    check('SERVER_VERSION is package.json\'s version', SERVER_VERSION === pkg.version);
     check('DEFAULT_HARDWARE_TIMEOUTS', eq(DEFAULT_HARDWARE_TIMEOUTS, { dapRequestMs: 10000, memoryReadMs: 30000 }));
 
     // Budgets
@@ -193,6 +195,37 @@ async function main() {
         const p = ex.waitForStop(2000);
         setTimeout(() => event(t, 'stopped', { reason: 'breakpoint', threadId: 3 }), 20);
         check('RC5 stopped after continued', eq(await p, { kind: 'stopped', reason: 'breakpoint', threadId: 3 }));
+    }
+    reset();
+    {
+        check('RC7 focus watch without a session: false at once', (await new DebuggingExecutor().watchFrameFocus().selected(5000)) === false);
+        const { session } = makeSession(() => undefined);
+        focusOn(session);
+        trackerFor(session);
+        stub.debug.activeStackItem = { session, threadId: 1, frameId: 5 };
+        const ex = new DebuggingExecutor();
+        const watch = ex.watchFrameFocus();
+        const t0 = Date.now();
+        check('RC7 the frame focused when the watch was taken is not the stop\'s', (await watch.selected(60)) === false && Date.now() - t0 >= 50);
+        stub.debug.activeStackItem = { session, threadId: 1, frameId: 5 };
+        check('RC7 a new frame object of the session is', (await watch.selected(60)) === true);
+    }
+    reset();
+    {
+        check('RC8 start focus watch without a session: none at once', (await new DebuggingExecutor().watchStartFocus().settled(5000)) === 'none');
+        stub.debug.activeStackItem = undefined;
+        const ex = new DebuggingExecutor();
+        const watch = ex.watchStartFocus();
+        const { session } = makeSession(() => undefined);
+        focusOn(session);
+        const t = trackerFor(session);
+        event(t, 'continued', { threadId: 1 });
+        check('RC8 a session that runs: running at once', (await watch.settled(5000)) === 'running');
+        event(t, 'stopped', { reason: 'breakpoint', threadId: 1 });
+        const t0 = Date.now();
+        check('RC8 a halted session without a frame: none at the bound', (await watch.settled(60)) === 'none' && Date.now() - t0 >= 50);
+        stub.debug.activeStackItem = { session, threadId: 1, frameId: 7 };
+        check('RC8 a halted session with its frame: selected', (await watch.settled(60)) === 'selected');
     }
     reset();
     {
@@ -308,14 +341,18 @@ async function main() {
     }
     reset();
     {
-        const { session } = makeSession(() => ({ threads: [] }), { type: 'gdbtarget', name: 'Cfg' }, 'Sess');
+        // The adapter answers DHCSR with a halted core (#3); every other request with an empty thread list.
+        const { session, calls } = makeSession((c, a) => (c === 'readMemory' && a.memoryReference === '0xE000EDF0'
+            ? { data: le(0x00030003).toString('base64') } : { threads: [] }), { type: 'gdbtarget', name: 'Cfg' }, 'Sess');
         focusOn(session);
         stub.debug.activeStackItem = { session, threadId: 1, frameId: 5 };
         const ex = new DebuggingExecutor();
         const st = await ex.getSessionStatus();
-        check('SS4 stopped', st.state === 'stopped' && st.dapResponsive === true && typeof st.dapProbeMs === 'number' && 'detail' in st && st.detail === undefined, st);
+        check('SS4 stopped', st.state === 'stopped' && st.dapResponsive === true && typeof st.dapProbeMs === 'number' && 'detail' in st && st.detail === undefined
+            && !('coreSilentForMs' in st), st);
         const txt = await ex.checkTargetConnection();
-        check('SS4 text', /^Session: Sess \(type=gdbtarget\)\nConfiguration: Cfg\nDAP probe: OK \(\d+ms\)\nTarget state: stopped — full inspection is available\.$/.test(txt), txt);
+        check('SS4 text', /^Session: Sess \(type=gdbtarget\)\nConfiguration: Cfg\nDAP probe: OK \(\d+ms\)\nTarget state: stopped — the debug port answers: DHCSR=0x00030003 \(halted\)\.$/.test(txt), txt);
+        check('SS4 one DHCSR read', calls.filter((c) => c.command === 'readMemory').map((c) => c.json).join() === '{"memoryReference":"0xE000EDF0","count":4}', calls);
         const t = trackerFor(session);
         event(t, 'stopped', { reason: 'step', threadId: 1 });
         const st2 = await ex.getSessionStatus();
@@ -323,6 +360,7 @@ async function main() {
         event(t, 'continued', {});
         const txt2 = await ex.checkTargetConnection();
         check('SS4 running text', txt2.endsWith('Target state: running — DAP reads (memory/registers/variables) will be rejected until the target stops.'), txt2);
+        check('SS4 running: DHCSR not read', calls.filter((c) => c.command === 'readMemory').length === 1, calls.length);
     }
     reset();
     {
@@ -347,6 +385,72 @@ async function main() {
         check('SS5 success → stopped', (await new DebuggingExecutor().hasActiveSession()) === true);
         stub.debug.activeStackItem = undefined;
         check('SS5 success → not stopped', (await new DebuggingExecutor().hasActiveSession()) === false);
+    }
+    reset();
+    {
+        // cdt-gdb-adapter answers every request with an empty success, no body, while GDB connects and while the session shuts down.
+        let reply;
+        const { session } = makeSession(() => reply, { type: 'gdbtarget', name: 'Cfg' }, 'Sess');
+        focusOn(session);
+        event(trackerFor(session), 'stopped', { reason: 'breakpoint', threadId: 1 });
+        const ex = new DebuggingExecutor();
+        const gated = 'The adapter answered the threads probe without a thread list: it takes no requests until GDB '
+            + 'has connected to the target and run the launch configuration\'s commands, nor while the session shuts down.';
+        for (const [label, answer] of [['no body', undefined], ['a body without threads', {}]]) {
+            reply = answer;
+            const st = await ex.getSessionStatus();
+            check(`SS7 gdbtarget, ${label} → initializing`, st.state === 'initializing' && st.dapResponsive === true
+                && typeof st.dapProbeMs === 'number' && st.detail === gated, st);
+            check(`SS7 gdbtarget, ${label} → hasActiveSession false despite the stop`, (await ex.hasActiveSession()) === false);
+        }
+        reply = undefined;
+        const txt = (await ex.checkTargetConnection()).replace(/NOT READY \(\d+ms\)/, 'NOT READY (<n>ms)');
+        check('SS7 check text', txt === `Session: Sess (type=gdbtarget)\nConfiguration: Cfg\nDAP probe: NOT READY (<n>ms)\n${gated}`, txt);
+        reply = { threads: [{ id: 1, name: 'main' }] };
+        const st = await ex.getSessionStatus();
+        check('SS7 gdbtarget, thread list → stopped', st.state === 'stopped' && st.detail === 'Stopped reason: breakpoint', st);
+        check('SS7 gdbtarget, thread list → hasActiveSession', (await ex.hasActiveSession()) === true);
+    }
+    reset();
+    {
+        // A session asked to end: the adapter got a disconnect or terminate and gives the probe no thread list while it shuts down.
+        let reply;
+        const { session } = makeSession(() => (typeof reply === 'function' ? reply() : reply), { type: 'gdbtarget', name: 'Cfg' }, 'Sess');
+        focusOn(session);
+        const t = trackerFor(session);
+        event(t, 'continued', { threadId: 1 });
+        t.onWillReceiveMessage({ type: 'request', seq: 7, command: 'disconnect', arguments: { restart: false } });
+        const ex = new DebuggingExecutor({ dapRequestMs: 100 });
+        const ending = 'The session was asked to end (disconnect sent 0 s ago); its adapter takes no requests while it shuts down.';
+        reply = undefined;
+        let st = await ex.getSessionStatus();
+        check('SS8 no thread list after a disconnect → initializing, shutting down', st.state === 'initializing' && st.detail === ending
+            && typeof st.endRequestedForMs === 'number' && st.endRequestedForMs >= 0 && st.dapResponsive === true, st);
+        reply = never;
+        st = await ex.getSessionStatus();
+        check('SS8 a probe timeout after a disconnect → initializing, not unresponsive', st.state === 'initializing'
+            && st.detail === `${ending} The threads probe got no answer within 100ms.` && st.dapResponsive === false && st.dapProbeMs === null, st);
+        reply = () => { throw new Error('boom'); };
+        st = await ex.getSessionStatus();
+        check('SS8 a failed probe after a disconnect → initializing, with the failure', st.state === 'initializing'
+            && st.detail === `${ending} The threads probe failed: boom`, st);
+        const txt = await ex.checkTargetConnection();
+        check('SS8 check text', txt === `Session: Sess (type=gdbtarget)\nConfiguration: Cfg\nDAP probe: FAILED — the session is shutting down\n${ending} The threads probe failed: boom`, txt);
+        reply = { threads: [{ id: 1, name: 'main' }] };
+        st = await ex.getSessionStatus();
+        check('SS8 a thread list still counts as it is', st.state === 'running' && st.endRequestedForMs === undefined, st);
+    }
+    reset();
+    {
+        // Other adapters keep their answers: a reply without a body is a session that answers.
+        const { session } = makeSession(() => undefined, { type: 'python', name: 'Py' }, 'Py');
+        focusOn(session);
+        const t = trackerFor(session);
+        const ex = new DebuggingExecutor();
+        event(t, 'continued', {});
+        check('SS7 python, no body → running', (await ex.getSessionStatus()).state === 'running');
+        event(t, 'stopped', { reason: 'step', threadId: 1 });
+        check('SS7 python, no body → stopped', (await ex.getSessionStatus()).state === 'stopped' && (await ex.hasActiveSession()) === true);
     }
     reset();
     {
@@ -571,9 +675,42 @@ async function main() {
         focusOn(session);
         const ex = new DebuggingExecutor();
         const buf = await ex.readMemory('20000000', 8);
-        check('M1 readMemory args', calls[0].json === '{"memoryReference":"0x20000000","count":8}' && eq([...buf], [1, 2, 3, 4, 5, 6, 7, 8]), calls[0].json);
+        check('M1 readMemory args', calls[0].json === '{"memoryReference":"0x20000000","count":8}' && eq(plain(buf), { offset: 0, bytes: [1, 2, 3, 4, 5, 6, 7, 8] }), calls[0].json);
         mem = () => ({ data: b64([1, 2, 3, 4]) });
-        check('M1 short reply returned', (await ex.readMemory('0X20000000', 8)).length === 4 && calls[1].json === '{"memoryReference":"0X20000000","count":8}');
+        check('M1 short reply returned', eq(plain(await ex.readMemory('0X20000000', 8)), { offset: 0, bytes: [1, 2, 3, 4] }) && calls[1].json === '{"memoryReference":"0X20000000","count":8}');
+    }
+    reset();
+    {
+        // The reply's address is that of its first byte (DAP). cdt-gdb-adapter answers with GDB's first
+        // readable block, which begins later than asked when the start of the range is in a hole.
+        let reply;
+        const { session, calls } = makeSession((c, a) => reply(c, a));
+        focusOn(session);
+        const ex = new DebuggingExecutor();
+        const sram = Array.from({ length: 48 }, (_, i) => i + 1);
+        reply = () => ({ address: '0x20000000', data: b64(sram) });
+        check('M7 a reply that begins later keeps its place: 16 bytes in, 48 bytes', eq(plain(await ex.readMemory('0x1FFFFFF0', 64)), { offset: 16, bytes: sram })
+            && eq(calls.map((c) => c.command + ' ' + c.json), ['readMemory {"memoryReference":"0x1FFFFFF0","count":64}']), calls.map((c) => c.json));
+        reply = () => ({ address: '0x20017ff0', data: b64([9, 8, 7, 6]), unreadableBytes: 60 });
+        check('M7 unreadableBytes counts after the data: nothing moves and nothing is added', eq(plain(await ex.readMemory('0x20017ff0', 64)), { offset: 0, bytes: [9, 8, 7, 6] }));
+        reply = () => ({ address: '536870916', data: b64([1, 2, 3, 4]) });
+        check('M7 a decimal address', eq(plain(await ex.readMemory('0x20000000', 8)), { offset: 4, bytes: [1, 2, 3, 4] }));
+        reply = () => ({ address: '0x1ffffffc', data: b64([0xa, 0xb, 0xc, 0xd, 1, 2, 3, 4, 5, 6, 7, 8, 9]) });
+        check('M7 bytes before or after the range are dropped', eq(plain(await ex.readMemory('0x20000000', 8)), { offset: 0, bytes: [1, 2, 3, 4, 5, 6, 7, 8] }));
+        let first = { address: '0x20000100', data: b64([1, 2, 3, 4]) };
+        let words = { '*(unsigned int*)0x20000000': '0x04030201', '*(unsigned int*)0x20000004': '0x08070605' };
+        reply = (c, a) => {
+            if (c === 'readMemory') { return a.memoryReference === '0xE000EDF0' ? { data: le(0x00030003).toString('base64') } : first; }
+            return { result: words[a.expression] ?? '' };
+        };
+        calls.length = 0;
+        check('M7 a reply that holds none of the range is not used: the GDB ladder reads it', eq(plain(await ex.readMemory('0x20000000', 8)), { offset: 0, bytes: [1, 2, 3, 4, 5, 6, 7, 8] })
+            && eq(calls.map((c) => c.command), ['readMemory', 'evaluate', 'evaluate']), calls.map((c) => c.command + ' ' + c.json));
+        first = { address: 'soon', data: b64([1, 2, 3, 4]) };
+        words = {};
+        const e = await rejects(ex.readMemory('0x20000000', 8));
+        check('M7 an address that is not a number is a cause, never a place', e && e.code === 'INVALID_ARGUMENT'
+            && e.message.includes('DAP readMemory: the reply\'s address \'soon\' is not a number; watch expression: empty result'), e && e.message);
     }
     reset();
     {
@@ -586,7 +723,7 @@ async function main() {
         focusOn(session);
         const ex = new DebuggingExecutor();
         const buf = await ex.readMemory('0x20000000', 6);
-        check('M2 fallback bytes', eq([...buf], [1, 2, 3, 4, 5, 6]), [...buf]);
+        check('M2 fallback bytes', eq(plain(buf), { offset: 0, bytes: [1, 2, 3, 4, 5, 6] }), plain(buf));
         check('M2 requests', eq(calls.map((c) => c.command + ' ' + c.json), [
             'readMemory {"memoryReference":"0x20000000","count":6}',
             'evaluate {"expression":"*(unsigned int*)0x20000000","context":"watch"}',
@@ -724,23 +861,46 @@ async function main() {
     }
     reset();
     {
-        const words = new Map([['0xE000EDFC', 0], ['0xE0001000', 0], ['0xE0001004', 1234]]);
+        // A Cortex-M4 first. Writes to a `readOnly` address are ignored, as by Armv6-M's DWT_CTRL.
+        const words = new Map([['0xE000ED00', 0x410fc241], ['0xE000EDFC', 0], ['0xE0001000', 0], ['0xE0001004', 1234]]);
+        const readOnly = new Set();
         const { session, calls } = makeSession((c, a) => {
-            if (c === 'writeMemory') { words.set(a.memoryReference, Buffer.from(a.data, 'base64').readUInt32LE(0)); return undefined; }
+            if (c === 'writeMemory') { if (!readOnly.has(a.memoryReference)) { words.set(a.memoryReference, Buffer.from(a.data, 'base64').readUInt32LE(0)); } return undefined; }
             if (c === 'readMemory') { return { data: le(words.get(a.memoryReference) ?? 0).toString('base64') }; }
             throw new Error('?');
         });
         focusOn(session);
         const ex = new DebuggingExecutor();
+        const seqs = () => calls.map((c) => `${c.command} ${c.args.memoryReference}${c.args.data ? ' ' + Buffer.from(c.args.data, 'base64').readUInt32LE(0).toString(16) : ''}`);
+        const absent = { present: false, cycles: 0, enabledNow: false };
         const r = await ex.readCycleCounter();
-        const seqs = calls.map((c) => `${c.command} ${c.args.memoryReference}${c.args.data ? ' ' + Buffer.from(c.args.data, 'base64').readUInt32LE(0).toString(16) : ''}`);
-        check('M6 cycle counter enable', r.present === true && r.enabledNow === true && r.cycles === 1234 && eq(seqs, [
+        check('M6 cycle counter enable', r.present === true && r.enabledNow === true && r.cycles === 1234 && eq(seqs(), [
+            'readMemory 0xE000ED00',
             'readMemory 0xE000EDFC', 'writeMemory 0xE000EDFC 1000000', 'readMemory 0xE000EDFC',
-            'readMemory 0xE0001000', 'writeMemory 0xE0001000 1', 'readMemory 0xE0001000', 'readMemory 0xE0001004']), seqs);
-        words.set('0xE0001000', 1 << 28);
+            'readMemory 0xE0001000', 'writeMemory 0xE0001000 1', 'readMemory 0xE0001000', 'readMemory 0xE0001004']), seqs());
+        // NOCYCCNT is bit 25; bit 28 is the lowest bit of NUMCOMP (here 2).
+        words.set('0xE0001000', 0x2b000000);
         calls.length = 0;
-        const r2 = await ex.readCycleCounter();
-        check('M6 absent', eq(r2, { present: false, cycles: 0, enabledNow: false }) && !calls.some((c) => c.args.memoryReference === '0xE0001004'), r2);
+        const r2 = await ex.readCycleCounter().catch((e) => e.message);
+        check('M6 absent by DWT_CTRL.NOCYCCNT: no DWT_CTRL write, no CYCCNT read', eq(r2, absent)
+            && eq(seqs(), ['readMemory 0xE000ED00', 'readMemory 0xE000EDFC', 'readMemory 0xE0001000']), [r2, seqs()]);
+        words.set('0xE0001000', 0x10000000);
+        calls.length = 0;
+        const r3 = await ex.readCycleCounter().catch((e) => e.message);
+        check('M6 one comparator (NUMCOMP=1) and a cycle counter: enabled', r3.present === true && r3.enabledNow === true && r3.cycles === 1234
+            && eq(seqs(), ['readMemory 0xE000ED00', 'readMemory 0xE000EDFC', 'readMemory 0xE0001000', 'writeMemory 0xE0001000 10000001',
+                'readMemory 0xE0001000', 'readMemory 0xE0001004']), [r3, seqs()]);
+        // Cortex-M0+: a read-only DWT_CTRL with NUMCOMP alone, nothing at CYCCNT.
+        words.set('0xE000ED00', 0x410cc601); words.set('0xE000EDFC', 0); words.set('0xE0001000', 0x20000000); words.set('0xE0001004', 0);
+        readOnly.add('0xE0001000');
+        calls.length = 0;
+        const r4 = await ex.readCycleCounter().catch((e) => e.message);
+        check('M6 Armv6-M (Cortex-M0+) absent by CPUID, nothing written', eq(r4, absent) && eq(seqs(), ['readMemory 0xE000ED00']), [r4, seqs()]);
+        // Cortex-M23: Armv8-M Baseline, NOCYCCNT reads 1 and CYCCNTENA 0.
+        words.set('0xE000ED00', 0x411cd200); words.set('0xE000EDFC', 0); words.set('0xE0001000', 0x4b000000);
+        calls.length = 0;
+        const r5 = await ex.readCycleCounter().catch((e) => e.message);
+        check('M6 Armv8-M Baseline (Cortex-M23) absent by CPUID, nothing written', eq(r5, absent) && eq(seqs(), ['readMemory 0xE000ED00']), [r5, seqs()]);
     }
 
     // ── Registers and faults ──
@@ -779,22 +939,27 @@ async function main() {
     }
     reset();
     {
-        let size = 24;
         const { session, calls } = makeSession((c, a) => {
-            if (c === 'readMemory') { return { data: b64(Array.from({ length: a.count === 24 ? size : 4 }, (_, i) => i)) }; }
+            if (c === 'readMemory') { return { data: b64(Array.from({ length: a.count }, (_, i) => i)) }; }
             throw new Error('?');
         });
         focusOn(session);
         const ex = new DebuggingExecutor();
         const regs = await ex.readFaultRegisters();
-        check('F2 block read', calls.length === 1 && calls[0].json === '{"memoryReference":"0xE000ED28","count":24}' && regs.CFSR === 0x03020100 && regs.AFSR === 0x17161514, regs);
-        size = 20;
+        // No 24-byte block: the Corstone FVP's GDB server answers SCS reads longer than one word with zeros.
+        check('F2 six words from CFSR, one request each', eq(calls.map((c) => c.json), ['0xE000ED28', '0xE000ED2C', '0xE000ED30', '0xE000ED34', '0xE000ED38', '0xE000ED3C'].map((m) => `{"memoryReference":"${m}","count":4}`))
+            && regs.CFSR === 0x03020100 && regs.AFSR === 0x03020100, { regs, calls: calls.map((c) => c.json) });
         calls.length = 0;
-        await ex.readFaultRegisters();
-        check('F2 short → six words', eq(calls.slice(1).map((c) => c.json), ['0xE000ED28', '0xE000ED2C', '0xE000ED30', '0xE000ED34', '0xE000ED38', '0xE000ED3C'].map((m) => `{"memoryReference":"${m}","count":4}`)), calls.map((c) => c.json));
+        const scs = await ex.readMemory('0xE000ED00', 12);
+        check('F2 a read_memory in the SCS goes word by word too', eq(calls.map((c) => c.json), ['0xe000ed00', '0xe000ed04', '0xe000ed08'].map((m) => `{"memoryReference":"${m}","count":4}`))
+            && scs.bytes.length === 12 && scs.offset === 0, calls.map((c) => c.json));
         calls.length = 0;
         await ex.readExceptionFrame(0x20001000);
         check('F3 exception frame', calls[0].json === '{"memoryReference":"0x20001000","count":32}');
+        calls.length = 0;
+        await ex.readExceptionFrame(0x30000f00, undefined, 0x28);
+        check('F3 exception frame behind the additional state context: 0x28 + 32 bytes from SP up',
+            calls[0].json === '{"memoryReference":"0x30000f00","count":72}', calls.map((c) => c.json));
         const info = await ex.getFaultInfo();
         check('F getFaultInfo text', info.startsWith('=== Cortex-M Fault Analysis ==='));
         reset();
@@ -803,11 +968,65 @@ async function main() {
     }
     reset();
     {
+        // The stacked frame counts only when it begins where it was asked for; the fault registers are words.
+        const { session, calls } = makeSession((c, a) => {
+            if (c !== 'readMemory') { throw new Error('?'); }
+            if (a.memoryReference === '0x1ffffff0') { return { address: '0x20000000', data: b64(Array(16).fill(0xaa)) }; }
+            if (a.count === 24) { return { address: '0xE000ED2C', data: b64(Array.from({ length: 24 }, (_, i) => i)) }; }
+            return { data: le(0x11).toString('base64') };
+        });
+        focusOn(session);
+        const ex = new DebuggingExecutor();
+        const frame = await ex.readExceptionFrame(0x1ffffff0);
+        check('F4 a stacked frame whose start cannot be read has no bytes, not those after the hole', frame.length === 0, [...frame]);
+        const regs = await ex.readFaultRegisters();
+        check('F4 the fault registers are six word reads, none of 24 bytes', regs.CFSR === 0x11 && regs.AFSR === 0x11
+            && calls.filter((c) => c.args.count === 4).length === 6 && !calls.some((c) => c.args.count === 24), regs);
+    }
+    reset();
+    {
         const { session } = makeSession((c) => { if (c === 'readMemory') { return never(); } throw new Error('?'); });
         focusOn(session);
         const e = await rejects(new DebuggingExecutor({ dapRequestMs: 60 }).readFaultRegisters());
-        check('F timeout in the block read, DHCSR times out too → PROBE_WEDGED (#3)', e && e.code === 'PROBE_WEDGED'
+        check('F timeout in the first word read, DHCSR times out too → PROBE_WEDGED (#3)', e && e.code === 'PROBE_WEDGED'
             && e.message.startsWith('Memory reads time out and the debug port does not answer (DHCSR at 0xE000EDF0 timed out). Reading 0xE000ED28'), String(e));
+    }
+
+    // ── Peripheral registers: the SVD gives the address, no other extension is asked ──
+    reset();
+    {
+        // The Peripheral Inspector as the CMSIS Debugger's extension pack installs it, not yet active.
+        // Its API (1.10.0) registers SVD files and parsers and reloads its view; nothing in it reads a register.
+        const PERIPHERAL_INSPECTOR = 'eclipse-cdt.peripheral-inspector';
+        const api = {
+            registerSVDFile() {}, getSVDFile: () => undefined, getSVDFileFromCortexDebug: async () => undefined,
+            registerPeripheralsProvider() {}, getInterruptTable: () => undefined, loadPeripheralsForSession: async () => {},
+        };
+        const inspector = { id: PERIPHERAL_INSPECTOR, isActive: false, exports: undefined };
+        let activations = 0;
+        inspector.activate = async () => { activations++; inspector.isActive = true; inspector.exports = api; return api; };
+        const asked = [];
+        stub.extensions.getExtension = (id) => { asked.push(id); return id === PERIPHERAL_INSPECTOR ? inspector : undefined; };
+        try {
+            const e = await rejects(new DebuggingExecutor().readPeripheralRegister('RCC', 'CR'));
+            check('P1 no session: the no-session error before anything else; the Peripheral Inspector is not asked',
+                e && e.message === 'No debug session is running in this window' && !asked.includes(PERIPHERAL_INSPECTOR) && activations === 0,
+                { error: e && e.message, asked, activations });
+            asked.length = 0; activations = 0; inspector.isActive = false; inspector.exports = undefined;
+            const svdFile = path.resolve(__dirname, '..', '..', 'src', 'test', 'fixtures', 'test-device.svd');
+            const { session, calls } = makeSession((c, a) => {
+                if (c === 'readMemory' && a.memoryReference === '0x40023800') { return { data: b64(le(0x03000083)) }; }
+                throw new Error(`unexpected ${c}`);
+            }, { type: 'gdbtarget', name: 'Cfg', svdFile });
+            focusOn(session);
+            const text = await new DebuggingExecutor().readPeripheralRegister('RCC', 'CR');
+            check('P2 the word at the SVD address, fields decoded; the Peripheral Inspector is neither asked nor activated',
+                text.startsWith('RCC.CR @ 0x40023800 = 0x03000083\n') && text.includes('HSION') && !asked.includes(PERIPHERAL_INSPECTOR) && activations === 0
+                && eq(calls.map((c) => c.command + ' ' + c.json), ['readMemory {"memoryReference":"0x40023800","count":4}']),
+                { text, asked, activations, calls: calls.map((c) => c.command + ' ' + c.json) });
+        } finally {
+            stub.extensions.getExtension = () => undefined;
+        }
     }
 
     // ── A wedged probe told apart from an unreadable address (#3) ──
@@ -847,7 +1066,7 @@ async function main() {
             && wedged.message.startsWith('Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory.). Reading 0xE000ED28 — ')
             && wedged.message.includes('DAP readMemory: Unable to read memory. (@ 0xE000ED28)')
             && calls.filter((c) => c.args.memoryReference === '0xE000EDF0').length === 1
-            && wedged.hint.startsWith('This session is attached to a GDB server that keeps running: cmsis_action detach, then cmsis_action attach'),
+            && wedged.hint.startsWith('This session is attached to a GDB server that lives as long as its CMSIS Run task: cmsis_action detach, then cmsis_action attach'),
         wedged && `${wedged.code} ${wedged.message} / ${wedged.hint}`);
 
         dhcsr = 'hang';
@@ -939,6 +1158,17 @@ async function main() {
         const { out } = await resetCase('S', { method: 'system', words: { '0x00000004': 0x08000101 } });
         check('RS VTOR failure → base 0 silently', out.verified === true && out.verificationDetail.endsWith('vector table at 0x00000000)'), out.verificationDetail);
     }
+    {
+        // A J-Link part that only a pull of its reset pin re-vectors: the last step of `auto` is J-Link's reset-pin strategy (2), not its normal reset (0) again.
+        let pinPulled = false;
+        const { out } = await resetCase('J-Link S', {
+            config: { target: { server: 'JLinkGDBServer' } }, method: 'auto', words: { '0xE000ED08': 0, '0x00000004': 0x08000101 },
+            monitorReply: (cmd) => { pinPulled = pinPulled || cmd === 'monitor reset 2'; return { result: '' }; },
+            pc: () => (pinPulled ? '0x08000100 <Reset_Handler>' : '0x08000256 <delay_ms+14>'),
+        });
+        check('RS7 jlink auto: normal, core, then the reset pin, which verifies', eq(out.methodsTried, ['system', 'core', 'hardware']) && out.verified === true
+            && eq(out.commandsIssued, ['monitor halt', 'monitor reset 0', 'monitor halt', 'monitor reset 1', 'monitor halt', 'monitor reset 2']), out);
+    }
 
     // ── Threads, stack, variables, evaluate, device info ──
     reset();
@@ -1001,6 +1231,52 @@ async function main() {
         reset();
         const e2 = await rejects(ex.getVariables(3));
         console.log(`       S9 no session: ${e2 && e2.message}`);
+    }
+    reset();
+    {
+        // cdt-gdb-adapter marks its Registers scope expensive: every core and FPU register, read over the probe.
+        let scopes = [{ name: 'Local', variablesReference: 1, expensive: false }, { name: 'Registers', variablesReference: 2, expensive: true }];
+        const answer = (c, a) => {
+            if (c === 'scopes') { return { scopes: scopes.map((s) => ({ ...s })) }; }
+            if (c === 'variables') { return { variables: [{ name: 'v' + a.variablesReference }] }; }
+            throw new Error('?');
+        };
+        const { session, calls } = makeSession(answer);
+        focusOn(session);
+        const ex = new DebuggingExecutor();
+        const reads = () => calls.filter((c) => c.command === 'variables').map((c) => c.args.variablesReference);
+        const r = await ex.getVariables(3);
+        check('V4 all on the CMSIS Debugger: the expensive Registers scope is not read, and named', eq(reads(), [1])
+            && eq(r, { scopes: [{ name: 'Local', variablesReference: 1, expensive: false, variables: [{ name: 'v1' }] }], skipped: ['Registers'] }), r);
+        calls.length = 0;
+        const r2 = await ex.getVariablesForFrame(3, 'all');
+        check('V4 get_frame_variables\' all leaves it out too', eq(reads(), [1]) && eq(r2.skipped, ['Registers']), r2);
+        scopes = [...scopes, { name: 'Global', variablesReference: 4, expensive: true }];
+        calls.length = 0;
+        const r3 = await ex.getVariables(3, 'global');
+        check('V4 an explicit scope is read although expensive', eq(reads(), [4]) && r3.scopes.length === 1 && r3.skipped === undefined, r3);
+        calls.length = 0;
+        const r4 = await ex.getVariables(3, 'all');
+        check('V4 an expensive scope of program variables is read; only the register scope is left out (K03)', eq(reads(), [1, 4])
+            && eq(r4.skipped, ['Registers']), r4);
+        scopes = [{ name: 'Local', variablesReference: 1, expensive: false }, { name: 'Statics', variablesReference: 7, expensive: true },
+            { name: 'Core', variablesReference: 8, expensive: true, presentationHint: 'registers' }];
+        calls.length = 0;
+        const r4b = await ex.getVariables(3, 'all');
+        check('V4 a register scope by its presentationHint is left out, Statics read', eq(reads(), [1, 7]) && eq(r4b.skipped, ['Core']), r4b);
+        scopes = [{ name: 'Registers', variablesReference: 2, expensive: true }];
+        calls.length = 0;
+        const r5 = await ex.getVariables(3);
+        check('V4 nothing but expensive scopes: all are read', eq(reads(), [2]) && r5.scopes.length === 1 && r5.skipped === undefined, r5);
+
+        // js-debug marks Global and Module expensive; other adapters keep every scope.
+        scopes = [{ name: 'Local', variablesReference: 1, expensive: false }, { name: 'Module', variablesReference: 5, expensive: true },
+            { name: 'Global', variablesReference: 6, expensive: true }];
+        const node = makeSession(answer, { type: 'pwa-node', name: 'Node' });
+        focusOn(node.session);
+        const r6 = await ex.getVariables(3);
+        check('V4 other adapters: all reads every scope, expensive or not', eq(node.calls.filter((c) => c.command === 'variables').map((c) => c.args.variablesReference), [1, 5, 6])
+            && r6.scopes.length === 3 && r6.skipped === undefined, r6);
     }
     reset();
     {

@@ -17,7 +17,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { TOPICS, listTopics, parseTopics, sliceTopic } from '../core/instructionTopics';
+import { RETIRED_TOPICS, TOPICS, TOPIC_NAMES, listTopics, parseTopics, sliceTopic } from '../core/instructionTopics';
 import { RULES_BLOCK } from '../core/toolContract';
 import { removeBlock } from '../utils/markerBlock';
 
@@ -82,6 +82,10 @@ suite('Instruction topics', () => {
         assert.ok(out.includes('## Topics'));
     });
 
+    test('a retired name the document does not fence steers to the overview like any unknown one', () => {
+        assert.ok(sliceTopic(synthetic, 'build').startsWith("Unknown topic 'build'. Showing the overview."));
+    });
+
     test('an unclosed marker is an authoring error', () => {
         assert.throws(() => parseTopics('# G\n<!-- topic: x | y -->\nbody'), /not closed/);
     });
@@ -106,8 +110,9 @@ suite('Instruction topics', () => {
             const overview = sliceTopic(doc);
             // The tool rules lead the overview; toolContract.test.ts holds them under 1 600 bytes.
             const ownText = removeBlock(overview, RULES_BLOCK);
-            // 3 200 bytes until 2.5.9, which added the `bootstrap` topic and its line in the list.
-            assert.ok(Buffer.byteLength(ownText) <= 3300, `overview without the tool rules is ${Buffer.byteLength(ownText)} bytes`);
+            // 3 200 bytes until 2.5.9, which added the `bootstrap` topic and its line in the list;
+            // 3 300 until 2.7.0, which split `build` into three topics, two more lines in the list.
+            assert.ok(Buffer.byteLength(ownText) <= 3700, `overview without the tool rules is ${Buffer.byteLength(ownText)} bytes`);
             assert.match(overview, /^## .*DEBUGGER FIRST/m);
             assert.match(overview, /printf/);
             assert.ok(Buffer.byteLength(overview) < Buffer.byteLength(doc) / 4, 'overview must be a fraction of the guide');
@@ -117,13 +122,37 @@ suite('Instruction topics', () => {
             assert.match(sliceTopic(doc, 'bootstrap'), /NO_WORKSPACE/);
             assert.match(sliceTopic(doc, 'bootstrap'), /open_solution/);
             assert.match(sliceTopic(doc, 'session'), /no-session/);
-            assert.match(sliceTopic(doc, 'build'), /cbuild-run\.yml/);
-            assert.match(sliceTopic(doc, 'build'), /cmsis_action/);
+            assert.match(sliceTopic(doc, 'target'), /cbuild-run\.yml/);
+            assert.match(sliceTopic(doc, 'target'), /list_target_docs/);
+            assert.match(sliceTopic(doc, 'cmsis-action'), /load_and_debug/);
+            assert.match(sliceTopic(doc, 'cmsis-action'), /Build errors/);
+            assert.match(sliceTopic(doc, 'flash'), /PROBE_BUSY/);
+            assert.match(sliceTopic(doc, 'flash'), /start_debugging/);
             assert.match(sliceTopic(doc, 'breakpoints'), /FPB/);
             assert.match(sliceTopic(doc, 'inspection'), /wait_for_stop/);
             assert.match(sliceTopic(doc, 'faults'), /CFSR/);
             assert.match(sliceTopic(doc, 'faults'), /EXC_RETURN/);
             assert.match(sliceTopic(doc, 'troubleshooting'), /ROOT CAUSE/i);
+        });
+
+        test('every name the tool takes serves well under the 8 KB a Copilot agent takes inline', () => {
+            // GitHub Copilot's agent writes a result over about 8 KB to a file. In 2.7.0 `build` (17 106 bytes)
+            // became three topics, and bootstrap (8 417), session (8 205) and inspection (8 773) were tightened.
+            for (const topic of TOPIC_NAMES) {
+                const bytes = Buffer.byteLength(sliceTopic(doc, topic));
+                assert.ok(bytes <= 7000, `topic ${topic} is ${bytes} bytes`);
+            }
+        });
+
+        test('a retired name serves its successor topic, the line naming the others first', () => {
+            assert.deepStrictEqual(TOPIC_NAMES, [...TOPICS, ...RETIRED_TOPICS]);
+            const build = sliceTopic(doc, 'build');
+            const [pointer] = build.split('\n');
+            assert.ok(pointer.startsWith('_Topic `build` is split in three:'), pointer);
+            for (const topic of ['`target`', '`cmsis-action`', '`flash`']) {
+                assert.ok(pointer.includes(topic), `the pointer does not name ${topic}`);
+            }
+            assert.ok(build.endsWith(sliceTopic(doc, 'cmsis-action')), 'build does not serve the cmsis-action topic');
         });
     });
 });

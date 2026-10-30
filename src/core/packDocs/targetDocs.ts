@@ -19,8 +19,15 @@
  *
  * Resolution order mirrors the CMSIS Developer Assistant's SVD lookup:
  * explicit arguments first (`pack`, `device`, `board`, `cbuildRunFile`),
- * then the workspace's `out/**\/*.cbuild-run.yml` files, narrowed by `target`
- * when there are several.
+ * then the cbuild-run file of the CMSIS Solution extension's active target
+ * when the host can ask for it, then the workspace's `*.cbuild-run.yml`
+ * files, narrowed by `target` when there are several.
+ *
+ * A pack is looked for first in the folder the extension names for the
+ * active target's DFP or BSP, when that folder's PDSC is the pack; such a
+ * folder may lie outside the pack root (a csolution `packs:` entry with
+ * `path:`). Then under the pack root, where another installed version
+ * stands in for a missing one and the notes say so.
  */
 
 import * as fs from 'fs';
@@ -28,12 +35,15 @@ import * as path from 'path';
 import {
     CbuildRunInfo, PackId, QualifiedName, formatPackId, packDir, parseCbuildRun, parsePackId, parseQualifiedName,
 } from './cbuildRun';
-import { PackDocsHost, effectivePackRoot } from './host';
+import { PackDocsHost, PackDocsLog, effectivePackRoot } from './host';
 import { activeContextOf, describeActiveContext, matchesActiveContext } from './cbuildRun';
 import { archOf, armDocsFor } from './armDocs';
 import {
-    DocRef, ProcessorInfo, SvdRef, armDocRef, collectBooks, collectNpus, collectProcessors, dedupeIds, findPdscFile, findSvd, loadPdsc, sortDocs, unlistedPdfs,
+    DocRef, ProcessorInfo, SvdRef, armDocRef, collectBooks, collectNpus, collectProcessors, dedupeIds, findPdscFile, findSvd, holdsPack, loadPdsc,
+    sortDocs, unlistedPdfs,
 } from './pdscBooks';
+import { parseCbuildRunOutputs } from '../buildInfo/artifacts';
+import { ActivePackFolders, packFolderCandidates } from '../solutionAnswers';
 import { collectUserDocs, resolveUserDocsDir } from './userDocs';
 import { collectWorkspaceDocs } from './workspaceDocs';
 
@@ -61,6 +71,13 @@ export interface TargetResolution {
      * before the toolchain answered cannot send it to the wrong directory.
      */
     packRoot: string;
+    /**
+     * The folders the CMSIS Solution extension names for this target's
+     * packs (`getDfpPath`, `getBspPath`) whose PDSC is the pack; `locatePack`
+     * takes them before the pack root. Absent when the extension is not
+     * asked, names none, or names a folder that holds another pack.
+     */
+    packDirs?: { devicePack?: string; boardPack?: string };
     notes: string[];
 }
 
@@ -70,12 +87,107 @@ function describeCbuildRun(info: CbuildRunInfo): string {
     return `${path.basename(info.file)} (${info.targetType ?? '?'}: ${info.device ? info.device.name : 'no device'}${info.devicePack ? ` / ${formatPackId(info.devicePack)}` : ''})`;
 }
 
+/** The cbuild-run files that name a device-pack, parsed. */
+function readCbuildRuns(files: string[], log: PackDocsLog): CbuildRunInfo[] {
+    return files.map(f => {
+        try {
+            return parseCbuildRun(fs.readFileSync(f, 'utf-8'), f);
+        } catch (e) {
+            log.warn(`cannot read ${f}: ${e}`);
+            return undefined;
+        }
+    }).filter((i): i is CbuildRunInfo => !!i && !!i.devicePack);
+}
+
+/** The cbuild-run file of the extension's active target, when the host can ask and the file exists. Never throws. */
+async function activeCbuildRun(host: PackDocsHost): Promise<string | undefined> {
+    if (!host.activeCbuildRunFile) { return undefined; }
+    try {
+        const file = await host.activeCbuildRunFile();
+        if (file && fs.existsSync(file)) { return file; }
+        if (file) { host.log.debug(`the CMSIS Solution extension names ${file} as the active cbuild-run, which does not exist`); }
+    } catch (e) {
+        host.log.debug(`no active cbuild-run from the CMSIS Solution extension: ${e}`);
+    }
+    return undefined;
+}
+
+/** The DFP and BSP folders the extension answers for its active target. Never throws. */
+async function answeredPackFolders(host: PackDocsHost): Promise<ActivePackFolders> {
+    if (!host.activePackFolders) { return {}; }
+    try {
+        const answer = await host.activePackFolders();
+        return {
+            ...(typeof answer.dfp === 'string' && answer.dfp.length > 0 ? { dfp: answer.dfp } : {}),
+            ...(typeof answer.bsp === 'string' && answer.bsp.length > 0 ? { bsp: answer.bsp } : {}),
+        };
+    } catch (e) {
+        host.log.debug(`no pack folders from the CMSIS Solution extension: ${e}`);
+        return {};
+    }
+}
+
+/** The answered folders, `first` before the other: a pack is looked for in the folder answered for its kind first. */
+function foldersOf(answer: ActivePackFolders, first: 'dfp' | 'bsp'): string[] {
+    const ordered = first === 'dfp' ? [answer.dfp, answer.bsp] : [answer.bsp, answer.dfp];
+    return [...new Set(ordered.filter((folder): folder is string => !!folder))];
+}
+
+/** Where the cbuild.yml files of a cbuild-run's target lie: next to each image it lists, then beside the cbuild-run itself. */
+function cbuildFolders(cbuildRunFile: string): string[] {
+    const own = path.dirname(cbuildRunFile);
+    try {
+        const outputs = parseCbuildRunOutputs(fs.readFileSync(cbuildRunFile, 'utf-8'), cbuildRunFile).outputs;
+        return [...new Set([...outputs.map(output => path.dirname(output.file)), own])];
+    } catch {
+        return [own];
+    }
+}
+
+/** The first folder the extension named that holds the pack `id`, by its PDSC. */
+function namedPackDir(folders: string[], bases: string[], id: PackId): string | undefined {
+    for (const folder of folders) {
+        for (const candidate of packFolderCandidates(folder, bases)) {
+            if (holdsPack(candidate, id)) { return candidate; }
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Record on `res` the folders the extension names for its packs, each only
+ * when its PDSC is the pack. A relative answer is resolved against the
+ * folders of the cbuild.yml files, found from the active cbuild-run (asked
+ * for only then) and the resolution's own.
+ */
+async function withPackDirs(host: PackDocsHost, res: TargetResolution, activeRun: () => Promise<string | undefined>): Promise<TargetResolution> {
+    const answer = await answeredPackFolders(host);
+    const folders = foldersOf(answer, 'dfp');
+    if (!folders.length) { return res; }
+    let bases: string[] = [];
+    if (folders.some(folder => !path.isAbsolute(folder))) {
+        const runs = [await activeRun(), res.cbuildRunFile].filter((file): file is string => !!file);
+        bases = [...new Set(runs.flatMap(cbuildFolders))];
+    }
+    const devicePack = res.devicePack ? namedPackDir(folders, bases, res.devicePack) : undefined;
+    const boardPack = res.boardPack ? namedPackDir(foldersOf(answer, 'bsp'), bases, res.boardPack) : undefined;
+    if (devicePack || boardPack) {
+        res.packDirs = { ...(devicePack ? { devicePack } : {}), ...(boardPack ? { boardPack } : {}) };
+    }
+    host.log.debug(`pack folders from the CMSIS Solution extension: ${folders.join(', ')}; `
+        + `device-pack ${devicePack ?? 'not among them'}, board-pack ${res.boardPack ? boardPack ?? 'not among them' : '-'}`);
+    return res;
+}
+
 export async function resolveTarget(host: PackDocsHost, args: TargetArgs): Promise<TargetResult> {
     // The CMSIS Solution extension's pack root when it is active, else the
     // host's; recorded on the resolution for every consumer.
     const packRoot = await effectivePackRoot(host);
     const log = host.log;
     const notes: string[] = [];
+    // The extension's active cbuild-run, asked for at most once per resolution.
+    let activeAnswer: Promise<string | undefined> | undefined;
+    const activeRun = (): Promise<string | undefined> => (activeAnswer ??= activeCbuildRun(host));
 
     if (args.pack) {
         const id = parsePackId(args.pack);
@@ -87,22 +199,33 @@ export async function resolveTarget(host: PackDocsHost, args: TargetArgs): Promi
             id.version = picked;
         }
         log.debug(`target from arguments: pack ${formatPackId(id)} device ${args.device ?? '-'} board ${args.board ?? '-'}`);
-        return {
+        return withPackDirs(host, {
             devicePack: id,
             device: args.device ? parseQualifiedName(args.device) : undefined,
             board: args.board ? parseQualifiedName(args.board) : undefined,
             packRoot,
             notes,
-        };
+        }, activeRun);
     }
 
     let files: string[];
+    let infos: CbuildRunInfo[] = [];
     if (args.cbuildRunFile) {
         if (!fs.existsSync(args.cbuildRunFile)) { return { error: `cbuild-run file not found: ${args.cbuildRunFile}` }; }
         files = [args.cbuildRunFile];
     } else {
-        files = await host.findCbuildRunFiles();
-        log.debug(`cbuild-run files in workspace: ${files.length}${files.length ? '\n  ' + files.join('\n  ') : ''}`);
+        // The extension knows which target is active: its cbuild-run decides
+        // unless the call names a target. A file that names no device-pack
+        // leaves the choice to the workspace scan.
+        const active = args.target ? undefined : await activeRun();
+        infos = active ? readCbuildRuns([active], log) : [];
+        if (active && infos.length) {
+            files = [active];
+            log.debug(`cbuild-run of the CMSIS Solution extension's active target: ${active}`);
+        } else {
+            files = await host.findCbuildRunFiles();
+            log.debug(`cbuild-run files in workspace: ${files.length}${files.length ? '\n  ' + files.join('\n  ') : ''}`);
+        }
     }
     if (!files.length) {
         return {
@@ -111,14 +234,7 @@ export async function resolveTarget(host: PackDocsHost, args: TargetArgs): Promi
         };
     }
 
-    const infos = files.map(f => {
-        try {
-            return parseCbuildRun(fs.readFileSync(f, 'utf-8'), f);
-        } catch (e) {
-            log.warn(`cannot read ${f}: ${e}`);
-            return undefined;
-        }
-    }).filter((i): i is CbuildRunInfo => !!i && !!i.devicePack);
+    if (!infos.length) { infos = readCbuildRuns(files, log); }
 
     if (!infos.length) { return { error: `None of the ${files.length} cbuild-run files names a device-pack.` }; }
 
@@ -160,7 +276,7 @@ export async function resolveTarget(host: PackDocsHost, args: TargetArgs): Promi
     const info = chosen[0];
     log.debug(`target from ${info.file}: device ${info.device?.name} pack ${formatPackId(info.devicePack!)}` +
         `${info.board ? ` board ${info.board.name}` : ''}${info.boardPack ? ` pack ${formatPackId(info.boardPack)}` : ''}`);
-    return {
+    return withPackDirs(host, {
         device: args.device ? parseQualifiedName(args.device) : info.device,
         devicePack: info.devicePack,
         board: args.board ? parseQualifiedName(args.board) : info.board,
@@ -168,7 +284,30 @@ export async function resolveTarget(host: PackDocsHost, args: TargetArgs): Promi
         cbuildRunFile: info.file,
         packRoot,
         notes,
-    };
+    }, activeRun);
+}
+
+/**
+ * The active target's packs in the folders the CMSIS Solution extension
+ * names for them, each checked against its PDSC: what the knowledge tools
+ * read besides the pack root. Empty when the extension names no folder.
+ * Never throws.
+ */
+export async function namedPackFolders(host: PackDocsHost): Promise<{ pack: PackId; dir: string }[]> {
+    try {
+        const answered = await answeredPackFolders(host);
+        if (!foldersOf(answered, 'dfp').length) { return []; }
+        // The folders are known now; the resolution need not ask for them again.
+        const res = await resolveTarget({ ...host, activePackFolders: async () => answered }, {});
+        if ('error' in res || !res.packDirs) { return []; }
+        const found: { pack: PackId; dir: string }[] = [];
+        if (res.devicePack && res.packDirs.devicePack) { found.push({ pack: res.devicePack, dir: res.packDirs.devicePack }); }
+        if (res.boardPack && res.packDirs.boardPack) { found.push({ pack: res.boardPack, dir: res.packDirs.boardPack }); }
+        return found;
+    } catch (e) {
+        host.log.debug(`no pack folders for the knowledge indexes: ${e}`);
+        return [];
+    }
 }
 
 function versionKey(v: string): (number | string)[] {
@@ -197,11 +336,14 @@ export function pickInstalledVersion(packRoot: string, id: PackId): string | und
 }
 
 /**
- * The pack directory for an id, falling back to the highest installed
- * version when the exact one is missing (the cbuild-run may predate a pack
- * update).
+ * The pack directory for an id: `named` when the CMSIS Solution extension
+ * named a folder whose PDSC is the pack (`TargetResolution.packDirs`), else
+ * the one under the pack root, falling back to the highest installed version
+ * when the exact one is missing (the cbuild-run may predate a pack update).
+ * The notes say when another version than the one asked for was taken.
  */
-export function locatePack(packRoot: string, id: PackId, notes: string[]): { dir: string; id: PackId } | undefined {
+export function locatePack(packRoot: string, id: PackId, notes: string[], named?: string): { dir: string; id: PackId } | undefined {
+    if (named) { return { dir: named, id }; }
     const exact = packDir(packRoot, id);
     if (exact && fs.existsSync(exact)) { return { dir: exact, id }; }
     const fallback = pickInstalledVersion(packRoot, id);
@@ -210,8 +352,17 @@ export function locatePack(packRoot: string, id: PackId, notes: string[]): { dir
         return undefined;
     }
     const alt = { ...id, version: fallback };
-    notes.push(`pack ${formatPackId(id)} is not installed; using ${formatPackId(alt)}`);
+    notes.push(`pack ${formatPackId(id)} is not installed under ${packRoot}; using ${formatPackId(alt)}, another version than the one asked for`);
     return { dir: packDir(packRoot, alt)!, id: alt };
+}
+
+/** The folder the extension named for `id`, when it is one of the resolution's packs. */
+export function namedDirOf(res: TargetResolution, id: PackId | undefined): string | undefined {
+    if (!id || !res.packDirs) { return undefined; }
+    const wanted = formatPackId(id);
+    if (res.devicePack && formatPackId(res.devicePack) === wanted && res.packDirs.devicePack) { return res.packDirs.devicePack; }
+    if (res.boardPack && formatPackId(res.boardPack) === wanted) { return res.packDirs.boardPack; }
+    return undefined;
 }
 
 export interface TargetDocs {
@@ -253,8 +404,12 @@ export function collectTargetDocs(host: PackDocsHost, res: TargetResolution): Ta
 
     const visit = (id: PackId | undefined, query: { deviceName?: string; boardName?: string }, label: string) => {
         if (!id) { return; }
-        const located = locatePack(res.packRoot, id, notes);
+        const named = namedDirOf(res, id);
+        const located = locatePack(res.packRoot, id, notes, named);
         if (!located) { return; }
+        if (named && path.resolve(named) !== path.resolve(packDir(res.packRoot, id) ?? '')) {
+            notes.push(`${label} ${formatPackId(id)} read from ${named}, the folder the CMSIS Solution extension names for it`);
+        }
         const pdscPath = findPdscFile(located.dir, located.id);
         if (!pdscPath) {
             notes.push(`no .pdsc in ${located.dir}`);
@@ -313,7 +468,7 @@ export function collectTargetDocs(host: PackDocsHost, res: TargetResolution): Ta
 export function resolveSvd(host: PackDocsHost, res: TargetResolution, pname?: string): SvdRef | undefined {
     if (!res.devicePack) { return undefined; }
     const notes: string[] = [];
-    const located = locatePack(res.packRoot, res.devicePack, notes);
+    const located = locatePack(res.packRoot, res.devicePack, notes, res.packDirs?.devicePack);
     if (!located) { return undefined; }
     const pdscPath = findPdscFile(located.dir, located.id);
     if (!pdscPath) { return undefined; }

@@ -1,0 +1,10 @@
+{
+  "version": "2026.10.29",
+  "url": "https://github.com/MatthiasHertelArm/cmsis-knowledge-index/releases/download/core-2026.10.29/knowledge-core-2026.10.29.db",
+  "sha256": "5cc1b3e037d886860975280e5f93f51325d1e25be9c754ebee623de141372019",
+  "size": 66146304,
+  "units": 7145,
+  "kbCommit": "bff5475dad4df99b38f7377577d0ea11dac713db",
+  "sources": "https://github.com/MatthiasHertelArm/cmsis-knowledge-index/releases/download/core-2026.10.29/SOURCES.md",
+  "sourcesSha256": "2ff3b62b38f159d539050be531bb15648590ff9a926d60393f37ee5fb7ac620e"
+}

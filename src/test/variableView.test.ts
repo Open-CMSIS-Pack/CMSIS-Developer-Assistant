@@ -22,6 +22,7 @@ import {
     expandFields,
     formatMissingNames,
     isDapVariable,
+    noteSkippedScopes,
     renderFields,
     renderScopes,
     renderVariableNames,
@@ -148,6 +149,15 @@ suite('Variable rendering', () => {
         const note = formatMissingNames(['foo', 'bar']);
         assert.match(note, /foo, bar/);
         assert.match(note, /list_variable_names/);
+    });
+
+    test('scopes left unread are named on a line of their own, with the tool that reads registers', () => {
+        const listing = renderScopes([{ name: 'Local', variables: [{ name: 'x', value: '1' }] }]);
+        assert.strictEqual(noteSkippedScopes(listing, []), listing, 'nothing left out, nothing added');
+        assert.strictEqual(noteSkippedScopes(listing, ['Registers']),
+            `${listing}Registers: not read here (expensive over the probe) — read_core_registers reads the core registers.\n`);
+        assert.strictEqual(noteSkippedScopes('None of them are in scope.', ['Registers', 'Statics']),
+            'None of them are in scope.\nRegisters, Statics: not read here (expensive over the probe) — read_core_registers reads the core registers.');
     });
 });
 

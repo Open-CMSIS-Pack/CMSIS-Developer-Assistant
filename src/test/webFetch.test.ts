@@ -28,7 +28,7 @@ import { armDocApiUrl, armDocId, armDocUrl, parseArmDocId, parseArmDocUrl } from
 import { silentLog } from '../core/packDocs/host';
 import { PageStore } from '../core/packDocs/pageStore';
 import { DocRef } from '../core/packDocs/pdscBooks';
-import { FetchFn, ResolveContext, armResolver, blockedHostReason, directPdfResolver, downloadPdf, fetchDocument } from '../core/packDocs/webFetch';
+import { FetchFn, ResolveContext, armResolver, blockedHostReason, directPdfResolver, downloadPdf, fetchDocument, singlePdfExtension } from '../core/packDocs/webFetch';
 
 const FIXTURES = path.join(__dirname, '..', '..', '..', 'src', 'test', 'fixtures', 'packdocs');
 const ARM = path.join(FIXTURES, 'arm');
@@ -185,6 +185,20 @@ suite('webFetch resolvers', () => {
         assert.ok(!('error' in h) && h.kind === 'pdf', 'HEAD 405 falls back to a ranged GET');
         const missing = await directPdfResolver.resolve(webDoc('https://x/nope.pdf'), c);
         assert.ok('error' in missing && /HTTP 404/.test(missing.error));
+    });
+
+    test('direct: a book named ….pdf.pdf that answers 404 is tried once with one .pdf', async () => {
+        // Keil::STM32F4xx_DFP 3.1.1 names its datasheet https://www.st.com/resource/en/datasheet/stm32f427vg.pdf.pdf.
+        assert.strictEqual(singlePdfExtension('https://x/datasheet/stm32f427vg.pdf.pdf'), 'https://x/datasheet/stm32f427vg.pdf');
+        assert.strictEqual(singlePdfExtension('https://x/a.PDF.pdf?v=2'), 'https://x/a.PDF?v=2');
+        assert.strictEqual(singlePdfExtension('https://x/a.pdf'), undefined);
+        assert.strictEqual(singlePdfExtension('not a url'), undefined);
+        const { fn, calls } = fakeFetch({ 'https://x/datasheet/stm32f427vg.pdf': pdf() });
+        const fixed = await directPdfResolver.resolve(webDoc('https://x/datasheet/stm32f427vg.pdf.pdf'), ctx(fn));
+        assert.ok(!('error' in fixed) && fixed.downloadUrl === 'https://x/datasheet/stm32f427vg.pdf' && fixed.filename === 'stm32f427vg.pdf', JSON.stringify(fixed));
+        assert.ok(calls.some((call) => call.url === 'https://x/datasheet/stm32f427vg.pdf.pdf'), 'the pack\'s URL first');
+        const both = await directPdfResolver.resolve(webDoc('https://x/gone.pdf.pdf'), ctx(fn));
+        assert.ok('error' in both && both.error === 'https://x/gone.pdf.pdf answered HTTP 404', JSON.stringify(both));
     });
 });
 

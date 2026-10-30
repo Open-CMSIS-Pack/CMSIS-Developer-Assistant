@@ -46,11 +46,14 @@
  * Every op runs inside a fence (#14): when it has not settled `fenceMarginMs`
  * before the budget the router named (`budgetMs` in the envelope; a 2.5.0
  * router names none, and the window's own timeout decides), the window
- * answers `WORKER_TIMEOUT` and journals it. The op keeps running, since a
- * DAP request or a picker cannot be withdrawn; it stays in the busy table
- * until it settles, and its late result is logged and dropped. Receiving a
- * request may take 10 s, its headers 5 s: requests come over loopback and
- * hold at most 1 MiB.
+ * answers `WORKER_TIMEOUT` and journals it, with a hint that speaks of a
+ * picker or dialog only for the ops that can open one (`mayWaitForUser`),
+ * of the debug adapter or GDB for the other debugging ops, and of the op's
+ * own work for the rest. The op keeps running, since a DAP request or a
+ * picker cannot be withdrawn; it stays in the busy table until it settles,
+ * and its late result is logged and dropped. Receiving a request may take
+ * 10 s, its headers 5 s: requests come over loopback and hold at most
+ * 1 MiB.
  *
  * The internal ops (`INTERNAL_OPS`) are no tools and are answered here, at
  * once and before the op table, and pass neither the op hook nor the
@@ -60,7 +63,8 @@
  *
  * `onOp` hears when each op starts, outlives its fence and settles; the
  * window's status-bar item shows from it that an agent call runs here (#16),
- * and the coordinator tells the user about a fenced one.
+ * and the coordinator tells the user about a fenced one that may wait for
+ * them.
  */
 
 import { timingSafeEqual } from 'crypto';
@@ -78,11 +82,14 @@ import {
     InternalOpName,
     OpName,
     forwardTimeoutMs,
+    isDebugOp,
     isInternalOp,
     isKnownOp,
+    isKnowledgeOp,
     isPackDocsDocOp,
     isPackDocsOp,
     isSerialOp,
+    mayWaitForUser,
     workerFenceMs,
 } from './core/opTable';
 import { JournaledOutcome, runJournaled } from './core/problemFeed';
@@ -113,8 +120,20 @@ const HEADERS_RECEIVE_MS = 5_000;
 const DEFAULT_TOOL_MS = 180_000;
 /** The origin of this extension's own journal records. */
 const OWN_ORIGIN = 'cmsis-developer-assistant';
-/** The next step after a fence answered: the op may wait for a person. */
-const FENCE_HINT = 'A picker or dialog may be open in that window: ask the user, or call get_session_status.';
+/** The next step after a fence answered, for an op that can wait for a person (`mayWaitForUser`). */
+const FENCE_HINT_USER = 'A picker or dialog may be open in that window: ask the user, or call get_session_status.';
+/** The same for every other debugging op, which waits for the debug adapter, GDB or the probe. */
+const FENCE_HINT_ADAPTER = 'The debug adapter or GDB has not answered: call get_session_status, then check_target_connection.';
+/** The same for the serial, documentation, build-artefact and knowledge ops, which wait for their own work. */
+const FENCE_HINT_OTHER = 'list_debug_windows shows when it has finished; get_recent_problems shows what that window reported.';
+
+/** The next step after the fence of `op` answered (#14): a picker or dialog only where the op can open one. */
+function fenceHintOf(op: string): string {
+    if (mayWaitForUser(op)) {
+        return FENCE_HINT_USER;
+    }
+    return isDebugOp(op) ? FENCE_HINT_ADAPTER : FENCE_HINT_OTHER;
+}
 
 /** What one request asks for, once its body is parsed. */
 interface OpRequest {
@@ -530,12 +549,13 @@ export class ControlServer {
         const facts = this.facts();
         const where = facts.name ? `window pid ${facts.pid} (${facts.name})` : `window pid ${facts.pid}`;
         const message = `'${toolNameOf(run.op)}' did not finish within ${secondsText(fenceMs)} in ${where}; it is still running there.`;
+        const hint = fenceHintOf(run.op);
         this.journal.append({
-            source: 'extension', origin: OWN_ORIGIN, severity: 'warning', code: 'WORKER_TIMEOUT', message, hint: FENCE_HINT,
+            source: 'extension', origin: OWN_ORIGIN, severity: 'warning', code: 'WORKER_TIMEOUT', message, hint,
             ...(call ? { toolCallId: call.callId } : {}),
         });
         logger.warn(`control op=${run.op} outlived its ${fenceMs} ms fence: answered WORKER_TIMEOUT, the op runs on`);
-        return new ToolError('WORKER_TIMEOUT', message, FENCE_HINT);
+        return new ToolError('WORKER_TIMEOUT', message, hint);
     }
 
     /** The op's promise settled: out of the busy table, and the listener hears its end. */
@@ -592,6 +612,12 @@ export class ControlServer {
         if (this.packDocs === undefined) {
             throw new ToolError('TOOL_DISABLED',
                 `Control op ${op}: the documentation and build-artefact handlers are not available in this window`);
+        }
+        if (isKnowledgeOp(op)) {
+            if (this.packDocs.knowledge === undefined) {
+                throw new ToolError('TOOL_DISABLED', `Control op ${op}: the knowledge handler is not available in this window`);
+            }
+            return this.packDocs.knowledge;
         }
         return isPackDocsDocOp(op) ? this.packDocs.docs : this.packDocs.build;
     }

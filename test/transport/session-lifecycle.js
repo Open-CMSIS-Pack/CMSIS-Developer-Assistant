@@ -22,7 +22,8 @@
 //   3. A request with a missing id is rejected with 400; POST, GET and
 //      DELETE with an unknown id get 404 and JSON-RPC -32001 "Session not
 //      found", as the SDK's own transport answers, which tells a client to
-//      initialize again (#14)
+//      initialize again (#14); a request on another path gets JSON that
+//      names the endpoint; a GET of a Kimi Code session gets 405
 //   4. DELETE /mcp tears the session down
 //   5. REGRESSION: three consecutive get_threads calls on one session all
 //      return — the bug the old per-request model was built to fix.
@@ -53,6 +54,10 @@
 //      later request with its id gets 404, and its port is
 //      released. Mock ports only: the serial controller's port factory is
 //      swapped for serialport's SerialPortMock.
+//  13. A wait the client gives up on (2.7.0 tester feedback): a pending call
+//      cancelled over the socket with another reason teaches nothing; one
+//      cancelled with the SDK client's "Request timed out" teaches the
+//      session its client's limit, which is logged once.
 
 const stub = require('./vscode-stub.js');
 
@@ -70,11 +75,11 @@ function check(name, ok, detail) {
     if (!ok) { failures++; }
 }
 
-function request(port, method, extraHeaders, body) {
+function request(port, method, extraHeaders, body, agent, route = '/mcp') {
     return new Promise((resolve, reject) => {
         const payload = body ? JSON.stringify(body) : undefined;
         const req = http.request({
-            host: '127.0.0.1', port, path: '/mcp', method,
+            host: '127.0.0.1', port, path: route, method, ...(agent ? { agent } : {}),
             headers: {
                 'Host': `127.0.0.1:${port}`,
                 'Content-Type': 'application/json',
@@ -85,7 +90,7 @@ function request(port, method, extraHeaders, body) {
         }, (res) => {
             let data = '';
             res.on('data', (c) => { data += c; });
-            res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data }));
+            res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data, reused: req.reusedSocket }));
         });
         req.on('error', reject);
         if (payload) { req.write(payload); }
@@ -165,6 +170,17 @@ async function main() {
         jsonrpc: '2.0', method: 'notifications/initialized',
     });
 
+    // An idle pooled connection outlives Node's default (5 s, plus a 1 s buffer): a client that keeps its sockets longer
+    // (Codex) must not send on one the server is closing ("error sending request"). With the default, the request after
+    // 7 s idle needs a new connection.
+    const pooled = new http.Agent({ keepAlive: true, maxSockets: 1 });
+    await request(port, 'POST', { 'mcp-session-id': sid }, { jsonrpc: '2.0', id: 90, method: 'ping' }, pooled);
+    await new Promise((wake) => setTimeout(wake, 7_000));
+    const afterIdle = await request(port, 'POST', { 'mcp-session-id': sid }, { jsonrpc: '2.0', id: 91, method: 'ping' }, pooled);
+    check('a request after 7 s idle goes over the same connection: the endpoint keeps it open for 120 s',
+        afterIdle.status === 200 && afterIdle.reused === true, `status=${afterIdle.status} reused=${afterIdle.reused}`);
+    pooled.destroy();
+
     // 2. GET with a valid session id opens the SSE stream
     const stream = await openStream(port, sid);
     check('GET /mcp with a valid session opens text/event-stream',
@@ -195,6 +211,28 @@ async function main() {
     const unknownDelete = await request(port, 'DELETE', unknownSession);
     check('DELETE /mcp with an unknown session id gets 404 and -32001', sessionNotFound(unknownDelete),
         `status=${unknownDelete.status} ${unknownDelete.body}`);
+    // Kimi Code is offered no GET stream: when one drops at a server restart it marks the server failed for good.
+    const kimiInit = await request(port, 'POST', {}, {
+        jsonrpc: '2.0', id: 94, method: 'initialize',
+        params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'kimi-code', version: '2.3.2' } },
+    });
+    const kimiSid = kimiInit.headers['mcp-session-id'];
+    await request(port, 'POST', { 'mcp-session-id': kimiSid }, { jsonrpc: '2.0', method: 'notifications/initialized' });
+    const kimiStream = await request(port, 'GET', { 'mcp-session-id': kimiSid, 'Accept': 'text/event-stream' });
+    check('a GET of a Kimi Code session gets 405 with Allow: POST, DELETE, so its client opens no stream',
+        kimiStream.status === 405 && kimiStream.headers.allow === 'POST, DELETE' && JSON.parse(kimiStream.body).error?.code === -32000,
+        `status=${kimiStream.status} allow=${kimiStream.headers.allow} ${kimiStream.body}`);
+    const kimiList = await request(port, 'POST', { 'mcp-session-id': kimiSid }, { jsonrpc: '2.0', id: 95, method: 'tools/list', params: {} });
+    check('the Kimi Code session itself keeps working', kimiList.status === 200 && (parseSse(kimiList.body)?.result?.tools?.length ?? 0) > 0,
+        `status=${kimiList.status}`);
+    await request(port, 'DELETE', { 'mcp-session-id': kimiSid });
+
+    // An entry that names the port without /mcp (a hand-written Kimi Code entry did): JSON naming the endpoint.
+    const wrongPath = await request(port, 'POST', {}, { jsonrpc: '2.0', id: 93, method: 'initialize', params: {} }, undefined, '/');
+    const wrongPathError = /application\/json/.test(String(wrongPath.headers['content-type'])) ? JSON.parse(wrongPath.body).error : undefined;
+    check('POST / gets a JSON 404 that names the endpoint, not Express\'s HTML "Cannot POST /"',
+        wrongPath.status === 404 && wrongPathError?.message === `POST / is not the MCP endpoint of the CMSIS Developer Assistant: it serves Streamable HTTP at http://localhost:${port}/mcp.`,
+        `status=${wrongPath.status} ${wrongPath.body}`);
 
     // 4. tools/list works on the session
     const list = await request(port, 'POST', { 'mcp-session-id': sid }, {
@@ -211,8 +249,11 @@ async function main() {
     // 28 916 bytes in 2.5.0. Raised from 30 000 for the 2.5.1 additions
     // (get_recent_problems, serial_capture); two-window-routing.js budgets the
     // routed list, which is what agents see. A regression must be attributable
-    // to one tool, hence the per-description cap.
-    const TOOLS_LIST_BUDGET_BYTES = 32_000;
+    // to one tool, hence the per-description cap. Raised from 32 000 for
+    // cmsis_query and cmsis_action create_solution (32 724 measured), and from
+    // 33 000 for the comparator counts of add_breakpoint and the ownership note
+    // of clear_all_breakpoints (33 053 measured).
+    const TOOLS_LIST_BUDGET_BYTES = 33_200;
     const DESCRIPTION_CAP_CHARS = 700;
     const toolsBytes = Buffer.byteLength(JSON.stringify(tools));
     check(`tools/list stays under the ${TOOLS_LIST_BUDGET_BYTES} byte budget`, toolsBytes <= TOOLS_LIST_BUDGET_BYTES, `${toolsBytes} bytes`);
@@ -249,11 +290,23 @@ async function main() {
         jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'get_debug_instructions', arguments: {} },
     });
     const overviewText = parseSse(overviewCall.body)?.result?.content?.[0]?.text ?? '';
-    // The overview leads with the tool rules (#50, under 1 600 bytes) before its own 3 500.
+    // The overview leads with the tool rules (#50, under 1 600 bytes) before its own 3 700.
+    // Capped at 5 100 chars until 2.7.0 split `build` into three topics, two more lines in the list.
     check('get_debug_instructions defaults to the overview with the topic list, the tool rules first',
-        /## Topics/.test(overviewText) && overviewText.length < 5100 && overviewText.length < topicText.length * 2
+        /## Topics/.test(overviewText) && overviewText.length < 5500 && overviewText.length < topicText.length * 2
             && /^# .*\n\n<!-- cmsis-developer-assistant:rules:begin -->\n## CMSIS Developer Assistant tool rules\n/.test(overviewText),
         `${overviewText.length} chars`);
+    // `build`, a topic until 2.7.0, is still accepted by the schema and serves its successor.
+    const retiredCall = await request(port, 'POST', { 'mcp-session-id': sid }, {
+        jsonrpc: '2.0', id: 7, method: 'tools/call',
+        params: { name: 'get_debug_instructions', arguments: { topic: 'build' } },
+    });
+    const retiredResult = parseSse(retiredCall.body)?.result;
+    const retiredText = retiredResult?.content?.[0]?.text ?? '';
+    check('get_debug_instructions still takes topic build: the cmsis-action topic under a line naming the split',
+        retiredResult?.isError !== true && /^_Topic `build` is split in three: `target`/.test(retiredText)
+            && /load_and_debug/.test(retiredText) && retiredText.length < 7000,
+        `${retiredText.length} chars: ${retiredText.slice(0, 80)}`);
 
     // 4c. The SVD lookups need no session; with no workspace (this stub) they
     //     explain where an SVD was looked for instead of failing.
@@ -309,7 +362,23 @@ async function main() {
         /not attempted.*'Nope' is not declared.*Declared targets: HE, HP@debug, HP@release/s.test(undeclared)
             && commandLog.length === 0 && !fs.existsSync(cmsisJsonPath),
         undeclared.split('\n')[0]);
-    const switched = await cmsisAction({ action: 'detach', target: 'HP@release' }, 8);
+    // A target-type written as a flow mapping is read (K02): the refusal of an undeclared target lists it, nothing written.
+    const blockYaml = fs.readFileSync(solutionFile, 'utf8');
+    fs.writeFileSync(solutionFile, blockYaml.replace('  build-types:', '    - { type: MPS3, device: X:MPS3 }\n  build-types:'));
+    const flow = await cmsisAction({ action: 'detach', target: 'Nope' }, 70);
+    // Invalid YAML is refused before anything is written.
+    fs.writeFileSync(solutionFile, blockYaml.replace('  build-types:', '    - { type: MPS3\n  build-types:'));
+    const invalid = await cmsisAction({ action: 'detach', target: 'MPS3' }, 71);
+    fs.writeFileSync(solutionFile, blockYaml);
+    check('cmsis_action reads a target-type written as a flow mapping',
+        /not attempted.*'Nope' is not declared.*Declared targets: HE, HP@debug, HP@release, MPS3/s.test(flow)
+            && commandLog.length === 0 && !fs.existsSync(cmsisJsonPath),
+        flow.split('\n')[0]);
+    check('cmsis_action refuses to switch when the csolution YAML is invalid, and writes nothing',
+        /not attempted.*cannot supply a valid target selection.*No selection was changed/s.test(invalid)
+            && commandLog.length === 0 && !fs.existsSync(cmsisJsonPath),
+        invalid.split('\n')[0]);
+    const switched =await cmsisAction({ action: 'detach', target: 'HP@release' }, 8);
     const written = fs.existsSync(cmsisJsonPath) ? JSON.parse(fs.readFileSync(cmsisJsonPath, 'utf8')) : {};
     check('cmsis_action switches a declared target via cmsis.json + re-activation and verifies it',
         /CMSIS 'detach' on HP@release, switched from HE issued/.test(switched)
@@ -326,6 +395,39 @@ async function main() {
     const unverified = await cmsisAction({ action: 'detach', target: 'HP', timeoutMs: 20_000 }, 10);
     check('cmsis_action refuses when the switch cannot be verified',
         /not attempted: wrote 'HP' to .*still reports 'HE'.*Manage Solution/s.test(unverified), unverified.split('\n')[0]);
+    // A multi-root workspace with the solution in its second folder: CMSIS
+    // Solution (1.72.0) reads only the first folder's cmsis.json, files the
+    // solution there as '../fw/demo' and looks that key up split at every '.'.
+    const rootsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmsis-roots-'));
+    const firstDir = path.join(rootsDir, 'app');
+    const secondDir = path.join(rootsDir, 'fw');
+    fs.mkdirSync(firstDir);
+    fs.mkdirSync(secondDir);
+    const secondSolution = path.join(secondDir, 'demo.csolution.yml');
+    fs.copyFileSync(solutionFile, secondSolution);
+    const firstSelection = () => {
+        let node;
+        try {
+            node = JSON.parse(fs.readFileSync(path.join(firstDir, '.vscode', 'cmsis.json'), 'utf8'));
+        } catch {
+            return undefined;
+        }
+        for (const key of 'targetSet.../fw/demo'.split('.')) { node = node && typeof node === 'object' ? node[key] : undefined; }
+        return node;
+    };
+    activeTarget = 'HE';
+    stub.workspace.workspaceFolders = [{ uri: { fsPath: firstDir } }, { uri: { fsPath: secondDir } }];
+    stub.commandHandlers['cmsis-csolution.getSolutionFile'] = async () => secondSolution;
+    stub.commandHandlers['cmsis-csolution.activateSolution'] = async () => {
+        const sel = firstSelection();
+        activeTarget = sel?.activeTargetType === 'HP' ? (sel.HP === 1 ? 'HP@release' : 'HP@debug') : 'HE';
+    };
+    const multiRoot = await cmsisAction({ action: 'detach', target: 'HP@release' }, 11);
+    check('cmsis_action switches a solution in the second folder through the first folder\'s cmsis.json',
+        /CMSIS 'detach' on HP@release, switched from HE issued/.test(multiRoot)
+            && !fs.existsSync(path.join(secondDir, '.vscode', 'cmsis.json')),
+        `${multiRoot.split('\n')[0]} | ${JSON.stringify(firstSelection() ?? null)}`);
+    fs.rmSync(rootsDir, { recursive: true, force: true });
     stub.commandHandlers = {};
     stub.workspace.workspaceFolders = [];
     fs.rmSync(solDir, { recursive: true, force: true });
@@ -383,13 +485,13 @@ async function main() {
     try { statsJson = JSON.parse(statsText); } catch { /* reported by the check */ }
     check('stats resource counts the tool calls',
         !!statsJson && statsJson.session.calls >= 6 && statsJson.session.perTool.get_threads?.calls === 3
-            && statsJson.session.perTool.get_debug_instructions?.calls === 2,
+            && statsJson.session.perTool.get_debug_instructions?.calls === 3,
         statsJson ? `session.calls=${statsJson.session.calls}` : statsText.slice(0, 120));
     const status = await request(port, 'POST', { 'mcp-session-id': sid }, {
         jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
     });
     const statusText = parseSse(status.body)?.result?.content?.[0]?.text ?? '';
-    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 15 calls/m.test(statusText),
+    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 19 calls/m.test(statusText),
         statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
     check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 7,
         `${server.getMetrics().totals().calls} calls`);
@@ -401,7 +503,8 @@ async function main() {
     const REMINDER = 'Tool rules: board, build, serial and documentation work goes through these tools, not the shell '
         + '(see the server instructions).';
     check('the first get_session_status of the session repeats the tool rules before its stats',
-        statusText.includes(`\n\n${REMINDER}\n\nTool stats (this session):`), statusText.split('\n').slice(-4).join(' | '));
+        statusText.includes(`\n\n${REMINDER} Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session):`),
+        statusText.split('\n').slice(-4).join(' | '));
     const again = await request(port, 'POST', { 'mcp-session-id': sid }, {
         jsonrpc: '2.0', id: 24, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
     });
@@ -515,6 +618,44 @@ async function main() {
     check('serial_open holds the port for this session, released after 300 s without a serial call',
         serialOpened.isError !== true && /held by this session, released after 300 s without a serial call/.test(heldBy.content?.[0]?.text ?? ''),
         (heldBy.content?.[0]?.text ?? '').split('\n')[0]);
+
+    // 6e. A wait the client gives up on: serial_read waits on the held, silent port while the
+    //     client cancels it over the socket, then hangs up, as the SDK client does at its timeout.
+    const { logger } = require(path.join(OUT, 'utils', 'logger.js'));
+    const learned = [];
+    const logInfo = logger.info;
+    logger.info = function (message, detail) {
+        if (/gave up on/.test(String(message))) { learned.push(String(message)); }
+        return logInfo.call(this, message, detail);
+    };
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const giveUp = async (id, afterMs, reason) => {
+        const payload = JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'serial_read', arguments: { waitMs: afterMs + 300 } } });
+        const pendingCall = http.request({
+            host: '127.0.0.1', port, path: '/mcp', method: 'POST',
+            headers: {
+                'Host': `127.0.0.1:${port}`, 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream',
+                'Content-Length': Buffer.byteLength(payload), 'mcp-session-id': sid,
+            },
+        });
+        pendingCall.on('error', () => undefined);
+        pendingCall.end(payload);
+        await sleep(afterMs);
+        const cancelled = await request(port, 'POST', { 'mcp-session-id': sid }, { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: id, reason } });
+        pendingCall.destroy();
+        // The read's own wait ends before the next step uses the port.
+        await sleep(350);
+        return cancelled.status;
+    };
+    const userStop = await giveUp(52, 100, 'The user stopped the agent.');
+    check('a call cancelled for another reason teaches the session nothing', userStop === 202 && learned.length === 0,
+        `status=${userStop} ${learned.join(' | ')}`);
+    const timedOut = await giveUp(53, 1000, 'McpError: MCP error -32001: Request timed out');
+    check('a call the client gives up on with "Request timed out" teaches the session its client\'s limit, logged once',
+        timedOut === 202 && learned.length === 1
+            && new RegExp(`^MCP session ${sid}: the client gave up on serial_read after \\d s; long waits are cut to 1 s$`).test(learned[0]),
+        `status=${timedOut} ${learned.join(' | ')}`);
+    logger.info = logInfo;
 
     // 7. DELETE tears the session down
     const del = await request(port, 'DELETE', { 'mcp-session-id': sid });
@@ -652,16 +793,19 @@ async function main() {
     const fnames = new Set(ftools.map((t) => t.name));
     const PACKDOCS_TOOLS = ['list_target_docs', 'search_target_docs', 'read_doc_pages', 'fetch_doc', 'get_peripheral_docs',
         'list_build_artifacts', 'get_memory_usage', 'lookup_symbol', 'get_section_layout', 'get_build_diagnostics'];
-    check('packDocs/buildInfo enabled adds exactly the ten documentation and build-artefact tools',
-        PACKDOCS_TOOLS.every((n) => fnames.has(n)) && ftools.length === tools.length + PACKDOCS_TOOLS.length,
+    check('packDocs/buildInfo enabled adds exactly the ten documentation and build-artefact tools and the three knowledge tools',
+        PACKDOCS_TOOLS.every((n) => fnames.has(n)) && ftools.length === tools.length + PACKDOCS_TOOLS.length + 3,
         `${ftools.length} tools`);
     check('the default list carries none of them', PACKDOCS_TOOLS.every((n) => !names.includes(n)));
     // Budget for the everything-on list; the default list keeps its own above.
     // 55 tools measured 40 644 bytes in 2.5.0: the ten documentation and
     // build-artefact tools cost ~11.7 kB, most of it the per-tool
     // target/pack/device/board arguments. Raised from 42 000 for the 2.5.1
-    // additions. A regression must be attributable to one tool, hence the cap.
-    const TOOLS_LIST_ALL_BUDGET_BYTES = 44_000;
+    // additions. Raised from 44 000 for the knowledge tools, which are on in
+    // every session (45 243 measured, before any trimming). Raised from 46 000
+    // for cmsis_query and cmsis_action create_solution (46 315 measured). A
+    // regression must be attributable to one tool, hence the cap.
+    const TOOLS_LIST_ALL_BUDGET_BYTES = 47_000;
     const ftoolsBytes = Buffer.byteLength(JSON.stringify(ftools));
     check(`tools/list with every group on stays under the ${TOOLS_LIST_ALL_BUDGET_BYTES} byte budget`,
         ftoolsBytes <= TOOLS_LIST_ALL_BUDGET_BYTES, `${ftoolsBytes} bytes`);
@@ -683,6 +827,51 @@ async function main() {
         !lbuild.error && /cbuild-run|build/i.test(lbuild.text), lbuild.text.split('\n')[0]);
     await request(fport, 'DELETE', { 'mcp-session-id': fsid });
     await full.stop();
+
+    // 10. The experimental knowledge tools: in neither list above, and three
+    //     tools more through their own gate. Without an index they fail with
+    //     the setting to fill in.
+    const { KnowledgeHandler } = require(path.join(OUT, 'knowledgeHandler.js'));
+    const knowledgeDispatch = localPackDocsDispatch({
+        docs: new PackDocsHandler(docsHost, { timeoutMs: 30_000 }),
+        build: new BuildInfoHandler(buildHost, { timeoutMs: 30_000 }),
+        knowledge: new KnowledgeHandler(
+            { indexPath: () => undefined, includeIncomplete: () => false, packRoot: async () => undefined, workspaceFolders: () => [], projectFacts: async () => ({}), log: silentLog }, { timeoutMs: 30_000 }),
+    });
+    const withKnowledge = new DebugMCPServer(0, 30, undefined, () => ({ debug, serial: localSerialDispatch, packDocs: knowledgeDispatch }),
+        {});
+    await withKnowledge.initialize();
+    await withKnowledge.start();
+    const kport = withKnowledge.getActualPort();
+    const kinit = await request(kport, 'POST', {}, {
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'transport-check', version: '1.0.0' } },
+    });
+    const ksid = kinit.headers['mcp-session-id'];
+    // The knowledge index is mandatory: every session with a documentation dispatch names the tools in its instructions.
+    check('the server instructions name the knowledge tools in every session',
+        /knowledge_search/.test(parseSse(kinit.body)?.result?.instructions ?? '') && /knowledge_search/.test(instructions) && /knowledge_search/.test(finstructions));
+    await request(kport, 'POST', { 'mcp-session-id': ksid }, { jsonrpc: '2.0', method: 'notifications/initialized' });
+    const klist = await request(kport, 'POST', { 'mcp-session-id': ksid }, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+    const ktools = parseSse(klist.body)?.result?.tools ?? [];
+    const KNOWLEDGE_TOOLS = ['knowledge_search', 'knowledge_get', 'knowledge_expand'];
+    check('knowledge enabled adds exactly the three knowledge tools',
+        KNOWLEDGE_TOOLS.every((n) => ktools.some((t) => t.name === n)) && ktools.length === tools.length + KNOWLEDGE_TOOLS.length, `${ktools.length} tools`);
+    check('without a documentation dispatch the default list has no knowledge tools', KNOWLEDGE_TOOLS.every((n) => !names.includes(n)));
+    check('with the documentation dispatch every group on offers them', KNOWLEDGE_TOOLS.every((n) => fnames.has(n)));
+    // What the three tools add to every turn of a session that has them.
+    const KNOWLEDGE_TOOLS_BUDGET_BYTES = 2_000;
+    const knowledgeBytes = Buffer.byteLength(JSON.stringify(ktools)) - toolsBytes;
+    check(`the knowledge tools add at most ${KNOWLEDGE_TOOLS_BUDGET_BYTES} bytes to tools/list`,
+        knowledgeBytes > 0 && knowledgeBytes <= KNOWLEDGE_TOOLS_BUDGET_BYTES, `${knowledgeBytes} bytes`);
+    const ksearch = parseSse((await request(kport, 'POST', { 'mcp-session-id': ksid }, {
+        jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'knowledge_search', arguments: { query: 'M302' } },
+    })).body);
+    const ksearchText = ksearch?.result?.content?.[0]?.text ?? '';
+    check('knowledge_search without an index fails with TOOL_DISABLED and names the setting',
+        ksearch?.result?.isError === true && /^\[TOOL_DISABLED\]/.test(ksearchText) && /knowledge\.indexPath/.test(ksearchText), ksearchText.split('\n')[0]);
+    await request(kport, 'DELETE', { 'mcp-session-id': ksid });
+    await withKnowledge.stop();
     fs.rmSync(docsDir, { recursive: true, force: true });
 
     console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);

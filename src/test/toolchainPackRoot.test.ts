@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-import * as assert from 'assert';
 import * as vscode from 'vscode';
+import * as assert from 'assert';
 import { defaultPackRoot } from '../core/packDocs/cbuildRun';
 import { effectiveToolchainPackRoot, invalidateToolchainPackRoot, toolchainPackRoot } from '../utils/toolchainPackRoot';
 

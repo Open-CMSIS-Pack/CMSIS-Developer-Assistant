@@ -20,7 +20,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { CmsisJobTracker, JOB_RETENTION_MS, LABEL_FETCH_MS } from '../cmsisJobTracker';
 import { executionIn, Job, JobDiagnosis } from '../core/cmsisTasks';
-import { formatDuration, idleStatus, sessionTaskLine } from '../handler/jobText';
+import { flashFailedHint, formatDuration, idleStatus, LONG_FLASH_MS, sessionTaskLine, stillRunning, stuckFlashTask } from '../handler/jobText';
 import { FakeExecution, FakeTasks, FixtureTask, loadTaskFixtures, ManualClock, workspaceTasks } from './cmsisTaskFixtures';
 
 /**
@@ -192,17 +192,40 @@ suite('CmsisJobTracker', () => {
             assert.strictEqual(tracker.job(job.id)?.state, 'running-ok');
         });
 
-        test(`settled jobs are kept ${JOB_RETENTION_MS / 60_000} min; open ones are never dropped`, () => {
+        test(`the latest settled job of each action stays until a newer one settles; older ones are kept ${JOB_RETENTION_MS / 60_000} min; open ones are never dropped`, () => {
             const { tasks, clock, tracker } = world();
-            const job = tracker.begin('erase', 'MPS3');
+            const first = tracker.begin('erase', 'MPS3');
             tasks.finish(tasks.start(tasks.execution(shell('CMSIS Erase'))), 0);
             const open = tracker.begin('build', undefined);
             const settledAt = clock.now();
-            clock.advance(settledAt + JOB_RETENTION_MS);
-            assert.strictEqual(tracker.last('erase')?.id, job.id);
-            clock.advance(settledAt + JOB_RETENTION_MS + 1);
-            assert.strictEqual(tracker.last('erase'), undefined);
+            // A failed build at 13:54, status asked at 14:15: the result is still there.
+            clock.advance(settledAt + 3 * JOB_RETENTION_MS);
+            assert.strictEqual(tracker.last('erase')?.id, first.id);
+            assert.deepStrictEqual(tracker.recent().map((job) => job.id), [first.id]);
+            const second = tracker.begin('erase', 'MPS3');
+            tasks.finish(tasks.start(tasks.execution(shell('CMSIS Erase'))), 1);
+            assert.strictEqual(tracker.last('erase')?.id, second.id);
+            // The replaced one is past the retention, so it is gone; the newer one stays however old it gets.
+            assert.strictEqual(tracker.job(first.id), undefined);
+            clock.advance(clock.now() + 2 * JOB_RETENTION_MS);
+            assert.strictEqual(tracker.job(second.id)?.state, 'failed');
             assert.strictEqual(tracker.inFlight()?.id, open.id);
+        });
+
+        test(`a replaced job is still kept ${JOB_RETENTION_MS / 60_000} min after it settled`, () => {
+            const { tasks, clock, tracker } = world();
+            const first = tracker.begin('load', undefined);
+            tasks.finish(tasks.start(tasks.execution(shell('CMSIS Load'))), 0);
+            const settledAt = clock.now();
+            const second = tracker.begin('load', undefined);
+            tasks.finish(tasks.start(tasks.execution(shell('CMSIS Load'))), 0);
+            clock.advance(settledAt + JOB_RETENTION_MS);
+            tracker.recent();
+            assert.strictEqual(tracker.job(first.id)?.state, 'ok');
+            clock.advance(settledAt + JOB_RETENTION_MS + 1);
+            tracker.recent();
+            assert.strictEqual(tracker.job(first.id), undefined);
+            assert.strictEqual(tracker.last('load')?.id, second.id);
         });
 
         test('onDidFinishJob hears each job once, when it settles', () => {
@@ -312,6 +335,17 @@ suite('CmsisJobTracker', () => {
             assert.strictEqual(tasks.fetchCount, 2, 'fetched again after tasks.json changed');
         });
 
+        test('a task scope written in another case is the same folder where file names ignore case (VS Code\'s c:\\ on Windows)', async function () {
+            if (process.platform !== 'win32' && process.platform !== 'darwin') {
+                this.skip();
+            }
+            const { tasks, tracker } = world();
+            // VS Code's Uri.fsPath writes a Windows drive letter in lower case; the folder may come with an upper-case one.
+            const otherCase = folder.replace(/^[a-z]/, (letter) => letter.toUpperCase()).replace(/cda-labels-/, 'CDA-LABELS-');
+            tasks.fetched = workspaceTasks(otherCase, ['CMSIS Load', 'CMSIS Run']);
+            assert.deepStrictEqual([...(await tracker.taskLabels(folder)) ?? []], ['CMSIS Load', 'CMSIS Run']);
+        });
+
         test('no answer when fetchTasks fails or takes longer than 3 s', async () => {
             const { tasks, clock, tracker } = world();
             tasks.fetched = undefined;
@@ -342,17 +376,136 @@ suite('CmsisJobTracker', () => {
                 'CMSIS tasks: \'CMSIS Run\' alive 3 min (holds the probe); last load ✅ 3 min ago');
         });
 
+        test('a build still running after 2 min names stop_build for a task that outlived its build', () => {
+            const { tasks, clock, tracker } = world();
+            const job = tracker.begin('build', 'HE');
+            tasks.start(tasks.execution(BUILD));
+            clock.advance(clock.now() + 60_000);
+            const early = stillRunning(tracker.job(job.id) ?? job, { tag: ' on HE', now: clock.now() });
+            assert.ok(!early.text.includes('stop_build'), early.text);
+            clock.advance(clock.now() + 70_000);
+            const late = stillRunning(tracker.job(job.id) ?? job, { tag: ' on HE', now: clock.now() });
+            assert.ok(late.text.endsWith('do not start another build. If VS Code shows the build finished while this stays running, '
+                + 'cmsis_action stop_build ends the task.'), late.text);
+        });
+
+        const STUCK = 'far longer than programming takes: it is stuck, almost always waiting for a debug probe. Its terminal, which no tool reads, '
+            + 'then shows "Waiting for a debug probe" or a probe error. "Waiting for a debug probe" there means pyOCD sees no free probe: another task '
+            + 'or session holds it (cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks), or the probe is not connected or lacks its USB '
+            + 'driver (ask the user). cmsis_action {action:\'stop_run\'} ends the task; load again only once the probe is free and visible.';
+
+        test('a Load still running after 2 min is called stuck, with the probe causes and stop_run; earlier it is merely running', () => {
+            const { tasks, clock, tracker } = world();
+            const job = tracker.begin('load', 'B-L475E-IOT01A');
+            tasks.start(tasks.execution(shell('CMSIS Load')));
+            clock.advance(clock.now() + LONG_FLASH_MS - 1_000);
+            const early = stillRunning(tracker.job(job.id) ?? job, { tag: ' on L475', now: clock.now() });
+            assert.match(early.text, /This is not a failure/);
+            assert.strictEqual(stuckFlashTask(tracker.job(job.id) ?? job, clock.now()), undefined);
+            clock.advance(clock.now() + 31 * 60_000);
+            const late = stillRunning(tracker.job(job.id) ?? job, { tag: ' on L475', now: clock.now() });
+            assert.strictEqual(late.text, `CMSIS 'load' on L475 has not finished after 33 min (job ${job.id}). 'CMSIS Load' has run for 33 min, ${STUCK}`);
+            assert.strictEqual(late.status, 'running');
+            assert.strictEqual((late.data?.job as { stuck?: boolean } | undefined)?.stuck, true);
+            assert.ok(!late.text.includes('not a failure'), late.text);
+        });
+
+        test('the stuck verdict: Load and Erase only, never CMSIS Run, and only while the task runs', () => {
+            const { tasks, clock, tracker } = world();
+            const run = tracker.begin('run', 'HP');
+            tasks.start(tasks.execution(shell('CMSIS Run')));
+            clock.advance(clock.now() + 10 * 60_000);
+            assert.strictEqual(stuckFlashTask(tracker.job(run.id) ?? run, clock.now()), undefined, 'a GDB server runs for hours');
+            const erase = tracker.begin('erase', 'HP');
+            const execution = tasks.start(tasks.execution(shell('CMSIS Erase')));
+            clock.advance(clock.now() + LONG_FLASH_MS);
+            assert.strictEqual(stuckFlashTask(tracker.job(erase.id) ?? erase, clock.now())?.name, 'CMSIS Erase');
+            tasks.finish(execution, 0);
+            assert.strictEqual(stuckFlashTask(tracker.job(erase.id) ?? erase, clock.now()), undefined, 'settled');
+        });
+
+        test('a Load the user started stuck shows in status without a job and in the get_session_status line', () => {
+            const { tasks, clock, tracker } = world();
+            tasks.start(tasks.execution(shell('CMSIS Load')));
+            clock.advance(clock.now() + 3 * 60_000);
+            assert.strictEqual(idleStatus(tracker.recent(), tracker.liveExecutions(), clock.now()),
+                'No CMSIS job in this window: nothing is in flight and none has finished since the window started.\n'
+                + 'CMSIS tasks running: \'CMSIS Load\' for 3 min (holds the probe).\n'
+                + `'CMSIS Load' has run for 3 min, ${STUCK}`);
+            assert.strictEqual(sessionTaskLine(tracker.recent(), tracker.liveExecutions(), clock.now()),
+                `CMSIS tasks: 'CMSIS Load' alive 3 min (holds the probe)\n'CMSIS Load' has run for 3 min, ${STUCK}`);
+        });
+
+        test('a failed Load: pyOCD, or a command not known, keeps the flash hint word for word; J-Link and other programs get their own', () => {
+            const pyocd = 'Its output is in the \'CMSIS Load\' terminal, which no tool reads: call flash, which returns pyOCD\'s own error lines, '
+                + 'or ask the user for the terminal\'s last lines. "Waiting for a debug probe" there means pyOCD sees no free probe: another task or '
+                + 'session holds it (cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks), or the probe is not connected or lacks its '
+                + 'USB driver (ask the user). This is a terminal result — do not wait for an output file.';
+            assert.strictEqual(flashFailedHint('CMSIS Load'), pyocd);
+            assert.strictEqual(flashFailedHint('CMSIS Load', { kind: 'pyocd' }), pyocd);
+            assert.strictEqual(flashFailedHint('CMSIS Load', { kind: 'unknown' }), pyocd);
+            assert.strictEqual(flashFailedHint('CMSIS Load', { kind: 'other' }),
+                'Its output is in the \'CMSIS Load\' terminal, which no tool reads: ask the user for the terminal\'s last lines. '
+                + 'This is a terminal result — do not wait for an output file.');
+
+            const jlinkMeaning = '"Cannot connect to J-Link" there means J-Link finds no free probe: another task or session holds it '
+                + '(cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks), or the probe is not connected or lacks its USB driver (ask the user); '
+                + '"Cannot connect to target" means the probe answers but the device does not: its power, the cable, or the device name the task passes. '
+                + 'This is a terminal result — do not wait for an output file.';
+            assert.strictEqual(flashFailedHint('CMSIS Load', { kind: 'jlink', program: 'JLink.exe' }),
+                `Its output is in the 'CMSIS Load' terminal, which no tool reads: ask the user for the terminal's last lines. ${jlinkMeaning}`);
+            // A program missing from a PATH: the finding, one line of fix, and the procedure for the steps; no run-then-attach detour.
+            const steps = 'then restart VS Code completely (all windows); knowledge_get { id: "proc-debugger-troubleshooting" } has the steps. '
+                + 'This is a terminal result — do not wait for an output file.';
+            const searched = ['.cmsis/tools-environment.yml', 'terminal.integrated.env.windows', 'VS Code\'s PATH'];
+            const notInstalled = flashFailedHint('CMSIS Load', { kind: 'jlink', program: 'JLink.exe', lookup: { searched } });
+            assert.strictEqual(notInstalled,
+                'JLink.exe is not on the PATH of the CMSIS tasks (searched: .cmsis/tools-environment.yml, terminal.integrated.env.windows, VS Code\'s PATH), '
+                + 'so \'CMSIS Load\' could not start it. Ask the user to install the SEGGER J-Link Software or add its folder to the system or user '
+                + `PATH, ${steps}`);
+            const notOnPath = flashFailedHint('CMSIS Erase', {
+                kind: 'jlink', program: 'JLink.exe', lookup: { searched: ['VS Code\'s PATH'], installedIn: 'C:\\Program Files\\SEGGER\\JLink' },
+            });
+            assert.strictEqual(notOnPath, 'JLink.exe is not on the PATH of the CMSIS tasks (searched: VS Code\'s PATH), so \'CMSIS Erase\' could not start it, '
+                + `but C:\\Program Files\\SEGGER\\JLink holds it. Ask the user to add that folder to the system or user PATH, ${steps}`);
+            for (const hint of [notInstalled, notOnPath]) {
+                assert.ok(!/cmsis_action (?:run|attach)/.test(hint), hint);
+            }
+            const found = { file: 'C:\\Program Files\\SEGGER\\JLink\\JLink.exe', folder: 'C:\\Program Files\\SEGGER\\JLink', place: 'terminal.integrated.env.windows' };
+            assert.strictEqual(flashFailedHint('CMSIS Load', { kind: 'jlink', program: 'JLink.exe', lookup: { found, searched } }),
+                'Its output is in the \'CMSIS Load\' terminal, which no tool reads: ask the user for the terminal\'s last lines. JLink.exe is on the PATH '
+                + 'of the CMSIS tasks (C:\\Program Files\\SEGGER\\JLink\\JLink.exe, from terminal.integrated.env.windows), so it ran and reported the '
+                + `failure there. ${jlinkMeaning}`);
+        });
+
+        test('the tracker keeps the command line a task ran, for the hint after its failure', () => {
+            const { tasks, tracker } = world();
+            const job = tracker.begin('load', 'XMC4700');
+            const commandLine = 'echo Connect > .cmd.jlink && echo Exit >> .cmd.jlink && JLink.exe -device XMC4700-F144x2048 -if swd -commandfile .cmd.jlink';
+            tasks.finish(tasks.start(tasks.execution({ ...shell('CMSIS Load'), execution: { commandLine } })), 1);
+            const settled = tracker.job(job.id) ?? job;
+            const load = executionIn(settled, 'main');
+            assert.ok(load);
+            assert.deepStrictEqual(tracker.commandOf(load.key), ['echo', 'Connect', '>', '.cmd.jlink', '&&', 'echo', 'Exit', '>>', '.cmd.jlink', '&&',
+                'JLink.exe', '-device', 'XMC4700-F144x2048', '-if', 'swd', '-commandfile', '.cmd.jlink']);
+            const plain = tracker.begin('erase', 'XMC4700');
+            tasks.finish(tasks.start(tasks.execution(shell('CMSIS Erase'))), 1);
+            const erase = executionIn(tracker.job(plain.id) ?? plain, 'main');
+            assert.ok(erase);
+            assert.strictEqual(tracker.commandOf(erase.key), undefined, 'a task without an execution has no command');
+        });
+
         test('status without a job in flight: the recent results and the live tasks, or that there is nothing', () => {
             const { tasks, clock, tracker } = world();
             assert.strictEqual(idleStatus(tracker.recent(), tracker.liveExecutions(), clock.now()),
-                'No CMSIS job in this window: nothing is in flight and nothing finished in the last 10 min.\n'
+                'No CMSIS job in this window: nothing is in flight and none has finished since the window started.\n'
                 + 'No CMSIS task is running in this window.');
             const job = tracker.begin('build', 'MPS3');
             tasks.finish(tasks.start(tasks.execution(BUILD)), 2);
             tasks.start(tasks.execution(shell('CMSIS Run')));
             clock.advance(clock.now() + 5_000);
             assert.strictEqual(idleStatus(tracker.recent(), tracker.liveExecutions(), clock.now()),
-                `No CMSIS job in flight in this window. Last results (10 min): build on MPS3 ❌ exit 2 5 s ago (job ${job.id}, '${BUILD.name}').\n`
+                `No CMSIS job in flight in this window. Last results: build on MPS3 ❌ exit 2 5 s ago (job ${job.id}, '${BUILD.name}').\n`
                 + 'CMSIS tasks running: \'CMSIS Run\' for 5 s (holds the probe). cmsis_action {action:\'stop_run\'} ends them.');
         });
     });

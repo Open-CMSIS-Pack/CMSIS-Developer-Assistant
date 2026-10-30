@@ -226,6 +226,19 @@ export function formatMissingNames(missing: string[]): string {
         'for globals and struct members that are not top-level locals.\n';
 }
 
+/**
+ * `text` and, on a line of its own, the scopes it does not cover because the
+ * executor did not read them: on the CMSIS Debugger those the adapter marks
+ * expensive, its Registers scope. `text` unchanged when none was left out.
+ */
+export function noteSkippedScopes(text: string, skipped: readonly string[]): string {
+    if (skipped.length === 0) {
+        return text;
+    }
+    const line = `${skipped.join(', ')}: not read here (expensive over the probe) — read_core_registers reads the core registers.`;
+    return text.endsWith('\n') ? `${text}${line}\n` : `${text}\n${line}`;
+}
+
 // ── The fields of an evaluated structure ────────────────────────────────────
 
 /** Caps on the fields `evaluate_expression` shows under a structured result. */

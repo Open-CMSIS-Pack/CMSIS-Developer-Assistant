@@ -193,6 +193,7 @@ export class BuildInfoHandler {
         return this.run('get_build_diagnostics', args, async (log) => {
             let ctxLine: string | undefined;
             let candidates: string[] = [];
+            let images: ImageArtifacts[] = [];
             if (args.file?.trim()) {
                 // Inside the open workspace only: this tool renders lines of
                 // whatever file it is pointed at, so it must not become an
@@ -214,6 +215,7 @@ export class BuildInfoHandler {
                 if (!('error' in ctx)) {
                     ctxLine = `Build: target ${ctx.run.targetType ?? '?'}${ctx.compiler ? `, compiler ${ctx.compiler}` : ''} — from ${this.rel(ctx.run.file)}`;
                     candidates = await this.findLogs(ctx, log);
+                    images = ctx.images;
                 } else {
                     candidates = await this.findLogs(undefined, log);
                 }
@@ -222,7 +224,7 @@ export class BuildInfoHandler {
             const summary = readBuildLog(candidates[0]);
             log.debug(`${path.basename(summary.file)}: ${summary.lines} lines, ${summary.errors} errors, ${summary.warnings} warnings, status '${summary.status ?? '-'}'`);
             const limit = Math.min(Math.max(args.limit ?? 20, 1), 200);
-            return renderDiagnostics({ summary, limit, ctxLine, candidates, root: this.root(), maxChars: args.maxChars });
+            return renderDiagnostics({ summary, limit, ctxLine, candidates, root: this.root(), maxChars: args.maxChars, newerImage: newestImage(images) });
         });
     }
 
@@ -315,6 +317,18 @@ export class BuildInfoHandler {
     private run(tool: string, args: object, body: (log: BuildInfoHost['log'], deadline: number) => Promise<string>): Promise<ToolText> {
         return runTool(tool, ++this.callCounter, args, this.host.log, { defaultTimeoutMs: this.options.timeoutMs, timeoutNote: TIMEOUT_NOTE }, body);
     }
+}
+
+/** The most recently linked image of the target, for the staleness of a build log; none when no image exists. */
+function newestImage(images: readonly ImageArtifacts[]): { path: string; mtimeMs: number } | undefined {
+    let newest: { path: string; mtimeMs: number } | undefined;
+    for (const image of images) {
+        const mtimeMs = image.elf.exists ? image.elf.mtimeMs : undefined;
+        if (mtimeMs !== undefined && (newest === undefined || mtimeMs > newest.mtimeMs)) {
+            newest = { path: image.elf.path, mtimeMs };
+        }
+    }
+    return newest;
 }
 
 /** `0x0800_1234`, `08001234h`, `08001234` (8 digits with a leading zero: hex), `134222388` (decimal) → number. */

@@ -27,8 +27,10 @@ iterate.
 - **Close the loop on real hardware.** Build and deploy software, observe its
   behavior on the target, reason about failures, and iterate against test
   criteria.
-- **Apply reusable expert workflows.** Use AI Skills for project setup, board
-  layers, debugging, documentation lookups, and CI automation.
+- **Apply reusable expert workflows.** The knowledge index the extension ships
+  holds the procedures for project setup, board layers, debugging,
+  documentation lookups, and CI automation; the agent looks them up before it
+  starts.
 
 > &#128204; **TIP**
 >
@@ -43,11 +45,15 @@ iterate.
 
 The extension combines three complementary capabilities:
 
-- **AI Skills** teach agents reliable CMSIS workflows, such as starting a
+- **Knowledge** teaches agents reliable CMSIS workflows, such as starting a
   project, adding a board layer, consulting pack documentation, and debugging a
-  live Cortex-M target. Skills act as reusable cookbooks: they define the
-  expected workflow, identify the tools to use, and set boundaries that keep
-  the agent on a predictable path.
+  live Cortex-M target. The procedures are units of a knowledge index the
+  extension ships and the agent reads through the `knowledge_search`,
+  `knowledge_get`, and `knowledge_expand` tools, scoped to the active target.
+  They act as reusable cookbooks: they define the expected workflow, identify
+  the tools to use, and set boundaries that keep the agent on a predictable
+  path. One installed AI Skill, `cmsis-help`, is the entry point and health
+  check.
 - **MCP tools** let agents perform those workflows through VS Code: build and
   flash, control the debugger, inspect the target, use serial ports, and read
   project documentation and build artifacts.
@@ -61,10 +67,14 @@ Together, these capabilities help the agent follow repeatable workflows, use
 the established CMSIS tools, and base its decisions on the actual target and
 project configuration.
 
-The extension helps configure supported coding agents and installs the CMSIS
-skills. GitHub Copilot in VS Code discovers the MCP server automatically.
-The integration has been tested with Codex, Claude Code, and GitHub Copilot.
-Other agents that support MCP and the Agent Skills format may also work.
+The extension helps configure supported coding agents and installs the
+`cmsis-help` skill, the one skill it ships; the CMSIS procedures come from the
+knowledge index the extension ships, and software packs can add their own
+units in a `.knowledge/` folder. GitHub Copilot in VS Code discovers the MCP
+server automatically.
+The integration has been tested with Codex, Claude Code, GitHub Copilot, and Kimi Code.
+Other agents that support MCP may also work; the Agent Skills format adds the
+`/cmsis-help` entry point.
 
 ## Requirements
 
@@ -74,8 +84,9 @@ CMSIS Developer Assistant is free to use and works in combination with:
   create, configure, and build CMSIS solutions.
 - [CMSIS Debugger](https://marketplace.visualstudio.com/items?itemName=Arm.vscode-cmsis-debugger) to
   program and debug Arm Cortex-M targets.
-- An AI coding agent that supports MCP and, for guided workflows, the
-  [Agent Skills](https://agentskills.io/) format.
+- An AI coding agent that supports MCP; the
+  [Agent Skills](https://agentskills.io/) format adds the `/cmsis-help` entry
+  point.
 
 ## Get started
 
@@ -84,13 +95,16 @@ CMSIS Developer Assistant is free to use and works in combination with:
    **CMSIS Developer Assistant: Configure Agent**.
 3. In your agent's chat window, describe the outcome you want. For example, ask
    the agent to work with an open CMSIS solution or to create one from an empty
-   VS Code window. You can also start a [guided workflow](#choose-a-workflow).
+   VS Code window. `/cmsis-help` checks the setup and names the procedure for
+   a task (see [Choose a workflow](#choose-a-workflow)).
 
 ## Supported development tasks
 
 CMSIS Developer Assistant supports these embedded development activities:
 
 - Creating and extending CMSIS and Zephyr projects.
+- Finding boards, devices and their examples in the CMSIS catalog, creating a
+  project from an example, and installing the verified device and board packs.
 - Adding targets, boards, layers, startup code, standard I/O, and debugger
   configuration.
 - Building, programming, running, attaching to, and debugging Cortex-M
@@ -153,6 +167,8 @@ privacy terms.
   [GitHub Issues](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues).
 - Use **CMSIS Developer Assistant: Copy Recent Problems** to collect relevant
   errors and warnings when reporting a problem.
+- See the [user guide](docs/user-guide.md) for the full tool reference, settings,
+  agent registration, and troubleshooting.
 - See [CHANGELOG.md](CHANGELOG.md) for release notes.
 - Report security vulnerabilities as described in
   [SECURITY.md](SECURITY.md).
@@ -173,32 +189,39 @@ and type **CMSIS Developer Assistant** to find them.
 | **Import Document for Current Target** | Import and attribute PDFs that are not supplied by a software pack. |
 | **Open User Documents Folder** | Open the folder containing imported target documentation. |
 | **Open Pack Docs Panel** | Inspect target documents, SVD peripherals, index state, and documentation tools. |
+| **Open Knowledge Browser** | Experimental. A panel over the knowledge index: the core index the extension ships (or the one `cmsis-developer-assistant.knowledge.indexPath` names), the packs' and the workspace's: every unit with filters by type, domain and state and the search of `knowledge_search`; a unit's text, the files it ships and its frontmatter; its relations as a graph to walk; and an overview of the index with the routing units as places to start. Read-only. |
 | **Copy Recent Problems** | Copy recent errors and warnings, with their source and suggested next step. |
 
 ## Choose a workflow
 
-The extension automatically activates all included AI Skills. Ask the agent for
-the outcome you need, or use a slash command in the chat window to start a
-specific guided CMSIS workflow:
+The extension installs one AI Skill, `cmsis-help`: the entry point and health
+check. Enter `/cmsis-help` in the chat window, or simply ask the agent for the
+outcome you need. Before a CMSIS task, the agent looks the procedure up in the
+knowledge index the extension ships and follows it. The index covers:
 
-- `/cmsis-bootstrap` — create a project from an empty VS Code window.
-- `/cmsis-project` — create, extend, or retarget a CMSIS or Zephyr project.
-- `/add-board-layer` — generate and integrate a board layer.
-- `/cmsis-debug-live` — investigate firmware on a connected Cortex-M target.
-- `/cmsis-pack-docs` — search target documentation with page citations.
-- `/create-csolution-github-action` — write a GitHub Actions workflow that
-  builds the solution and optionally tests it on an FVP.
-- `/cmsis-help` — list the available workflows, tools, and settings.
+- Creating a project from an empty VS Code window, and creating, extending,
+  or retargeting a CMSIS or Zephyr project.
+- Generating and integrating a board layer.
+- Setting up the debugger for a target, including Arm FVP models, and finding
+  out why a debug or flash session fails.
+- Investigating firmware on a connected Cortex-M target.
+- Searching target documentation with page citations.
+- Writing a GitHub Actions workflow that builds the solution and optionally
+  tests it on an FVP.
 
-This release also includes two categories of
-[generic MCU skills from Open-CMSIS-Pack/cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills/blob/main/generic-mcu-skills/README.md);
-the Debug, Ethos-U, and Pack categories, which author CMSIS-Pack content, stay
-upstream and can be installed by hand:
+Many of these procedures are converted from the
+[generic MCU skills of Open-CMSIS-Pack/cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills/blob/main/generic-mcu-skills/README.md),
+which remain available there as skills to install by hand:
 
-| Category | What the skills cover |
-|----------|-----------------------|
+| Category | What the procedures cover |
+|----------|---------------------------|
 | **Project** | Create, inspect, extend, and manage CMSIS and Zephyr projects. |
 | **DevOps** | Automate builds, tests, releases, and CI/CD workflows. |
+| **Bring-up, Pack, Ethos-U, Stream** | Author CMSIS-Pack debug and trace content, evaluate Ethos-U model variants, and generate CMSIS-Stream components; for pack and library authors. |
+
+Software packs can ship their own procedures in a `.knowledge/` folder; the
+agent sees them in projects that use the pack. **Open Knowledge Browser** shows
+the whole index.
 
 ## Documentation RAG
 

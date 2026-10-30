@@ -15,29 +15,69 @@
  */
 
 import * as assert from 'assert';
-import { ResetOutcomeView, buildResetCommands, detectGdbServerKind, renderResetOutcome, replyLooksUnsupported, unsupportedResetDetail } from '../core/resetAssist';
+import { ResetMethod, ResetOutcomeView, buildResetCommands, detectGdbServerKind, renderResetOutcome, replyLooksUnsupported, unsupportedResetDetail } from '../core/resetAssist';
+
+const METHODS: readonly ResetMethod[] = ['system', 'core', 'hardware'];
+
+/**
+ * The reset type pyOCD takes from a `monitor reset` command line: an optional
+ * halt flag, then TYPE as the only argument left (`ResetCommand.parse` in
+ * pyocd/commands/commands.py). Any other line resets with the default type.
+ */
+function pyocdResetType(command: string): string | undefined {
+    const [monitor, reset, ...args] = command.split(/\s+/);
+    assert.strictEqual(`${monitor} ${reset}`, 'monitor reset', command);
+    if (['-h', '--halt', 'halt'].includes(args[0])) {
+        args.shift();
+    }
+    return args.length === 1 ? args[0] : undefined;
+}
 
 /**
  * Test suite for the pure reset-command mapping (server kind × method × halt).
  */
 suite('resetAssist', () => {
 
-    test('pyOCD builds OpenOCD-style reset commands', () => {
+    test('pyOCD gets the method as its reset type, after halt or as the only argument', () => {
         assert.deepStrictEqual(buildResetCommands('pyocd', 'system', true), ['monitor reset halt system']);
         assert.deepStrictEqual(buildResetCommands('pyocd', 'core', true), ['monitor reset halt core']);
         assert.deepStrictEqual(buildResetCommands('pyocd', 'hardware', true), ['monitor reset halt hardware']);
-        assert.deepStrictEqual(buildResetCommands('pyocd', 'system', false), ['monitor reset run system']);
+        assert.deepStrictEqual(buildResetCommands('pyocd', 'system', false), ['monitor reset system']);
+        assert.deepStrictEqual(buildResetCommands('pyocd', 'core', false), ['monitor reset core']);
+        assert.deepStrictEqual(buildResetCommands('pyocd', 'hardware', false), ['monitor reset hardware']);
+        for (const method of METHODS) {
+            for (const halt of [true, false]) {
+                const commands = buildResetCommands('pyocd', method, halt);
+                assert.strictEqual(commands.length, 1, commands.join('; '));
+                assert.strictEqual(pyocdResetType(commands[0]), method, `'${commands[0]}' resets with the default type, not ${method}`);
+            }
+        }
     });
 
-    test('J-Link builds numeric reset commands with a separate halt', () => {
+    test('J-Link gets its Cortex-M reset strategy: 0 normal, 1 core, 2 reset pin', () => {
         assert.deepStrictEqual(buildResetCommands('jlink', 'system', true), ['monitor halt', 'monitor reset 0']);
-        assert.deepStrictEqual(buildResetCommands('jlink', 'hardware', true), ['monitor halt', 'monitor reset 0']);
         assert.deepStrictEqual(buildResetCommands('jlink', 'core', true), ['monitor halt', 'monitor reset 1']);
-        assert.deepStrictEqual(buildResetCommands('jlink', 'system', false), ['monitor reset 0']);
+        assert.deepStrictEqual(buildResetCommands('jlink', 'hardware', true), ['monitor halt', 'monitor reset 2']);
+    });
+
+    test('J-Link halts after every reset strategy, so the running form starts the core with go', () => {
+        assert.deepStrictEqual(buildResetCommands('jlink', 'system', false), ['monitor reset 0', 'monitor go']);
+        assert.deepStrictEqual(buildResetCommands('jlink', 'core', false), ['monitor reset 1', 'monitor go']);
+        assert.deepStrictEqual(buildResetCommands('jlink', 'hardware', false), ['monitor reset 2', 'monitor go']);
     });
 
     test('unknown servers get the pyOCD form', () => {
         assert.deepStrictEqual(buildResetCommands('unknown', 'system', true), ['monitor reset halt system']);
+        assert.deepStrictEqual(buildResetCommands('unknown', 'hardware', false), ['monitor reset hardware']);
+    });
+
+    test('the three methods are three different resets on every server, so auto never repeats one', () => {
+        for (const server of ['pyocd', 'jlink', 'unknown'] as const) {
+            for (const halt of [true, false]) {
+                const forms = METHODS.map(method => buildResetCommands(server, method, halt).join('; '));
+                assert.strictEqual(new Set(forms).size, METHODS.length, `${server}, halt=${halt}: ${forms.join(' | ')}`);
+            }
+        }
     });
 
     test('server detection from session text', () => {

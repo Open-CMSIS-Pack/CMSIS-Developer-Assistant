@@ -40,22 +40,40 @@ const PURPOSE =
 
 /** The skill comes first; say what it brings and why that beats improvising. */
 const SKILL_FIRST =
-    'Before anything else in such an investigation, invoke the Agent Skill "cmsis-debug-live". It brings the ' +
-    'target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault ' +
-    'decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary ' +
-    'printf/UART logging in the firmware.';
+    'Before anything else in such an investigation, invoke the Agent Skill "cmsis-help". It checks the session health ' +
+    '(the target, the debug windows, recent problems) and names the get_debug_instructions topic and the knowledge ' +
+    'procedure that fit the task, so the tools are used with a plan rather than by guesswork or temporary printf/UART ' +
+    'logging in the firmware.';
+
+/** After `SKILL_FIRST`: the one skill installed, and where every other procedure comes from. */
+const CORE_SKILLS_ONLY =
+    'The only Agent Skill installed is cmsis-help. Every other CMSIS procedure is a unit of the knowledge index: ' +
+    'knowledge_search finds it, knowledge_get reads it.';
 
 const WITHOUT_SKILLS =
-    'Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead.';
+    'Harnesses that do not load skills should call get_debug_instructions instead.';
 
+/** A client may give up on a call before its wait ends (tester feedback, 2.7.0): that loses the reply, not the work. */
 const TIMEOUT_OVERRIDE =
-    'Tools that accept timeoutMs use it as a one-call override of the default, capped at 60 s (cmsis_action and flash: 600 s); '
-    + 'set it when you can estimate the work.';
+    'Use timeoutMs where the tool schema exposes it: most debugging tools accept up to 60 s; cmsis_action, flash, documentation and '
+    + 'build-artefact tools accept up to 600 s. Breakpoint tools and stop_debugging use internal waits; restart_debugging uses the '
+    + 'configured session-readiness wait rather than its timeoutMs argument. A wait your client gives up on is no failure: the work '
+    + 'goes on, and cmsis_action {action:\'status\'} returns its result.';
 
 /** How to read an outcome (#11); it rides in the initialize result, so tools/list does not grow. */
 const READING_RESULTS =
     'A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on '
-    + 'the line after; a result with structuredContent status "timeout" or "running" is not a failure — the wait ran out or the work goes on.';
+    + 'the line after; a result with structuredContent status "timeout" or "running" is not a failure — the wait ran out or the work goes on. '
+    + 'A running target rejects reads and steps: call pause_execution first.';
+
+/**
+ * What used to be two of the tool rules (#50): the rules now hold only the
+ * scope and the bans, since the user-level rule files carry them into every
+ * project, and these two matter in a session alone.
+ */
+const WINDOWS_AND_INTERNALS =
+    'The control server and the registry files of the extension are internal: never call or read them. With several VS Code '
+    + 'windows, list_debug_windows shows which one holds the target and select_debug_window pins it.';
 
 const DOCUMENTATION_ON =
     'The documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) answer ' +
@@ -76,6 +94,38 @@ const BUILD_ARTEFACTS_ON =
     'The build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, ' +
     'get_build_diagnostics) read the ELF, linker map and build log of the current target.';
 
+const BUILD_ARTEFACTS_OFF =
+    'Build-artefact tools (symbols, sections, memory usage and the error lines of the build log, from the ELF, linker map and ' +
+    'build log) are available behind the setting cmsis-developer-assistant.buildInfo.enabled; suggest enabling it rather than ' +
+    'running nm or size or grepping the map file yourself.';
+
+/**
+ * Experimental. What a skill's description did by itself — load the
+ * procedure when its task comes up — has to be said in words when the
+ * procedures are knowledge units: look the procedure up before the work.
+ * It stands first, ahead of the purpose and everything else.
+ */
+const KNOWLEDGE_FIRST =
+    'Knowledge first: before you start a CMSIS task — a new project, a target or a board layer, the debugger or an FVP setup, ' +
+    'pack debug or trace content, a debug or flash session that fails — call knowledge_search with the task\'s name in two or ' +
+    'three words (new project, board layer, HardFault), read the procedure it finds with knowledge_get and follow it; do not ' +
+    'work such a task from memory. The units route-project, ' +
+    'route-bring-up, route-pack and route-debug, where the index has them, say which procedure fits and in which order.';
+
+/**
+ * The line the first `get_session_status` adds to the tool rules reminder
+ * while the knowledge tools are on.
+ */
+export const KNOWLEDGE_REMINDER = 'Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.';
+
+/** Experimental; the tool rules name a procedure from knowledge_get next to a CMSIS skill. */
+const KNOWLEDGE_ON =
+    'The knowledge tools (knowledge_search, knowledge_get, knowledge_expand) hold how-to knowledge: procedures, rules, the ' +
+    'causes and fixes of csolution, packchk and svdconv messages, and the documentation the installed packs carry as knowledge ' +
+    '(a hit says which pack it came from). For an error message of those tools call knowledge_search ' +
+    'with the exact text before guessing or searching the web; results are summaries, so read the unit with knowledge_get ' +
+    'before acting. Units marked draft are not reviewed: say so when you rely on one.';
+
 /**
  * The line the first `get_session_status` of a session adds after the status,
  * before the call statistics: by then the instructions may lie far back in
@@ -86,15 +136,14 @@ export const TOOL_RULES_REMINDER =
 
 /**
  * The instructions without the tool rules. The tails follow the two options
- * alone, not whether the session has a documentation dispatch, and the
- * build-artefact tools go unmentioned while they are off.
+ * alone, not whether the session has a documentation dispatch; a group that
+ * is off is named with the setting that enables it.
  */
 export function composeInstructions(options: Readonly<InstructionOptions>): string {
-    const parts = [PURPOSE, SKILL_FIRST, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS];
+    const parts = [KNOWLEDGE_FIRST, PURPOSE, SKILL_FIRST, CORE_SKILLS_ONLY, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS, WINDOWS_AND_INTERNALS];
     parts.push(options.packDocsEnabled === true ? DOCUMENTATION_ON : DOCUMENTATION_OFF);
-    if (options.buildInfoEnabled === true) {
-        parts.push(BUILD_ARTEFACTS_ON);
-    }
+    parts.push(options.buildInfoEnabled === true ? BUILD_ARTEFACTS_ON : BUILD_ARTEFACTS_OFF);
+    parts.push(KNOWLEDGE_ON);
     return parts.join(' ');
 }
 

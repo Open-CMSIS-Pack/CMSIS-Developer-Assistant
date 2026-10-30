@@ -32,7 +32,7 @@
 
 import * as vscode from 'vscode';
 import type { OpPhase } from './controlServer';
-import type { OpName } from './core/opTable';
+import { mayWaitForUser, type OpName } from './core/opTable';
 import {
     DefaultTargetView,
     RunningCall,
@@ -109,6 +109,7 @@ export class WindowStatus {
         } else if (phase === 'fenced') {
             if (at >= 0) {
                 this.running[at].fenced = true;
+                this.running[at].waitsForUser = mayWaitForUser(op);
             }
         } else {
             if (at >= 0) {

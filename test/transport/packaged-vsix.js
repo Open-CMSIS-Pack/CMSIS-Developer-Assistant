@@ -39,6 +39,11 @@ console.log(`packaged ${pkg.name}@${pkg.version}, main=${pkg.main}\n`);
 // 1. The entry point named by package.json is actually in the VSIX.
 const mainPath = path.join(root, pkg.main);
 check('package.json main exists in the VSIX', fs.existsSync(mainPath), pkg.main);
+const robotIcon = pkg.contributes?.icons?.['cda-robot']?.default;
+check('the status-bar robot uses the correct font character', robotIcon?.fontCharacter === '\\E001');
+const robotFont = robotIcon?.fontPath && path.join(root, robotIcon.fontPath);
+check('the status-bar robot font ships as WOFF', !!robotFont && fs.existsSync(robotFont)
+    && fs.readFileSync(robotFont).toString('ascii', 0, 4) === 'wOFF');
 
 // 2. Test code is not shipped. Compiled tests carry credential-shaped fixtures
 //    from the redaction suite and nothing loads them.
@@ -103,16 +108,18 @@ check('the native binding loads and enumerates ports', bindingOk, bindingDetail)
 // 6. The bundle did not swallow serialport — if it had, the require above could
 //    pass while the extension still used a broken inlined copy.
 const bundle = fs.readFileSync(mainPath, 'utf8');
+check('the bundled status bar uses the robot glyph', bundle.includes('$(cda-robot)'));
 check('the bundle keeps serialport external',
     /require\(["']serialport["']\)/.test(bundle),
     'bundle require()s serialport at runtime rather than inlining it');
 
-// 7. The skills ship, since activation copies them out of the
-//    extension: the bundled debugging skill, the catalog that lists them,
-//    the upstream lock, and every SKILL.md the catalog points at.
-check('the agent skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-debug-live', 'SKILL.md')));
+// 7. The installed skill ships, since activation copies it out of the
+//    extension, with the catalog that names it; the other skills are the
+//    sources of knowledge units and stay in the repository.
 check('the help skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-help', 'SKILL.md')));
-check('the pack-docs skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-pack-docs', 'SKILL.md')));
+check('the core knowledge index ships', fs.existsSync(path.join(root, 'resources', 'knowledge', 'core.db')));
+check('the attribution of the knowledge index ships', fs.existsSync(path.join(root, 'resources', 'knowledge', 'SOURCES.md'))
+    && fs.readFileSync(path.join(root, 'resources', 'knowledge', 'SOURCES.md'), 'utf8').includes('<!-- sources:table:begin -->'));
 check('the pdf.js worker thread entry ships beside the extension', fs.existsSync(path.join(root, 'dist', 'pdfWorker.js')));
 check('the pdf.js fake worker ships for that thread', fs.existsSync(path.join(root, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs'))
     && fs.existsSync(path.join(root, 'node_modules', 'pdfjs-dist', 'package.json')));
@@ -142,21 +149,21 @@ check('the packaged pdf.js worker thread extracts a PDF', pdfOk, pdfDetail);
 check('the core-peripheral SVDs ship', fs.existsSync(path.join(root, 'assets', 'svd', 'core', 'index.json'))
     && fs.existsSync(path.join(root, 'assets', 'svd', 'core', 'Cortex_M33.svd')));
 check('the skill catalog ships', fs.existsSync(path.join(root, 'skills', 'catalog.json')));
-check('the upstream skill lock ships', fs.existsSync(path.join(root, 'skills', 'cmsis-skills.lock.json')));
 let catalogOk = false;
 let catalogDetail = '';
 try {
     const catalog = JSON.parse(fs.readFileSync(path.join(root, 'skills', 'catalog.json'), 'utf8'));
-    const missing = catalog.skills
-        .filter(entry => !fs.existsSync(path.join(root, entry.path, 'SKILL.md')))
-        .map(entry => entry.name);
-    catalogOk = catalog.skills.length > 1 && missing.length === 0;
-    catalogDetail = missing.length ? `missing: ${missing.join(', ')}` : `${catalog.skills.length} skills present`;
+    const installed = catalog.skills.filter(entry => entry.installed);
+    const missing = installed.filter(entry => !fs.existsSync(path.join(root, entry.path, 'SKILL.md'))).map(entry => entry.name);
+    const shipped = fs.readdirSync(path.join(root, 'skills'), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name);
+    const extra = shipped.filter(name => !installed.some(entry => entry.name === name));
+    catalogOk = installed.length > 0 && missing.length === 0 && extra.length === 0;
+    catalogDetail = [missing.length ? `missing: ${missing.join(', ')}` : '', extra.length ? `shipped but not installed: ${extra.join(', ')}` : '']
+        .filter(Boolean).join('; ') || `${installed.map(entry => entry.name).join(', ')} ships, and nothing else`;
 } catch (err) {
     catalogDetail = err.message;
 }
-check('every catalog skill ships', catalogOk, catalogDetail);
-check('the upstream licence ships', fs.existsSync(path.join(root, 'skills', 'cmsis-skills', 'LICENSE')));
+check('exactly the installed skills ship', catalogOk, catalogDetail);
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);

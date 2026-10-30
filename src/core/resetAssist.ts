@@ -24,21 +24,38 @@ export type ResetMethod = 'system' | 'core' | 'hardware';
 export type GdbServerKind = 'pyocd' | 'jlink' | 'unknown';
 
 /**
+ * J-Link's reset strategy for each method on Cortex-M (UM08001, "Strategies
+ * for Cortex-M devices"): 0 normal, which is SYSRESETREQ for most devices,
+ * 1 core (VECTRESET), 2 reset pin. The J-Link launch templates of CMSIS
+ * Solution map the csolution reset types to the same numbers.
+ */
+const JLINK_RESET_TYPES: Readonly<Record<ResetMethod, number>> = { system: 0, core: 1, hardware: 2 };
+
+/**
  * Build the GDB monitor command(s) for a target reset.
  *
- * pyOCD accepts OpenOCD-style `monitor reset [run|halt|init] [system|core|hardware]`
- * (system = SYSRESETREQ, core = VECTRESET, hardware = nSRST). J-Link accepts
- * `monitor reset [N]` where 0 = normal (uses nSRST when wired, i.e. the
- * hardware path) and 1 = core only; halt is a separate monitor command.
- * Unknown servers get the pyOCD form — pyOCD is the common case for CMSIS
- * gdbtarget sessions, and an unrecognized reply is handled by the caller.
+ * A method names the same reset on every server: system resets core and
+ * peripherals (SYSRESETREQ), core only the core (VECTRESET), hardware pulls
+ * the reset line (nSRST). pyOCD's `monitor reset [halt] [TYPE]` takes the
+ * method name as TYPE, and only as the one argument after the optional halt
+ * (`reset run system` would be a reset of the default type); with halt the
+ * core stops at the reset vector, without it the core runs. J-Link's
+ * `monitor reset <type>` takes the number of its reset strategy and leaves
+ * the core halted after every one, so the running form starts it with
+ * `monitor go`; the halting form sends `monitor halt` first. Unknown servers
+ * get the pyOCD form — pyOCD is the common case for CMSIS gdbtarget
+ * sessions, and an unrecognized reply is handled by the caller.
+ *
+ * GDB sees neither a reset nor a run that a monitor command starts, which is
+ * why the `reset` tool sends the halting form and resumes through DAP
+ * (src/executor/targetReset.ts).
  */
 export function buildResetCommands(server: GdbServerKind, method: ResetMethod, halt: boolean): string[] {
     if (server === 'jlink') {
-        const type = method === 'core' ? 1 : 0;
-        return halt ? ['monitor halt', `monitor reset ${type}`] : [`monitor reset ${type}`];
+        const reset = `monitor reset ${JLINK_RESET_TYPES[method]}`;
+        return halt ? ['monitor halt', reset] : [reset, 'monitor go'];
     }
-    return [`monitor reset ${halt ? 'halt' : 'run'} ${method}`];
+    return [halt ? `monitor reset halt ${method}` : `monitor reset ${method}`];
 }
 
 /**

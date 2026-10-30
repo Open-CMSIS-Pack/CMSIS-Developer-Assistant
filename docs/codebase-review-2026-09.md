@@ -1,5 +1,7 @@
 # Codebase review — CMSIS Developer Assistant (branch fix/pdfjs-timeout-race)
 
+> **Historical review record.** Findings and line references below describe the September 2026 checkout, not open defects in 2.7.0. Later fixes and the independent rewrite supersede parts of the implementation plan. Preserve the original evidence; review any remaining work through the [2026-10-28 review](reviews/2026-10-28-knowledge-and-docs.md) and current [architecture](architecture/debugMCPServer.md).
+>
 > **Status 2026-09-07:** Phases 0, 1 and 2 are implemented on this branch (uncommitted), with the verification's adjustments R1–R3, R5 (not yet relevant), R6 and R7 applied; R4 (the five issues from `notes.md`) is left for the user — `notes.md` is git-ignored in the meantime. `npm test` 491 passing, both transport scripts green, lint and type-check clean. Phases 3–5 remain as follow-up PRs.
 
 ## Context

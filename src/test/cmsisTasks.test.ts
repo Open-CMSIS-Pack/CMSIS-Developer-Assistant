@@ -17,6 +17,7 @@
 import * as assert from 'assert';
 import {
     armJob,
+    BUILD_STOPPED_EXIT_CODE,
     bystanders,
     classifyByLabelLoosely,
     classifyCmsisTask,
@@ -24,6 +25,8 @@ import {
     executionIn,
     GuardedAction,
     guardProbe,
+    hasCmsisTasks,
+    isBuildAction,
     Job,
     JobEvent,
     nextTimeCheck,
@@ -39,7 +42,8 @@ import { loadTaskFixtures, replayThroughReducer } from './cmsisTaskFixtures';
 /**
  * The task classifier, the job state machine and the probe guard of #47 and
  * #46, without VS Code. The state machine is replayed over the task
- * sequences derived from CMSIS Solution 1.70.1 in src/test/fixtures/cmsisTasks.
+ * sequences derived from CMSIS Solution 1.70.1 and 1.72.0 in
+ * src/test/fixtures/cmsisTasks.
  */
 
 const fold = (job: Job, ...events: JobEvent[]): Job => events.reduce(reduceJob, job);
@@ -64,6 +68,18 @@ suite('cmsisTasks', () => {
             ['cbuild setup is setup, never build',
                 { name: 'cbuild setup Blinky.csolution.yml --active MPS3 --skip-convert', source: 'cmsis-csolution.build', type: 'cmsis-csolution.build', setup: true },
                 'setup'],
+            ['the Rebuild command\'s task (rebuild: true) is a rebuild',
+                { name: 'cbuild Blinky.csolution.yml --target all --rebuild --active MPS3', source: 'cmsis-csolution.build', type: 'cmsis-csolution.build', rebuild: true },
+                'rebuild'],
+            ['the Clean command\'s task (clean: true, no --active) is a clean',
+                { name: 'cbuild Blinky.csolution.yml --clean --target all', source: 'cmsis-csolution.build', type: 'cmsis-csolution.build', clean: true },
+                'clean'],
+            ['setup wins over the clean and rebuild flags (CMSIS Solution never sets two of them)',
+                { name: 'cbuild setup Blinky.csolution.yml', source: 'cmsis-csolution.build', type: 'cmsis-csolution.build', setup: true, clean: true, rebuild: true },
+                'setup'],
+            ['a task provided from the Run Task menu (rebuild: false) is a build',
+                { name: 'cbuild ${command:cmsis-csolution.getSolutionFile} --active ""', source: 'cmsis-csolution.build', type: 'cmsis-csolution.build', rebuild: false },
+                'build'],
             ['a label in lower case is not exact', { name: 'cmsis load', source: 'Workspace', type: 'shell' }, undefined],
             ['a CMSIS label from another source', { name: 'CMSIS Load', source: 'User', type: 'shell' }, undefined],
             ['an unrelated task', { name: 'npm: build', source: 'npm', type: 'npm' }, undefined],
@@ -82,10 +98,11 @@ suite('cmsisTasks', () => {
 
     suite('reduceJob replays the task sequences of CMSIS Solution 1.70.1', () => {
         const fixtures = loadTaskFixtures();
-        test('the fixture set covers build, load, erase, the three Load+Run shapes, load_and_debug and stop_run', () => {
+        test('the fixture set covers build, rebuild, clean, a stopped build, load, erase, the three Load+Run shapes, load_and_debug and stop_run', () => {
             assert.deepStrictEqual(fixtures.map((fixture) => fixture.file), [
-                'build-failed.json', 'build-ok.json', 'build-with-setup.json', 'erase-failed.json', 'load-and-debug-pyocd.json',
-                'load-and-run-arm-debugger.json', 'load-and-run-load-failed.json', 'load-and-run-pyocd.json', 'load-ok.json', 'stop-run.json',
+                'build-failed.json', 'build-ok.json', 'build-stopped.json', 'build-with-setup.json', 'clean-ok.json', 'erase-failed.json',
+                'load-and-debug-pyocd.json', 'load-and-run-arm-debugger.json', 'load-and-run-load-failed.json', 'load-and-run-pyocd.json',
+                'load-ok.json', 'rebuild-ok.json', 'stop-run.json',
             ]);
         });
         for (const fixture of fixtures) {
@@ -141,6 +158,53 @@ suite('cmsisTasks', () => {
         test('a process end without an exit code is cancelled', () => {
             const job = fold(armed('load'), start(1, 'CMSIS Load', 'load', 1), { type: 'processEnd', key: 1, exitCode: undefined, at: 2 });
             assert.strictEqual(job.state, 'cancelled');
+        });
+
+        test('a rebuild or a clean binds only its own kind: a build, setup or the other one beside it is noted', () => {
+            const rebuild = fold(armed('rebuild'), { type: 'issued', at: 0 },
+                start(1, 'cbuild x --active MPS3', 'build', 1), start(2, 'cbuild setup x', 'setup', 2), start(3, 'cbuild x --clean', 'clean', 3),
+                start(4, 'cbuild x --rebuild --active MPS3', 'rebuild', 4),
+                { type: 'processEnd', key: 1, exitCode: 0, at: 5 }, { type: 'processEnd', key: 3, exitCode: 0, at: 6 });
+            assert.strictEqual(rebuild.state, 'started', 'the build and the clean ending decide nothing');
+            assert.strictEqual(executionIn(rebuild, 'main')?.key, 4);
+            assert.deepStrictEqual(bystanders(rebuild).map((execution) => execution.key), [1, 2, 3]);
+            assert.strictEqual(reduceJob(rebuild, { type: 'processEnd', key: 4, exitCode: 2, at: 9 }).state, 'failed');
+
+            const clean = fold(armed('clean'), { type: 'issued', at: 0 }, start(5, 'cbuild x --rebuild', 'rebuild', 1),
+                { type: 'identity', key: 6, name: 'cbuild x --clean', kind: 'clean', at: 2 }, { type: 'processEnd', key: 6, exitCode: 0, at: 3 });
+            assert.strictEqual(clean.state, 'ok');
+            assert.strictEqual(clean.decidedBy, 6);
+            const wrongIdentity = fold(armed('clean'), { type: 'identity', key: 7, name: 'cbuild x', kind: 'build', at: 1 });
+            assert.strictEqual(executionIn(wrongIdentity, 'main'), undefined, 'a returned build is not a clean');
+
+            const build = fold(armed('build'), { type: 'issued', at: 0 }, start(8, 'cbuild x --clean', 'clean', 1),
+                { type: 'processEnd', key: 8, exitCode: 0, at: 2 }, { type: 'tick', at: NOTHING_STARTED_MS });
+            assert.strictEqual(build.state, 'not-started', 'a clean never answers for a build');
+        });
+
+        test(`a build task that closes with ${BUILD_STOPPED_EXIT_CODE} (Stop Build) is stopped, not failed; a stop request makes any end stopped`, () => {
+            const running = fold(armed('build'), { type: 'issued', at: 0 }, start(1, 'cbuild x', 'build', 1));
+            const stopped = reduceJob(running, { type: 'processEnd', key: 1, exitCode: BUILD_STOPPED_EXIT_CODE, at: 9 });
+            assert.strictEqual(stopped.state, 'cancelled');
+            assert.strictEqual(stopped.decidedBy, 1);
+            assert.strictEqual(reduceJob(running, { type: 'processEnd', key: 1, exitCode: 2, at: 9 }).state, 'failed');
+            const load = fold(armed('load'), start(2, 'CMSIS Load', 'load', 1), { type: 'processEnd', key: 2, exitCode: BUILD_STOPPED_EXIT_CODE, at: 2 });
+            assert.strictEqual(load.state, 'failed', 'only build-type tasks close with 130 when stopped');
+
+            const asked = reduceJob(running, { type: 'stopRequested', key: 1, at: 5 });
+            assert.strictEqual(asked.state, 'started', 'a stop request alone decides nothing');
+            assert.strictEqual(executionIn(asked, 'main')?.stopRequested, true);
+            assert.strictEqual(reduceJob(asked, { type: 'processEnd', key: 1, exitCode: 0, at: 9 }).state, 'cancelled',
+                'a terminated task may close with 0; it was stopped all the same');
+            assert.strictEqual(reduceJob(asked, { type: 'processEnd', key: 1, exitCode: undefined, at: 9 }).state, 'cancelled');
+            assert.strictEqual(reduceJob(running, { type: 'stopRequested', key: 42, at: 5 }), running, 'a stop for an execution the job does not know changes nothing');
+        });
+
+        test('isBuildAction and hasCmsisTasks', () => {
+            assert.deepStrictEqual(['build', 'rebuild', 'clean', 'load', 'stop_build', 'status'].map(isBuildAction), [true, true, true, false, false, false]);
+            assert.strictEqual(hasCmsisTasks(new Set(['npm: build', 'CMSIS Load'])), true);
+            assert.strictEqual(hasCmsisTasks(new Set(['npm: build', 'cmsis load'])), false);
+            assert.strictEqual(hasCmsisTasks(new Set()), false);
         });
 
         test(`nothing started ${NOTHING_STARTED_MS} ms after the command went out is not-started; the window opens when it is issued`, () => {
@@ -221,6 +285,9 @@ suite('cmsisTasks', () => {
         // Columns: Run alive, Load+Run alive, Load in flight, Erase in flight, flash in flight, debug session.
         const matrix: Array<[GuardedAction, Cell[]]> = [
             ['build', ['allowed', 'allowed', 'allowed', 'allowed', 'allowed', 'allowed']],
+            ['rebuild', ['allowed', 'allowed', 'allowed', 'allowed', 'allowed', 'allowed']],
+            ['clean', ['allowed', 'allowed', 'allowed', 'allowed', 'allowed', 'allowed']],
+            ['stop_build', ['allowed', 'allowed', 'allowed', 'allowed', 'allowed', 'allowed']],
             ['status', ['allowed', 'allowed', 'allowed', 'allowed', 'allowed', 'allowed']],
             ['detach', ['allowed', 'allowed', 'allowed', 'allowed', 'allowed', 'allowed']],
             ['stop_run', ['allowed', 'allowed', 'allowed', 'allowed', 'allowed', 'allowed']],

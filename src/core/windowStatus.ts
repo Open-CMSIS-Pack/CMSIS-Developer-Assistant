@@ -25,9 +25,9 @@
  * an agent call runs in the window. The tooltip adds the MCP endpoint, the
  * default target, the calls running and the last one, and in the router
  * window every open agent session with the window it drives and why. While
- * a call runs on past its fence — the agent was told it timed out, often
- * because a picker or dialog waits for the user — the item asks for the
- * warning background (#14).
+ * a call runs on past its fence — the agent was told it timed out, and for
+ * the calls that can open one a picker or dialog may wait for the user —
+ * the item asks for the warning background (#14).
  */
 
 import * as path from 'path';
@@ -63,6 +63,8 @@ export interface RunningCall {
     since: number;
     /** True once its fence answered the agent `WORKER_TIMEOUT` while it runs on (#14). */
     fenced?: boolean;
+    /** True when the call can wait for a picker or dialog (`mayWaitForUser`). */
+    waitsForUser?: boolean;
 }
 
 /** Everything one rendering of the status-bar item reads. */
@@ -111,10 +113,10 @@ const CLICK_LINE = 'Click to choose the target window.';
  */
 const MAX_LISTED_SESSIONS = 10;
 
-/** The first line of the tooltip: what the window does. */
+/** The first lines of the tooltip: the product, then what the window does. */
 const ROLE_LINES: Readonly<Record<WindowRole, string>> = {
-    router: 'CMSIS Developer Assistant: router window. It serves the MCP endpoint and forwards each agent call.',
-    worker: 'CMSIS Developer Assistant: worker window. It runs the agent calls the router window forwards to it.',
+    router: 'CMSIS Developer Assistant\nRouter window: serves MCP, forwards agent calls.',
+    worker: 'CMSIS Developer Assistant\nWorker window: runs the calls the router forwards.',
 };
 
 /** Why a session drives its window, as the router's tooltip says it. */
@@ -126,6 +128,7 @@ const REASON_TEXT: Readonly<Record<ResolutionReason, string>> = {
     default: 'default target',
     'active-session': 'the only debug session',
     'only-window': 'the only window',
+    'router-window': 'the router\'s own window, for a call any window can run',
 };
 
 /** Tools whose names do not follow from their op name. */
@@ -172,14 +175,16 @@ export function defaultTargetText(chosen: DefaultTargetView | undefined, ownPid:
     return chosen.pid === ownPid ? 'this window' : `${chosen.name} (pid ${chosen.pid})`;
 }
 
-/** What a call past its fence adds to its entry in the tooltip. */
-const FENCED_NOTE = ' (the agent was told it timed out; a picker or dialog here may be waiting for you)';
+/** What a call past its fence adds to its entry in the tooltip; a picker or dialog only for a call that can open one. */
+const FENCED_NOTE = ' (the agent was told it timed out)';
+const FENCED_USER_NOTE = ' (the agent was told it timed out; a picker or dialog here may be waiting for you)';
 
 /** The lines on the agent calls of this window: those running, then the last that ended. */
 function callLines(state: WindowStatusState): string[] {
     const lines: string[] = [];
     if (state.running.length > 0) {
-        const calls = state.running.map((call) => `${call.tool} for ${durationText(state.now - call.since)}${call.fenced ? FENCED_NOTE : ''}`);
+        const note = (call: RunningCall): string => (call.fenced ? (call.waitsForUser ? FENCED_USER_NOTE : FENCED_NOTE) : '');
+        const calls = state.running.map((call) => `${call.tool} for ${durationText(state.now - call.since)}${note(call)}`);
         lines.push(`Running here: ${calls.join(', ')}`);
     }
     const last = state.lastCall;
@@ -200,18 +205,18 @@ function sessionLine(session: SessionView, ownPid: number): string {
 }
 
 /**
- * The item's text and tooltip. The text is `$(plug) CDA router` or
- * `$(plug) CDA worker`, then ` · default` when this window is the default
+ * The item's text and tooltip. The text is `$(cda-robot) R` or
+ * `$(cda-robot) W`, then ` · default` when this window is the default
  * target and a spinner while an agent call runs here. `warning` is set while
  * a running call is past its fence.
  */
 export function renderWindowStatus(state: WindowStatusState): WindowStatusView {
     const isDefault = state.defaultTarget?.pid === state.pid;
-    const text = `$(plug) CDA ${state.role}${isDefault ? ' · default' : ''}${state.running.length > 0 ? ' $(sync~spin)' : ''}`;
+    const text = `$(cda-robot) ${state.role === 'router' ? 'R' : 'W'}${isDefault ? ' · default' : ''}${state.running.length > 0 ? ' $(sync~spin)' : ''}`;
     const lines = [
         ROLE_LINES[state.role],
         `MCP endpoint: ${state.endpoint}`,
-        `Default target: ${defaultTargetText(state.defaultTarget, state.pid)}`,
+        `Default target windows: ${defaultTargetText(state.defaultTarget, state.pid)}`,
         ...callLines(state),
     ];
     if (state.sessions !== undefined) {

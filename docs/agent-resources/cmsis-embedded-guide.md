@@ -4,13 +4,14 @@
 
 ### Starting a Debug Session
 
-**For CMSIS projects (preferred):** call `cmsis_action` with `action="load_and_debug"`. This is the same flow as the **Debug** button in the CMSIS Solution panel — it builds (if needed), flashes the target, and attaches in one step, using the configuration the user selected via *Manage Solution → Debugger*.
+**For CMSIS projects (preferred):** call `cmsis_action` with `action="load_and_debug"`. This is the same flow as the **Debug** button in the CMSIS Solution panel — it builds (if needed), flashes the target, and attaches in one step, on the target-type / target-set the panel has selected. The reply names that target (`… on HP@debug`); on a multi-target solution pass `target` to select it — a differing target is switched and verified first, an undeclared one is refused with the declared list.
 
-```json
+```text
 cmsis_action {"action": "load_and_debug", "timeoutMs": 45000}
+cmsis_action {"action": "load_and_debug", "target": "HP@debug"}
 ```
 
-**Pre-check first**: call `get_session_status`. If a session is already active, `cmsis_action load_and_debug` will refuse — use `restart_debugging` or `cmsis_action attach` instead.
+**Pre-check first**: call `get_session_status`. If a session is already active, both `cmsis_action load_and_debug` and `cmsis_action attach` refuse. Inspect or continue that session, use `restart_debugging` when a restart is intended, or `stop_debugging` before starting another. `attach` connects to a GDB server when there is no active debug session.
 
 **For non-CMSIS / direct gdbtarget configs:** `start_debugging` with `configurationName` matching the launch.json entry (e.g. "CMSIS Debugger: pyOCD", "CMSIS Debugger: J-LINK").
 
@@ -70,24 +71,24 @@ If the firmware is in a free run and you need to know where it is:
 
 ### Debugging Tips
 
-- After a fault, the stacked PC (at SP+24 for basic frame, SP+104 for FP frame) shows the faulting instruction
+- After a fault, the stacked PC shows the faulting instruction: at SP+24 in the basic and the FP-extended frame alike (the FP registers follow xPSR), at SP+64 when TrustZone stacked the integrity signature and R4–R11 first (EXC_RETURN bit 6 set, bit 0 or bit 5 clear)
 - Core registers: `read_core_registers`, or GDB's own listing with `evaluate_expression("-exec info registers")`. Every GDB command needs that `-exec` prefix; a bare `info registers` is evaluated as a C expression and fails
 - For RTOS-aware debugging: `get_threads` enumerates FreeRTOS / RTX / ThreadX tasks (when the GDB server has an RTOS plugin); pass any thread's id to `get_call_stack` to inspect a specific task
-- `read_memory` at the stack pointer shows the exception frame: R0,R1,R2,R3,R12,LR,PC,xPSR
+- `read_memory` at the stack pointer shows the exception frame: R0,R1,R2,R3,R12,LR,PC,xPSR, 40 bytes higher in that TrustZone case
 
 ### Timeout strategy
 
-Every hardware-touching tool accepts `timeoutMs` (capped to 60 s; `cmsis_action` and `flash` wait up to 600 s, and a job still running at the end of the wait answers with status `running` — call `cmsis_action {action:'status'}`, never start it again). Estimate before you call: a `read_core_registers` is ~5–15 s, a single `read_memory` (≤4 KB) is ~1–5 s, `continue_execution` until a known breakpoint is the wild card. If you don't supply `timeoutMs` the server picks a sensible default.
+Use `timeoutMs` where the tool schema exposes it: most debugging tools accept up to 60 s; `cmsis_action`, `flash`, documentation and build-artefact tools accept up to 600 s. Breakpoint tools and `stop_debugging` use internal waits; `restart_debugging` uses the configured session-readiness wait rather than its `timeoutMs` argument. A CMSIS job still running at the end of a call's wait answers with status `running`: call `cmsis_action {action:'status'}`, never start it again to learn its status. Estimate the wait from the work: a memory or register read depends on probe speed, and `continue_execution` depends on when a breakpoint is reached. Omit `timeoutMs` to use the tool's default.
 
-When a `step_*` does not stop in time, the server **auto-heals**: it pauses the target, reads the PC, and tells you where the firmware actually was. Read the 🩹 Recovery section of the response — you may not have set the breakpoint you thought you did. A `continue_execution` whose wait runs out is not paused: it answers `running`, the target keeps running, and `wait_for_stop` or `pause_execution` comes next.
+When a `step_*` does not stop in time, the server tries a recovery pause and reports the location if the target stops. Read the 🩹 Recovery section of the response. On an Arm FVP this recovery pause is skipped because the running model ignores it; a breakpoint must stop the model. A `continue_execution` whose wait runs out leaves the target running and answers `running`; follow the reply's next step (`wait_for_stop`, or `pause_execution` on a target that supports it).
 
 ### Available Tools (Cortex-M focus)
 
 | Tool | Description |
-| --- | --- |
+|---|---|
 | `cmsis_action` | ⭐ Drive the CMSIS Solution panel buttons (build/load/erase/load_and_debug/attach/…) |
 | `get_session_status` | 5-state classifier (no-session/initializing/running/stopped/unresponsive) |
-| `check_target_connection` | Fast DAP `threads` liveness probe |
+| `check_target_connection` | Fast DAP `threads` liveness probe; on a stopped target also reads DHCSR: does the core answer, halted, in lockup |
 | `pause_execution` | DAP pause — halt a running target without ending the session |
 | `read_memory` | Read a range of bytes from target memory (hex/ASCII dump) |
 | `read_core_registers` | Read all Cortex-M core registers (R0–R15, xPSR, MSP, PSP, CONTROL, FAULTMASK, BASEPRI, PRIMASK) |

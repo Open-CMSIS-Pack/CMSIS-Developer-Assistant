@@ -41,20 +41,24 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { IDebuggingHandler } from '.';
-import { TOPICS, sliceTopic } from './core/instructionTopics';
+import { QUERY_KINDS } from './core/catalogQuery';
+import { TEXT_ONLY_CLIENTS, dropsInstructions } from './core/clientHosting';
+import { TOPIC_NAMES, sliceTopic } from './core/instructionTopics';
 import { MeasuredMcpServer, toCallToolResult } from './core/measuredMcpServer';
 import { WINDOW_ARGUMENT } from './core/opTable';
 import { journalLocally } from './core/problemFeed';
 import { PROBLEM_SEVERITIES, PROBLEM_SOURCES, problemJournal } from './core/problemJournal';
 import { RELEASE_RULES } from './core/serialLease';
-import { TOOL_RULES_REMINDER, buildServerInstructions } from './core/serverInstructions';
+import { KNOWLEDGE_REMINDER, TOOL_RULES_REMINDER, buildServerInstructions } from './core/serverInstructions';
 import { TOOL_CONTRACT_DOC, parseToolContract } from './core/toolContract';
 import type { ToolMetrics } from './core/toolMetrics';
 import { ToolText, textOf } from './core/toolResult';
 import { SERVER_VERSION } from './debuggingExecutor';
 import type { DebugMCPServerOptions, SessionHandlers } from './debugMCPServer';
 import { registerBuildInfoTools } from './buildInfoTools';
+import { registerKnowledgeTools } from './knowledgeTools';
 import { registerPackDocsTools } from './packDocsTools';
+import { actionTimeoutMs } from './handler/cmsisAction';
 import { logger } from './utils/logger';
 
 /** The name in the initialize result, and the scheme of every resource URI. */
@@ -67,12 +71,12 @@ const say = (...sentences: string[]): string => sentences.join(' ');
 
 const ABOUT = {
     get_debug_instructions: say(
-        'Debugging guide for harnesses that do not load the "cmsis-debug-live" Agent Skill.',
-        'Default: a short overview plus the topic list; pass topic for one section (bootstrap, session, build, breakpoints, inspection, faults, troubleshooting).',
+        'Debugging guide for harnesses that do not load the "cmsis-help" Agent Skill.',
+        'Default: a short overview plus the topic list; pass topic for one section.',
     ),
     start_debugging: say(
         'Start a debug session through the VS Code debug pipeline (launch.json).',
-        'Before using this tool, invoke the skill "cmsis-debug-live".',
+        'Before using this tool, invoke the skill "cmsis-help".',
         'For CMSIS / Cortex-M projects prefer cmsis_action load_and_debug (builds, flashes, attaches); start_debugging skips the ' +
         'flash step and suits non-CMSIS projects or attaching to an already-flashed target.',
         'Refuses while a session is active.',
@@ -100,7 +104,7 @@ const ABOUT = {
     ),
     add_breakpoint: say(
         'Set a breakpoint at a line.',
-        'Cortex-M binds only a few at once (FPB comparators, typically 4–8) — clear ones you no longer need.',
+        'Cortex-M binds only a few at once (FPB comparators: 4 on M0/M0+/M23, 6 on M3/M4, 8 on M7/M33/M55/M85) — remove ones you no longer need.',
     ),
     add_logpoint: say(
         'Breakpoint that prints a message and resumes.',
@@ -110,7 +114,7 @@ const ABOUT = {
     ),
     remove_breakpoint: 'Delete one breakpoint, identified by its file and line.',
     clear_all_breakpoints:
-        'Delete every breakpoint in one call — the tidy-up step once the cause of the bug is confirmed, before you start on anything else.',
+        'Delete every breakpoint, the user\'s included: only for breakpoints you set yourself, or when the user asks for a clean slate. remove_breakpoint deletes one.',
     list_breakpoints: 'Show the breakpoints and logpoints that are set, in every file, and whether the debugger bound each.',
     list_variable_names: say(
         'Show which variables exist where the target is stopped, with their types but not their values.',
@@ -144,9 +148,9 @@ const ABOUT = {
         'Enables DWT/CYCCNT on first use; reports cores without one.',
     ),
     read_peripheral_register: say(
-        'Read named peripheral registers using SVD data from the Peripheral Inspector extension.',
+        'Read named peripheral registers from the target, decoded with the device SVD.',
         'Provide a peripheral name (e.g. "GPIOA", "UART0", "SPI1") and optionally a register name.',
-        'If the Peripheral Inspector is not available, provides guidance on using read_memory instead.',
+        'Without an SVD file, provides guidance on using read_memory instead.',
     ),
     get_fault_info: say(
         'Read and decode the Cortex-M fault status registers (CFSR, HFSR, BFAR, MMFAR, DFSR, AFSR) bit by bit.',
@@ -173,10 +177,11 @@ const ABOUT = {
         'Return information about the connected debug target: session name, debug type, program path, GDB path, GDB server, ' +
         'port, and CMSIS config details.',
     check_target_connection: say(
-        'Probe the hardware debug connection with a short-timeout DAP ping.',
+        'Probe the hardware debug connection with a short-timeout DAP ping; on a stopped target, also read the core\'s debug ' +
+        'status (DHCSR).',
         'Use this when other tool calls start timing out or returning "unavailable" to determine whether the probe/GDB server ' +
         'is alive and whether the target is stopped (so DAP reads are valid).',
-        'Never hangs — uses an internal short timeout.',
+        'Never hangs.',
     ),
     get_call_stack: say(
         'Return the full call stack (function names, source, line, frameId) for the active thread, or a specific thread when ' +
@@ -197,10 +202,7 @@ const ABOUT = {
         'Lets you walk up the call stack and examine caller-frame state without changing the editor\'s active frame.',
         'Without variableNames the listing is capped (40 per scope, 200 chars per value); with it, uncapped.',
     ),
-    serial_list_ports: say(
-        'List available serial ports.',
-        'Tries the MS Serial Monitor API first (friendly names), falls back to the bundled serialport library.',
-    ),
+    serial_list_ports: 'List available serial ports: path, friendly name (Windows), manufacturer, serial number, VID:PID.',
     serial_capture: say(
         'Capture serial output in one call: open the port, send write if given, read until the regex until matches or ' +
         'durationMs ends, close.',
@@ -235,24 +237,29 @@ const ABOUT = {
         'from=\'owned\' (default) or \'monitor\'.',
     ),
     serial_subscribe_monitor: say(
-        'Subscribe to the MS Serial Monitor extension\'s data event to read the bytes the user\'s UI session receives — no port fight.',
-        'Errors clearly when the installed build exposes no data event (then serial_open).',
-        'Read with serial_read from=\'monitor\'.',
+        'Read the bytes the user\'s MS Serial Monitor session receives, without taking the port, via a data event of its API; ' +
+        'then serial_read from=\'monitor\'.',
+        'Its API (version 0) has no such event: the call fails and says what to do instead.',
     ),
     serial_unsubscribe_monitor: 'Stop the Serial Monitor data subscription (the user\'s UI session is unaffected).',
     serial_open_monitor: say(
         'Focus the Microsoft Serial Monitor panel so the user can see / drive their existing session.',
         'UI-only — does not open or read a port.',
-        'Pair with serial_subscribe_monitor to also feed bytes back to the agent.',
+        'Stopping its monitor there frees the port for serial_capture.',
     ),
     cmsis_action: say(
-        'The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, ' +
-        'like the panel buttons; every result names the target it ran on.',
-        'build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code.',
-        'A task still running at the wait returns status running: call action status, never start it again.',
+        'Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target.',
+        'build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code.',
+        'A task still running at the wait returns status running: call status, never start it again.',
         'run: CMSIS Run alone, no build or flash — a probe\'s GDB server, then attach; an FVP hosts none.',
-        'load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended.',
-        'open_solution opens a csolution\'s folder (path) in a VS Code window and activates it; needs no open project.',
+        'load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks.',
+        'refresh: Update RTE ("use --update-rte"); activate_environment: re-resolve vcpkg-configuration.json.',
+        'open_solution (path) opens and activates a csolution; needs no open project.',
+    ),
+    cmsis_query: say(
+        'Boards, devices, or the examples and templates of a board or device, from CMSIS Solution\'s catalog (web and installed packs);',
+        'no project needed. Patterns are case-insensitive regexes, tried against the name and the id, and as text with spaces, colons ' +
+        'and dashes ignored (micro:bit finds microbit-v2). A first call may answer status running while the web catalog loads: repeat it.',
     ),
     flash: say(
         'Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or ' +
@@ -298,10 +305,12 @@ const BAUD_RATE_DESC = 'Baud rate (default 115200)';
 
 /**
  * The tools that take `window` in a session that routes between windows
- * (#16): those that start or own something. The others follow the session's
- * target, which `window` re-aims. A name added here gets the argument.
+ * (#16): those that start or own something, and `knowledge_search`, whose
+ * project context is one window's active target without making that window
+ * the session's target. The others follow the session's target, which
+ * `window` re-aims. A name added here gets the argument.
  */
-export const WINDOW_ARGUMENT_TOOLS: ReadonlySet<string> = new Set(['cmsis_action', 'flash', 'reset', 'serial_open', 'serial_capture']);
+export const WINDOW_ARGUMENT_TOOLS: ReadonlySet<string> = new Set(['cmsis_action', 'flash', 'reset', 'serial_open', 'serial_capture', 'knowledge_search']);
 
 /** The one-call override of a handler's default timeout (see TIMEOUT_OVERRIDE). */
 const CALL_TIMEOUT = z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC);
@@ -511,7 +520,13 @@ export function buildSessionServer(parts: SessionParts): MeasuredMcpServer {
         { name: SERVER_NAME, version: SERVER_VERSION },
         { instructions: buildServerInstructions(parts.toolRules, parts.options) },
         parts.ring,
+        TEXT_ONLY_CLIENTS,
+        { log: (line) => logger.info(line) },
     );
+    // Waits a client that gives up sooner may have cut: cmsis_action's default depends on the action;
+    // flash's wait is pyOCD's budget, which a cut would end early.
+    mcp.declareWait('cmsis_action', { defaultMs: (args) => actionTimeoutMs(String(args.action), undefined) });
+    mcp.declareWait('flash', { endsWork: true });
     const handlers = parts.handlers();
     // A router's tools that start or own something can name the window they run in.
     if (windowRoutingOf(handlers.debug) !== undefined) {
@@ -529,7 +544,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('get_debug_instructions', {
         description: ABOUT.get_debug_instructions,
         inputSchema: {
-            topic: z.enum(TOPICS).optional().describe('Section to return. Default: overview (~5 KB) with the topic list.'),
+            topic: z.enum(TOPIC_NAMES).optional().describe('Section to return. Default: overview (~5 KB) with the topic list.'),
         },
         annotations: LOOK_ONLY,
     }, async (args) => reply(guideSection(await docs.read(GUIDE_FILE), args.topic)));
@@ -620,7 +635,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
         description: ABOUT.evaluate_expression,
         inputSchema: {
             expression: z.string().describe('What to evaluate, written in the language of the program being debugged'),
-            depth: z.number().int().min(1).max(3).optional().describe('Levels of struct fields shown (default 1)'),
+            depth: z.number().int().min(0).max(3).optional().describe('Levels of struct fields shown (default 1; 0: the value only)'),
             timeoutMs: CALL_TIMEOUT,
         },
     }, (args) => debug.handleEvaluateExpression(args).then(reply));
@@ -629,7 +644,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('read_memory', {
         description: ABOUT.read_memory,
         inputSchema: {
-            address: z.string().describe('Memory address as hex string, e.g. \'0x20000000\''),
+            address: z.string().describe('Hex address (\'0x20000000\') or a C expression for one (\'&buf\', an array, a pointer)'),
             length: z.number().int().min(1).max(4096).describe('Number of bytes to read (1-4096)'),
             format: z.enum(['hex', 'ascii', 'both']).default('hex').describe('\'hex\' (default), \'ascii\', or \'both\''),
             timeoutMs: CALL_TIMEOUT,
@@ -779,21 +794,42 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     if (packDocs !== undefined && options.buildInfoEnabled === true) {
         registerBuildInfoTools(mcp, packDocs);
     }
+    if (packDocs !== undefined) {
+        registerKnowledgeTools(mcp, packDocs);
+    }
 
     // CMSIS Solution actions and programming.
     mcp.registerTool('cmsis_action', {
         description: ABOUT.cmsis_action,
         inputSchema: {
-            action: z.enum(['build', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run', 'status', 'open_solution'])
+            action: z.enum(['build', 'rebuild', 'clean', 'refresh', 'activate_environment', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run',
+                'stop_build', 'status', 'open_solution', 'install_pack', 'create_solution'])
                 .describe('Which CMSIS Solution action to invoke'),
-            path: z.string().optional().describe('open_solution only: absolute path of a *.csolution.yml or of its folder.'),
+            path: z.string().optional().describe('Absolute. open_solution: a *.csolution.yml or its folder; create_solution: the new project\'s folder.'),
+            pack: z.string().optional().describe('install_pack only: the Vendor::Name@version to install; needs no open project.'),
+            board: z.string().optional(),
+            device: z.string().optional(),
+            draft: z.string().optional().describe('create_solution: example or template; it, board and device are ids from cmsis_query'),
+            git: z.boolean().optional().describe('create_solution: git init, default off'),
             target: z.string().optional().describe('Target-type or type@set from the csolution (e.g. "MPS3", "HP@debug"). ' +
                 'Switched and verified when it differs from the active one; omit to use the panel selection.'),
             timeoutMs: z.number().int().min(100).max(600_000).optional()
                 .describe(`${LONG_TIMEOUT_DESC} For load_and_debug / attach: the session-readiness wait.`),
         },
-    // The client's name decides whether open_solution may reload this window (src/core/clientHosting.ts).
+    // The client's name decides whether open_solution and create_solution may reload this window (src/core/clientHosting.ts).
     }, (args) => debug.handleCmsisCommand({ ...args, client: mcp.server.getClientVersion()?.name }).then(reply));
+    mcp.registerTool('cmsis_query', {
+        description: ABOUT.cmsis_query,
+        inputSchema: {
+            what: z.enum(QUERY_KINDS),
+            vendor: z.string().optional(),
+            name: z.string().optional(),
+            board: z.string().optional().describe('boards: pattern; examples: board id'),
+            device: z.string().optional().describe('boards, devices: pattern; examples: device id'),
+            limit: z.number().int().min(1).max(100).optional().describe('Default 20'),
+        },
+        annotations: LOOK_ONLY,
+    }, (args) => debug.handleCmsisQuery(args).then(reply));
     mcp.registerTool('flash', {
         description: ABOUT.flash,
         inputSchema: {
@@ -804,11 +840,14 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
         annotations: ALTERS_TARGET,
     }, (args) => debug.handleFlash(args).then(reply));
 
-    // The first status of the session repeats the tool rules in one line (#50); the state lives in this closure.
+    // The first status of the session repeats the tool rules in one line (#50), or whole for a client whose model
+    // never sees the instructions (Kimi Code, #103); the state lives in this closure.
     let rulesRepeated = parts.toolRules === undefined;
     mcp.registerTool('get_session_status', { description: ABOUT.get_session_status, annotations: LOOK_ONLY }, async () => {
         const state = await debug.handleGetSessionStatus();
-        const reminder = rulesRepeated ? '' : `\n\n${TOOL_RULES_REMINDER}`;
+        const whole = parts.toolRules !== undefined && dropsInstructions(mcp.server.getClientVersion()?.name);
+        const reminder = rulesRepeated ? ''
+            : whole ? `\n\n${parts.toolRules}\n\n${KNOWLEDGE_REMINDER}` : `\n\n${TOOL_RULES_REMINDER} ${KNOWLEDGE_REMINDER}`;
         rulesRepeated = true;
         // Read after the handler: the totals cover this session's earlier calls, not this one.
         return reply(`${textOf(state)}${reminder}\n\n${ring.formatTotals()}`);

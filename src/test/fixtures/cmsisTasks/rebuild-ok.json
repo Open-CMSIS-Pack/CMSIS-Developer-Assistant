@@ -1,0 +1,103 @@
+{
+  "derivedFrom": "Derived from the installed CMSIS Solution 1.72.0 (arm.cmsis-csolution-1.72.0-darwin-arm64): dist/extension.js (BuildCommand.handleRebuild / handleClean / handleBuild → createAndExecuteTaskDefinition, BuildTaskDefinitionBuilder.createDefinitionFromUriOrSolutionNode, BuildTaskProviderImpl.createTask and getTaskLabel, cbuildArgsFromTaskDefinition, BuildStopCommand.stopBuildTask, TerminalTaskRunner.terminateProcess). No live spike was run: the event order is VS Code's for a CustomExecution task; times are illustrative milliseconds from the call.",
+  "description": "cmsis_action rebuild right after a target switch: the rebuild command stops the cbuild setup the re-activated solution requested (stopActiveSetupTaskIfRunning), waits for it to end, and returns the TaskExecution of a cbuild task with rebuild: true (--rebuild), which exits 0. The setup is noted, never the result.",
+  "action": "rebuild",
+  "tasks": {
+    "setup": {
+      "name": "cbuild setup Blinky.csolution.yml --target database --active NUCLEO-F401RE --packs --skip-convert",
+      "source": "cmsis-csolution.build",
+      "definition": {
+        "type": "cmsis-csolution.build",
+        "solution": "/work/Blinky/Blinky.csolution.yml",
+        "schemaCheck": false,
+        "active": "NUCLEO-F401RE",
+        "clean": false,
+        "rebuild": false,
+        "setup": true,
+        "buildOutputVerbosity": "normal",
+        "downloadPacks": true,
+        "cmakeTarget": "database",
+        "virtualProject": false
+      },
+      "execution": "CustomExecution (pseudoterminal)"
+    },
+    "rebuild": {
+      "name": "cbuild Blinky.csolution.yml --target all --rebuild --active NUCLEO-F401RE --packs",
+      "source": "cmsis-csolution.build",
+      "definition": {
+        "type": "cmsis-csolution.build",
+        "solution": "/work/Blinky/Blinky.csolution.yml",
+        "schemaCheck": false,
+        "active": "NUCLEO-F401RE",
+        "clean": false,
+        "rebuild": true,
+        "setup": false,
+        "buildOutputVerbosity": "normal",
+        "downloadPacks": true,
+        "cmakeTarget": "all",
+        "virtualProject": false
+      },
+      "execution": "CustomExecution (pseudoterminal)"
+    }
+  },
+  "events": [
+    {
+      "at": 0,
+      "event": "issued"
+    },
+    {
+      "at": 5,
+      "event": "onDidStartTask",
+      "task": "setup"
+    },
+    {
+      "at": 6,
+      "event": "onDidStartTaskProcess",
+      "task": "setup"
+    },
+    {
+      "at": 110,
+      "event": "onDidEndTaskProcess",
+      "task": "setup",
+      "exitCode": 130
+    },
+    {
+      "at": 111,
+      "event": "onDidEndTask",
+      "task": "setup"
+    },
+    {
+      "at": 150,
+      "event": "onDidStartTask",
+      "task": "rebuild"
+    },
+    {
+      "at": 151,
+      "event": "commandReturned",
+      "task": "rebuild"
+    },
+    {
+      "at": 155,
+      "event": "onDidStartTaskProcess",
+      "task": "rebuild"
+    },
+    {
+      "at": 95000,
+      "event": "onDidEndTaskProcess",
+      "task": "rebuild",
+      "exitCode": 0
+    },
+    {
+      "at": 95010,
+      "event": "onDidEndTask",
+      "task": "rebuild"
+    }
+  ],
+  "expect": {
+    "state": "ok",
+    "decidedBy": "rebuild",
+    "bystanders": [
+      "setup"
+    ]
+  }
+}

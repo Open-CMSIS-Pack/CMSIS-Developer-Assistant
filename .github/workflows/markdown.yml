@@ -8,7 +8,6 @@ on:
       - '.github/markdownlint.json'
       - '.github/markdownlint.jsonc'
       - '**/*.md'
-      - '!.github/workflows/nightly.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

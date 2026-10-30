@@ -28,7 +28,7 @@ import {
     SvdPeripheral, SvdRegister, TargetArgs, TargetDocs, TargetResolution, armDocId, armDocUrl, buildChapterIndex, buildDossier,
     catalogueVersion, collectTargetDocs, describeProcessors, describeResolution, fetchDocument, findPeripheral, formatPackId, groupOf,
     isReadable, loadSvd, lookupArmDoc, parseArmDocId, parseArmDocUrl, parseCbuildRun, parsePageRange, prefixedLog, registersOf,
-    renderDocList, renderDossier, renderDossierMiss, renderFetch, renderFetchFailure, renderPages, renderSearch, resolveSvd,
+    renderDocList, renderDossier, renderDossierMiss, renderDownloadRunning, renderFetch, renderFetchFailure, renderPages, renderSearch, resolveSvd,
     resolveTarget, searchLoaded, selectExtractor, shortHash, slug, sortDocs, loadCoreHeader, resolveCoreHeader, SvdSummary,
     loadCoreSvd, resolveCoreSvd,
     loadNpuHeader, npuBaseFromSvd, resolveNpuHeader,
@@ -139,6 +139,26 @@ export interface FetchArgs extends TargetArgs {
 }
 
 const TIMEOUT_NOTE = 'The work continues in the background; call again in a few seconds to pick up the result from the cache.';
+/** A download of fetch_doc runs this long at most, whatever the call that started it waits: it is not tied to any call. */
+const DOWNLOAD_BUDGET_MS = 600_000;
+/** Kept back from a call's deadline, so that it answers "still downloading" itself before the tool's timeout does. */
+const DOWNLOAD_REPLY_MARGIN_MS = 1_500;
+
+/** One download of fetch_doc, shared by every call for the document while it runs. */
+interface DownloadJob {
+    readonly startedAt: number;
+    readonly controller: AbortController;
+    readonly outcome: Promise<FetchOutcome>;
+    bytes: number;
+    total: number | undefined;
+}
+
+/** The last failed download of a document: what failed, how often, and whether a reply has said so. */
+interface DownloadFailure {
+    outcome: Extract<FetchOutcome, { ok: false }>;
+    attempts: number;
+    reported: boolean;
+}
 
 export class PackDocsHandler {
     private readonly store: PageStore;
@@ -146,6 +166,10 @@ export class PackDocsHandler {
     /** Documents seen by the last list/search, so read_doc_pages can take an id alone. */
     private readonly knownDocs = new Map<string, DocRef>();
     private readonly chapterCache = new Map<string, Chapter[]>();
+    /** fetch_doc downloads in flight, by document id. */
+    private readonly downloads = new Map<string, DownloadJob>();
+    /** The last failed download of each document, until one succeeds. */
+    private readonly downloadFailures = new Map<string, DownloadFailure>();
     private callCounter = 0;
 
     constructor(private readonly host: PackDocsHost, private readonly options: PackDocsHandlerOptions) {
@@ -159,6 +183,12 @@ export class PackDocsHandler {
     }
 
     public getStore(): PageStore { return this.store; }
+
+    /** Stop the downloads in flight; their part files are removed. */
+    public dispose(): void {
+        for (const job of this.downloads.values()) { job.controller.abort(); }
+        this.downloads.clear();
+    }
 
     /** Forget what was derived from the store — after the panel cleared it. */
     public dropCaches(): void { this.chapterCache.clear(); }
@@ -325,11 +355,24 @@ export class PackDocsHandler {
 
             const t0 = Date.now();
             let outcome: FetchOutcome | undefined;
-            if (!doc.cached || args.refresh || doc.format === 'html') {
-                outcome = await fetchDocument(doc, this.store, this.fetchContext(log, deadline));
+            const running = this.downloads.get(doc.id);
+            if (running || !doc.cached || args.refresh || doc.format === 'html') {
+                const dropFolder = this.host.settings().workspaceDocDirs[0];
+                const failed = this.downloadFailures.get(doc.id);
+                if (!running && failed && !failed.reported) {
+                    // A download that failed after its call stopped waiting: say so before trying again.
+                    failed.reported = true;
+                    return renderFetchFailure(doc, failed.outcome, dropFolder, failed.attempts);
+                }
+                const job = running ?? this.startDownload(doc);
+                outcome = await this.awaitDownload(job, deadline);
+                if (outcome === undefined) {
+                    return { text: renderDownloadRunning(doc, job.bytes, job.total, Date.now() - job.startedAt), status: 'running' };
+                }
                 if (!outcome.ok) {
-                    const dirs = this.host.settings().workspaceDocDirs;
-                    return renderFetchFailure(doc, outcome, dirs[0]);
+                    const failure = this.downloadFailures.get(doc.id);
+                    if (failure) { failure.reported = true; }
+                    return renderFetchFailure(doc, outcome, dropFolder, failure?.attempts ?? 1);
                 }
             }
             const available = await this.extractor.available();
@@ -688,6 +731,56 @@ export class PackDocsHandler {
         return t;
     }
 
+    /**
+     * Start the download of a web document as a job of its own: up to
+     * `DOWNLOAD_BUDGET_MS`, whatever the call that started it waits, so that
+     * a client that gives up after 60 s no longer ends it, and a later call
+     * joins it instead of starting over (#103). A failure is kept for the
+     * next call; a success clears it.
+     */
+    private startDownload(doc: DocRef): DownloadJob {
+        const controller = new AbortController();
+        const startedAt = Date.now();
+        const progress = { bytes: 0, total: undefined as number | undefined };
+        const ctx: ResolveContext = {
+            ...this.fetchContext(this.host.log, startedAt + DOWNLOAD_BUDGET_MS),
+            signal: controller.signal,
+            onProgress: (bytes, total) => {
+                job.bytes = bytes;
+                job.total = total;
+            },
+        };
+        const outcome = fetchDocument(doc, this.store, ctx)
+            .catch((e: unknown): FetchOutcome => ({ ok: false, error: e instanceof Error ? e.message : String(e) }))
+            .then((settled) => {
+                this.downloads.delete(doc.id);
+                if (settled.ok) {
+                    this.downloadFailures.delete(doc.id);
+                } else {
+                    const attempts = (this.downloadFailures.get(doc.id)?.attempts ?? 0) + 1;
+                    this.downloadFailures.set(doc.id, { outcome: settled, attempts, reported: false });
+                    this.host.log.info(`fetch_doc: download of ${doc.id} failed (attempt ${attempts}): ${settled.error}`);
+                }
+                return settled;
+            });
+        const job: DownloadJob = { startedAt, controller, outcome, ...progress };
+        this.downloads.set(doc.id, job);
+        return job;
+    }
+
+    /** The download's outcome, or undefined when the call's deadline comes first; the download goes on. */
+    private async awaitDownload(job: DownloadJob, deadline: number): Promise<FetchOutcome | undefined> {
+        const leftMs = deadline - Date.now() - DOWNLOAD_REPLY_MARGIN_MS;
+        if (leftMs <= 0) { return undefined; }
+        let timer: NodeJS.Timeout | undefined;
+        const late = new Promise<undefined>(resolve => { timer = setTimeout(() => resolve(undefined), leftMs); });
+        try {
+            return await Promise.race([job.outcome, late]);
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
     private fetchContext(log: PackDocsHost['log'], deadline: number): ResolveContext {
         return {
             fetchFn: this.host.fetchFn ?? ((url, init) => fetch(url, init)),
@@ -769,7 +862,7 @@ export class PackDocsHandler {
     }
 
     /** Timeout fence and trace for one tool call — see `runTool`. */
-    private run(tool: string, args: object, body: (log: PackDocsHost['log'], deadline: number) => Promise<string>): Promise<ToolText> {
+    private run(tool: string, args: object, body: (log: PackDocsHost['log'], deadline: number) => Promise<ToolText>): Promise<ToolText> {
         return runTool(tool, ++this.callCounter, args, this.host.log, { defaultTimeoutMs: this.options.timeoutMs, timeoutNote: TIMEOUT_NOTE }, body);
     }
 }

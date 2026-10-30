@@ -15,11 +15,15 @@
  */
 
 /**
- * DWT (Data Watchpoint and Trace) cycle-counter register map for Cortex-M.
- * Addresses are strings to match the readMemoryWord/writeMemoryWord call
- * convention used elsewhere (faultDecoder.ts style).
+ * DWT (Data Watchpoint and Trace) cycle-counter register map for Cortex-M,
+ * and which cores have a cycle counter at all. Addresses are strings to match
+ * the readMemoryWord/writeMemoryWord call convention used elsewhere
+ * (faultDecoder.ts style). Bit positions are those of CMSIS-Core
+ * (core_cm*.h) and the Armv6-M, Armv7-M and Armv8-M architecture manuals.
  */
 export const DWT_ADDRESSES = {
+    /** CPUID Base Register — its ARCHITECTURE field names the cores that never have a cycle counter. */
+    CPUID: '0xE000ED00',
     /** Debug Exception and Monitor Control Register — TRCENA gates all DWT/ITM. */
     DEMCR: '0xE000EDFC',
     /** DWT Control Register — CYCCNTENA plus the NOCYCCNT presence flag. */
@@ -34,5 +38,23 @@ export const DEMCR_TRCENA = 1 << 24;
 /** DWT_CTRL bit 0: enables the cycle counter itself. */
 export const DWT_CTRL_CYCCNTENA = 1;
 
-/** DWT_CTRL bit 28: reads 1 when the core has NO cycle counter (e.g. some M0/M23). */
-export const DWT_CTRL_NOCYCCNT = 1 << 28;
+/**
+ * DWT_CTRL bit 25: reads 1 when an Armv7-M or Armv8-M core has NO cycle
+ * counter (always on Armv8-M Baseline, e.g. Cortex-M23). Bits 31:28 above it
+ * are NUMCOMP, the number of comparators. Armv6-M has no such bit: its
+ * DWT_CTRL holds only NUMCOMP, so `architectureHasCycleCounter` decides there.
+ */
+export const DWT_CTRL_NOCYCCNT = 1 << 25;
+
+/** CPUID.ARCHITECTURE (bits 19:16) of Armv6-M and of Armv8-M without the Main Extension. */
+const CPUID_ARCHITECTURE_NO_MAIN_EXTENSION = 0xc;
+
+/**
+ * Whether the core's architecture provides for a DWT cycle counter, by CPUID:
+ * false for Armv6-M (Cortex-M0, M0+, M1, SC000) and Armv8-M Baseline
+ * (Cortex-M23), which never have one; true otherwise, where DWT_CTRL.NOCYCCNT
+ * tells.
+ */
+export function architectureHasCycleCounter(cpuid: number): boolean {
+    return ((cpuid >>> 16) & 0xf) !== CPUID_ARCHITECTURE_NO_MAIN_EXTENSION;
+}

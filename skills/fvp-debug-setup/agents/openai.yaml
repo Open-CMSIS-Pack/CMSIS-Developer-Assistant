@@ -1,4 +1,0 @@
-interface:
-  display_name: "CMSIS: FVP Debug Setup"
-  short_description: "Make Load & Debug and Run work against an Arm FVP model"
-  default_prompt: "Use $fvp-debug-setup to wire the CMSIS Run and Debug buttons of my project to the Arm FVP."

@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
+import * as vscode from 'vscode';
 import * as assert from 'assert';
 import * as path from 'path';
-import * as vscode from 'vscode';
 import type { CmsisJobTracker } from '../cmsisJobTracker';
 import type { BuildMessage, Job, JobDiagnosis } from '../core/cmsisTasks';
 import { ProblemJournal } from '../core/problemJournal';
@@ -73,6 +73,12 @@ suite('Window problem sources', () => {
         assert.strictEqual(failedJobProblem(job({ state: 'ok' })), undefined);
         assert.strictEqual(failedJobProblem(job({ state: 'cancelled' })), undefined);
         assert.strictEqual(failedJobProblem(job({ decidedBy: undefined })), undefined);
+        const rebuild = failedJobProblem(job({
+            id: 'rb-3', action: 'rebuild',
+            executions: [{ key: 1, name: 'cbuild blinky.csolution.yml --rebuild --active HE', kind: 'rebuild', role: 'main', startedAt: 1, exitCode: 2 }],
+        }));
+        assert.deepStrictEqual([rebuild?.source, rebuild?.hint], ['build', 'cmsis_action {action:\'status\'} shows its error lines.'],
+            'a rebuild is a build');
     });
 
     test('the error lines of a failed build are BUILD_ERROR records with a workspace-relative file; warnings carry no code', () => {

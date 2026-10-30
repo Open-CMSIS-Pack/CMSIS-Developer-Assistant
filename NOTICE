@@ -23,8 +23,16 @@ portions of this work derived from DebugMCP, as required by the MIT License.
 Arm's CMSIS / Cortex-M embedded extensions and subsequent changes are
 contributed by Arm Limited.
 
-The Agent Skills under skills/cmsis-skills/ are vendored unmodified from
-Open-CMSIS-Pack/cmsis-skills (https://github.com/Open-CMSIS-Pack/cmsis-skills),
-licensed under the Apache License, Version 2.0; the licence text ships as
-skills/cmsis-skills/LICENSE and the pinned commit is recorded in
-skills/cmsis-skills.lock.json.
+------------------------------------------------------------------------
+Knowledge index
+------------------------------------------------------------------------
+
+The VSIX ships resources/knowledge/core.db, the core knowledge index of the
+CMSIS Knowledge Base. Its content is derived from the sources listed in
+resources/knowledge/SOURCES.md under their licences (Apache License 2.0,
+MIT License, BSD 3-Clause License) and from summaries of public GitHub
+issues written in our own words. SOURCES.md names every source with its
+repository and licence, and carries the copyright lines and licence texts
+the MIT and BSD 3-Clause licences require and the NOTICE files of the
+Apache-2.0 sources. The index itself is distributed under this extension's
+licence terms.

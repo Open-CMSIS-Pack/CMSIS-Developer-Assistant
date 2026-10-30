@@ -22,10 +22,14 @@ import fs from 'fs';
 
 async function main() {
 
-    const { json, report, header } = yargs(hideBin(process.argv))
-        .usage('Usage: $0 <json> <report> [--header <header>]')
+    const { json, report, header, knowledge } = yargs(hideBin(process.argv))
+        .usage('Usage: $0 <json> <report> [--header <header>] [--knowledge <SOURCES.md>]')
         .options('header', {
             describe: 'Header to add to the report',
+            type: 'string'
+        })
+        .options('knowledge', {
+            describe: 'The SOURCES.md of the core knowledge index; its table of sources becomes the last section',
             type: 'string'
         })
         .command('$0 <json> <report>', '', y => {
@@ -71,7 +75,32 @@ async function main() {
         data += `| ${value.name} | ${value.version} | ${value.url} | [${value.spdx}](${value.license}) |\n`;
     }
 
+    if (knowledge) {
+        data += knowledgeSection(knowledge as string);
+    }
+
     fs.writeFileSync(report as string, data);
+}
+
+/**
+ * The sources of the core knowledge index, from the table of its SOURCES.md
+ * (the knowledge base generates the file; the extension commits the copy it
+ * ships as resources/knowledge/SOURCES.md). The table sits between the markers
+ * `<!-- sources:table:begin -->` and `<!-- sources:table:end -->`.
+ */
+function knowledgeSection(sourcesFile: string): string {
+    const text = fs.readFileSync(sourcesFile, 'utf8');
+    const begin = text.indexOf('<!-- sources:table:begin -->');
+    const end = text.indexOf('<!-- sources:table:end -->');
+    if (begin < 0 || end < begin) {
+        throw new Error(`${sourcesFile} has no sources table between the markers`);
+    }
+    const table = text.slice(begin + '<!-- sources:table:begin -->'.length, end).trim();
+    return '\n## Knowledge index\n\n'
+        + 'The core knowledge index `resources/knowledge/core.db` is derived from the sources below under their licences '
+        + '(Apache-2.0, MIT, BSD-3-Clause) and from summaries in our own words. `resources/knowledge/SOURCES.md` lists them with '
+        + 'the copyright lines, licence texts and NOTICE files those licences require; this table is its table of sources.\n\n'
+        + table + '\n';
 }
 
 main().catch(error => {

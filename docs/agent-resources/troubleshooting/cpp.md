@@ -77,4 +77,4 @@ Notes for C and C++ programs on the host, through the C/C++ extension (`cppdbg`,
 - [ ] Breakpoints on lines with code; `-exec info breakpoints` when one never stops.
 - [ ] Aggregates read by member and element, or with `-exec print`.
 - [ ] The wrong value traced to the store that wrote it, in the types the program uses.
-- [ ] Watchpoints and catchpoints deleted by number; `clear_all_breakpoints` once the cause is confirmed.
+- [ ] Watchpoints and catchpoints deleted by number; the breakpoints you set removed (`remove_breakpoint`) once the cause is confirmed.

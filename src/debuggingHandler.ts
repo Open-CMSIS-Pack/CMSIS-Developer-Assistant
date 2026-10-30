@@ -17,8 +17,8 @@
 /**
  * The debugging tools behind the MCP server: one `handle*` method per tool.
  * Each checks what state the session is in, asks the executor (and, for
- * `cmsis_action` and `flash`, the CMSIS Solution extension or pyOCD) and
- * answers with one text for the agent.
+ * `cmsis_action`, `cmsis_query` and `flash`, the CMSIS Solution extension or
+ * pyOCD) and answers with one text for the agent.
  *
  * `DebugMCPServer` calls a handler directly in the window that serves MCP;
  * a worker window's `ControlServer` calls it by op name with `args ?? {}`.
@@ -42,6 +42,9 @@
  * Steps, continue and pause wait only for the DAP `stopped` event the
  * executor arms before the request goes out; VS Code's stack-item events,
  * which also fire when the item is cleared on resume, never end a wait.
+ * After the stop, and after the stop event of `wait_for_stop`, the state is
+ * read once VS Code has selected a frame for it, at most 2 s later; when it
+ * has not, the answer says so in one line instead of showing an empty state.
  *
  * Breakpoints live in VS Code's breakpoint model on every adapter, and the
  * answer reports how the adapter bound them. On the CMSIS Debugger a
@@ -52,18 +55,22 @@
  */
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { DebugState, formatBreakpointModifiers, StackFrame } from './debugState';
-import type { BreakpointBinding, GdbLogpoint, IDebuggingExecutor } from './debuggingExecutor';
+import type { AdoptedBreakpoint, BreakpointBinding, FrameFocusWatch, GdbLogpoint, IDebuggingExecutor, StartFocusWatch } from './debuggingExecutor';
 import { PickerCancelled, type IDebugConfigurationManager } from './utils/debugConfigurationManager';
 import { logger } from './utils/logger';
 import { isSensitiveName, REDACTION_NOTICE, redactExpressionResult, redactVariableValue } from './utils/secretRedaction';
-import { getStoppedReason, resolveActiveSession, StopWaitResult } from './utils/sessionStateTracker';
+import { FRAME_FOCUS_WAIT_MS, getStoppedReason, resolveActiveSession, StopWaitResult } from './utils/sessionStateTracker';
 import { HardwareTimeoutError } from './utils/timeout';
 import { currentCallContext } from './core/callContext';
 import { decodeFault } from './core/faultDecoder';
-import { classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, StackedFrame } from './core/faultTriage';
+import { bankedStackRegisters, classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, StackedFrame } from './core/faultTriage';
 import { CMSIS_DEBUGGER_TYPE, passthroughCommand } from './core/gdbDialect';
-import { isLockedUp, LOCKUP_NOTE } from './core/probeWedge';
+import { findGdbPortHolder, gdbPortRefusal, type PortClaimingWindow } from './core/gdbPortGuard';
+import type { GdbPortReservations, GdbPortReservation } from './core/gdbPortReservations';
+import { configurationGdbPort, folderLaunchConfiguration, isFvpSession } from './core/gdbServerPorts';
+import { coreVerdict, isLockedUp, LOCKUP_NOTE, silentCoreText, wedgeHint } from './core/probeWedge';
 import { renderResetOutcome } from './core/resetAssist';
 import { lookupAddress, matchName, parseAddress, renderAddressHit, renderPeripheral, renderPeripheralList, renderRegister } from './core/svdLookup';
 import { programmingNote, serialSessionLine } from './core/serialText';
@@ -77,12 +84,19 @@ import {
     DEFAULT_NAME_LISTING_LIMIT,
     expandFields,
     formatMissingNames,
+    noteSkippedScopes,
     renderFields,
     renderScopes,
     renderVariableNames,
     selectVariables,
 } from './core/variableView';
-import { actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, runCmsisAction } from './handler/cmsisAction';
+import {
+    actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, type LiveSessionWait, runCmsisAction, stateAfterStart,
+} from './handler/cmsisAction';
+import { CATALOG_LOADING, CatalogQuery, queryCatalog } from './core/catalogQuery';
+import { acquireSolutionApi, type ApiPackId } from './core/solutionApi';
+import { packInstalledIn } from './core/packInstall';
+import { webExampleOrigins } from './core/webCatalog';
 import { CapOutcome, failureText, fenced, fenceLimitMs, FenceOptions, LONG_LIMIT_CAP_MS } from './handler/fence';
 import { FLASH_FENCE_ADVICE, flashTimeoutMs, runFlash } from './handler/flashTool';
 import {
@@ -92,9 +106,15 @@ import {
 import { HandlerHost, VSCODE_HOST } from './handler/host';
 import { sessionTaskLine } from './handler/jobText';
 import { PROBLEMS_DEFAULT_LIMIT, PROBLEMS_MAX_LIMIT, renderProblemPage } from './handler/problemText';
-import { renderCallStack, renderSessionStatus, renderThreads, stoppedTargetRefusal } from './handler/sessionText';
+import {
+    FVP_KEEPS_RUNNING, FVP_NO_RECOVERY_PAUSE, FVP_PAUSE_IGNORED, FVP_STOP_UNCONFIRMED, FVP_WAIT_RAN_OUT, fvpChangeRefusal, NO_FRAME_SELECTED,
+    renderCallStack, renderSessionStatus, renderThreads, stoppedTargetRefusal,
+} from './handler/sessionText';
 import { bootstrapStatusLines, DEBUGGER_EXTENSION_ID, SOLUTION_EXTENSION_ID } from './core/bootstrapState';
-import { normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter, renderMemoryDump } from './handler/targetText';
+import {
+    addressFromValue, isAddressLiteral, isHexWord, mspFromHandlerSp, normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter,
+    renderMemoryDump, sideEffectOf,
+} from './handler/targetText';
 import { PROBLEM_SEVERITIES, PROBLEM_SOURCES, problemJournal, ProblemJournal, ProblemSeverity, ProblemSource } from './core/problemJournal';
 import { secondsText } from './core/windowHealth';
 import { syncProblemsPanel } from './windowProblems';
@@ -124,7 +144,13 @@ interface PeripheralLookup { name?: string; address?: string; filter?: string; s
 interface RegisterLookup { peripheral: string; register: string; svdFile?: string; pname?: string; timeoutMs?: number }
 interface StackRequest { threadId?: number; levels?: number; timeoutMs?: number }
 interface FrameValuesRequest { frameId: number; scope?: VariableScope; variableNames?: string[]; timeoutMs?: number }
-interface CmsisRequest { action: CmsisAction; target?: string; timeoutMs?: number; path?: string; client?: string }
+interface CmsisRequest {
+    action: CmsisAction; target?: string; timeoutMs?: number; path?: string; client?: string;
+    /** install_pack: the Vendor::Name@version to install. */
+    pack?: string;
+    /** create_solution: the board, device and draft ids from cmsis_query, and whether to run git init. */
+    board?: string; device?: string; draft?: string; git?: boolean;
+}
 interface FlashRequest { cbuildRunFile?: string; timeoutMs?: number }
 interface ProblemsRequest { sinceSeq?: number; sources?: ProblemSource[]; minSeverity?: ProblemSeverity; limit?: number }
 
@@ -167,10 +193,16 @@ export interface IDebuggingHandler {
     handleGetThreads(args?: TimeoutArg): Answer;
     handleGetFrameVariables(args: FrameValuesRequest): Answer;
     handleCmsisCommand(args: CmsisRequest): Answer;
+    handleCmsisQuery(args: CatalogQuery): Answer;
     handleFlash(args: FlashRequest): Answer;
 }
 
 // ── Fixed texts ────────────────────────────────────────────────────────────
+
+/** A read_memory address that is no number and no expression GDB can turn into one. */
+const notAnAddress = (expression: string): string => `Cannot read memory at "${expression}": it is no hex address, and GDB found no address for it.`;
+const ADDRESS_HINT = 'Pass a hex address such as 0x20000000, or an expression for one such as &buffer, an array name or a pointer; '
+    + 'for a struct, take its address with &. lookup_symbol gives a symbol\'s address from the ELF.';
 
 /** The launch.json entry name that means "synthesise a configuration for the file". */
 const SYNTHESISED_CONFIGURATION = 'Default Configuration';
@@ -181,11 +213,11 @@ const WAIT_CAP_MS = 60_000;
 const PROGRAMMING_ACTIONS: ReadonlySet<string> = new Set<CmsisAction>(['load', 'erase', 'load_and_run']);
 /** The recovery pause after a step or continue that did not stop. */
 const RECOVERY_PAUSE_MS = 5_000;
+/** How long `pause_execution` on an unresponsive session waits for its one pause to stop the target. */
+const UNRESPONSIVE_PAUSE_MS = 5_000;
 /** `wait_for_stop` without `timeoutMs`, and the margin that lets its own text beat the fence. */
 const WAIT_FOR_STOP_DEFAULT_MS = 28_500;
 const WAIT_FOR_STOP_MARGIN_MS = 1_500;
-/** Pause between a stop and reading the state, so VS Code has focused the new frame. */
-const STOP_SETTLE_MS = 300;
 /** How long a CMSIS Debugger target may take to stop before a breakpoint change or a restart. */
 const CHANGE_PAUSE_MS = 5_000;
 /** How long a new breakpoint waits for the adapter to report whether it bound (#13 proposal: 2 s). */
@@ -198,6 +230,11 @@ const PICKER_NAMES_LISTED = 10;
 const TRIAGE_REGISTERS = ['sp', 'lr', 'pc', 'xpsr', 'msp', 'psp', 'control', 'msplim', 'psplim'];
 
 const NO_ACTIVE_SESSION = 'No active debug session.';
+/** `cmsis_query`: the fence, and how much earlier the query's own deadline answers. */
+const QUERY_FENCE_MS = 60_000;
+const QUERY_MARGIN_MS = 3_000;
+/** What the fence of `cmsis_query` answers, as a `running` reply: the catalog is loading, in the words of the query's own deadline. */
+const QUERY_FENCE_ADVICE = CATALOG_LOADING.charAt(0).toUpperCase() + CATALOG_LOADING.slice(1);
 /** How to get a session: CMSIS projects start theirs through the CMSIS Solution extension (#20). */
 const START_FIRST = 'Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.';
 const NOTHING_TO_STOP = 'Nothing to stop — no debug session is active.';
@@ -221,6 +258,10 @@ const NO_EVALUATION_RESULT = 'The debug adapter returned no result for this expr
 const START_REFUSED = 'The debug session did not start. Make sure the debugger extension for this kind of file is installed.';
 const NO_BREAKPOINTS = 'The breakpoint list is empty.';
 const NOTHING_TO_CLEAR = 'Nothing to clear — no breakpoints are set.';
+/** Heads the breakpoints VS Code adopted from the debug adapter, which extensions do not see until the window reloads. */
+const ADOPTED_HEAD = 'VS Code also holds these, adopted from the debug adapter (GDB break commands, such as those in the launch configuration\'s '
+    + 'initCommands): it sends them to the next session and saves them with the workspace, but shows them to extensions only after a window '
+    + 'reload, so remove_breakpoint and clear_all_breakpoints cannot reach them; VS Code\'s Breakpoints view can.';
 const NO_SESSION_YET = '(No debug session yet — added to VS Code\'s breakpoint list; the debugger binds it when a session starts.)';
 const ADAPTER_SILENT = '⚠️ The debug adapter did not confirm the change within 2 s; list_breakpoints shows what it reports.';
 const UNBOUND_ADVICE = 'An unverified breakpoint never stops the target: the line may have no code (a declaration, a comment, code the '
@@ -229,30 +270,40 @@ const LOGPOINT_COST = 'ℹ️ On Cortex-M a logpoint is not free: the core halts
     + 'In a hot loop or an ISR this distorts timing far more than it would in a host process. '
     + 'For high-rate tracing prefer read_cycle_counter around the region, or have the firmware fill a RAM buffer you read with read_memory.';
 
-/** Appended to a successful stop: make sure the investigation reached a cause. */
-const ROOT_CAUSE_CHECK = [
-    '⚠️ **Root-cause check before you stop**',
-    '',
-    'Ask yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?',
-    '',
-    'Knowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:',
-    '- a variable that turns out null or undefined',
-    '- a function that hands back a value nobody expected',
-    '- an error raised at one particular line',
-    '- a condition that took the wrong branch',
-    '',
-    'The root cause explains *why* it went wrong, for instance:',
-    '- a variable that was initialised with the wrong value',
-    '- faulty logic inside a function',
-    '- an error path that is not handled',
-    '- a condition built on a false assumption',
-    '',
-    'What to do next (required):',
-    '1. Set breakpoints at the places worth investigating with `add_breakpoint`.',
-    '2. Trace the run from its beginning with `start_debugging`.',
-    '3. Work out why it happened, not only what happened.',
-    '4. Repeat until the root cause is identified.',
-].join('\n');
+/** The MCP sessions `stop_debugging` remembers having shown the root-cause check; the oldest is forgotten beyond this. */
+const ROOT_CAUSE_SESSIONS_KEPT = 256;
+
+/**
+ * Appended to the first successful stop of an MCP session: make sure the
+ * investigation reached a cause. `rerun` is the tool that runs the program
+ * again from its start: `cmsis_action load_and_debug` for a CMSIS Debugger
+ * session, `start_debugging` otherwise.
+ */
+function rootCauseCheck(rerun: string): string {
+    return [
+        '⚠️ **Root-cause check before you stop**',
+        '',
+        'Ask yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?',
+        '',
+        'Knowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:',
+        '- a variable that turns out null or undefined',
+        '- a function that hands back a value nobody expected',
+        '- an error raised at one particular line',
+        '- a condition that took the wrong branch',
+        '',
+        'The root cause explains *why* it went wrong, for instance:',
+        '- a variable that was initialised with the wrong value',
+        '- faulty logic inside a function',
+        '- an error path that is not handled',
+        '- a condition built on a false assumption',
+        '',
+        'What to do next (required):',
+        '1. Set breakpoints at the places worth investigating with `add_breakpoint`.',
+        `2. Trace the run from its beginning with \`${rerun}\`.`,
+        '3. Work out why it happened, not only what happened.',
+        '4. Repeat until the root cause is identified.',
+    ].join('\n');
+}
 
 /** The execution requests the stop waiter drives, with their gate phrase and failure prefix. */
 interface MotionSpec {
@@ -283,7 +334,15 @@ const CONTINUE: MotionSpec = {
 
 /** How an execution request ended, with the state read afterwards. */
 interface StopOutcome {
+    /**
+     * The state read after the stop; an empty one after a timeout or the
+     * session's end, when nothing is read: the target may still run, and a
+     * `stackTrace` to a running target waits out its whole deadline. Empty
+     * too when VS Code selected no frame for the stop (`focused` false).
+     */
     state: DebugState;
+    /** VS Code selected a frame for the stop within the focus wait; false when nothing stopped. */
+    focused: boolean;
     timedOut: boolean;
     /** How long the wait for the stop was allowed to take. */
     waitedMs: number;
@@ -292,7 +351,8 @@ interface StopOutcome {
     reason?: string | null;
 }
 
-type VariablesReply = { scopes?: DapScope[] } | undefined | null;
+/** What `getVariables` resolves: the scopes read and the names of those it left out (the CMSIS Debugger's Registers). */
+type VariablesReply = { scopes?: DapScope[]; skipped?: string[] } | undefined | null;
 type EvaluateReply = { result?: unknown; type?: string; variablesReference?: number } | undefined | null;
 type RedactCallback = (name: string, value: string) => { value: string; redacted: boolean };
 
@@ -397,6 +457,11 @@ function requestedNames(names: string[] | undefined): string[] | undefined {
     return names && names.length > 0 ? names : undefined;
 }
 
+/** The left-out scopes a reply names: those of a listing, none for a read that found every name it was given. */
+function unreadScopes(skipped: string[], names: string[] | undefined, missing: string[]): string[] {
+    return names && missing.length === 0 ? [] : skipped;
+}
+
 // ── The handler ────────────────────────────────────────────────────────────
 
 export class DebuggingHandler
@@ -413,17 +478,36 @@ export class DebuggingHandler
      * empty list having been shown.
      */
     private shownBreakpoints: string | undefined;
+    /** The MCP sessions whose `stop_debugging` showed the root-cause check, oldest first; '' for calls outside one. */
+    private readonly rootCauseShown = new Set<string>();
+    /** `VSCODE_HOST`, with the other windows' GDB ports when the window's registry was given. */
+    private readonly defaultHost: HandlerHost;
 
+    /**
+     * `portWindows` lists the other registered windows with the GDB ports
+     * they publish, read at each launch; without it only the bind test tells
+     * whether a GDB port is taken.
+     */
     constructor(
         executor: IDebuggingExecutor,
         configurations: IDebugConfigurationManager,
         timeoutSeconds: number,
         journal: ProblemJournal = problemJournal(),
+        portWindows?: () => readonly PortClaimingWindow[],
+        portReservations?: GdbPortReservations,
     ) {
         this.dbg = executor;
         this.launchConfigs = configurations;
         this.configuredSeconds = timeoutSeconds;
         this.journal = journal;
+        this.defaultHost = {
+            ...VSCODE_HOST,
+            ...(portWindows ? { gdbPortHolder: (port: number) => findGdbPortHolder(port, portWindows()) } : {}),
+            ...(portReservations ? {
+                reserveGdbPort: (port: number, start: Parameters<HandlerHost['reserveGdbPort']>[1], group?: string) =>
+                    portReservations.acquire(port, start, vscode.workspace.name ?? '(no workspace)', group),
+            } : {}),
+        };
     }
 
     /** VS Code logpoint message → GDB `dprintf` format and arguments. */
@@ -433,7 +517,7 @@ export class DebuggingHandler
 
     /** Clock, focused frame, task events and workspace; unit tests override this. */
     protected host(): HandlerHost {
-        return VSCODE_HOST;
+        return this.defaultHost;
     }
 
     // ── shared machinery ──
@@ -455,7 +539,7 @@ export class DebuggingHandler
             return;
         }
         const status = await this.dbg.getSessionStatus();
-        throw stoppedTargetRefusal(operation, status.state, this.sessionRequest());
+        throw stoppedTargetRefusal(operation, status.state, this.sessionRequest(), this.onFvp());
     }
 
     /** `configuration.request` of the session this window acts on, `launch` or `attach`: who owns the GDB server (#3). */
@@ -464,10 +548,38 @@ export class DebuggingHandler
         return typeof request === 'string' ? request : undefined;
     }
 
+    /** True when the session this window acts on runs on an Arm FVP, whose GDB server ignores the pause request. */
+    private onFvp(): boolean {
+        return isFvpSession(this.dbg.getActiveSession()?.configuration);
+    }
+
     /** DHCSR.S_LOCKUP from one DHCSR read (#3); false when DHCSR cannot be read. */
     private async lockedUp(timeoutMs: number | undefined): Promise<boolean> {
         const port = await this.dbg.probeDebugPort(timeoutMs);
         return port.readable && isLockedUp(port.dhcsr);
+    }
+
+    /**
+     * When a register of `registers` could not be read on the CMSIS Debugger
+     * (`<unavailable>`, or GDB gave no text), one DHCSR read (#3): if the core
+     * does not answer either, why the reads fail and how to reconnect;
+     * otherwise nothing. A target that lost power leaves GDB's copies of the
+     * registers it read at the last stop, so some values can still show.
+     */
+    private async silentCoreNote(registers: Record<string, string>, timeoutMs: number | undefined): Promise<string | undefined> {
+        const values = Object.values(registers);
+        const unread = values.filter((value) => value === '<unavailable>' || value.trim() === '').length;
+        if (unread === 0 || this.dbg.getActiveSession()?.type !== CMSIS_DEBUGGER_TYPE) {
+            return undefined;
+        }
+        const port = await this.dbg.probeDebugPort(timeoutMs);
+        if (port.readable || coreVerdict(port) !== 'silent') {
+            return undefined;
+        }
+        const every = unread === values.length;
+        const lead = every ? 'Every register is unavailable' : `${unread} of ${values.length} registers are unavailable`;
+        const copies = every ? '' : ' The values shown may be GDB\'s copies from before it lost the target.';
+        return `${lead}: ${silentCoreText(port)}${copies}\n${wedgeHint(this.sessionRequest())}\n`;
     }
 
     /** The full state, remembering which breakpoint list it showed. */
@@ -488,45 +600,86 @@ export class DebuggingHandler
         return this.host().workspaceFolders().map((folder) => folder.uri.fsPath);
     }
 
-    /** Poll until the session is running or stopped. The last backoff can overshoot the budget (KB10). */
-    private async awaitLiveSession(overrideMs?: number): Promise<boolean> {
+    /**
+     * Poll until the session is running or stopped. With `endWhenGone`, a
+     * session that showed up during the wait and is gone again ends it: it
+     * ended before it came up. Without, the wait goes on until the budget is
+     * spent, as for a start or a restart. The last backoff can overshoot the
+     * budget (KB10).
+     */
+    private async awaitLiveSession(overrideMs?: number, endWhenGone = false): Promise<LiveSessionWait> {
         const clock = this.host();
         const budgetMs = waitLimitMs(this.configuredSeconds, overrideMs);
         const began = clock.now();
+        let seen = false;
         for (let attempt = 0; clock.now() - began < budgetMs; attempt++) {
             const { state } = await this.dbg.getSessionStatus();
             if (state === 'running' || state === 'stopped') {
                 logger.info(`Debug session is live (state: ${state})`);
-                return true;
+                return 'live';
+            }
+            if (state !== 'no-session') {
+                seen = true;
+            } else if (seen && endWhenGone) {
+                logger.info('The debug session ended before it came up');
+                return 'gone';
             }
             logger.debug(`Waiting for the debug session to come up (attempt ${attempt}, state: ${state})`);
             await clock.sleep(Math.min(1000 * 2 ** attempt, 10_000) + Math.random() * 200);
         }
-        return false;
+        return 'timeout';
     }
 
     /**
-     * Arm the executor's stop waiter, send the request, then wait for the
-     * armed DAP event (or its timeout, or the session's end). A request that
-     * throws leaves the armed waiter to run out on its own.
+     * After a stop event: wait for VS Code to select a frame for the stop,
+     * at most `FRAME_FOCUS_WAIT_MS` and never past the call's own limit
+     * (`limitMs` from `began`). The state, registers and variables are read
+     * through VS Code's focused frame, which it selects only after it has
+     * fetched the threads and the stack of the stop: over a probe with an
+     * RTOS that comes after a read that starts with the stop event.
+     */
+    private frameSelected(focus: FrameFocusWatch, began: number, limitMs: number): Promise<boolean> {
+        const leftMs = limitMs - (this.host().now() - began);
+        return focus.selected(Math.max(Math.min(FRAME_FOCUS_WAIT_MS, leftMs), 0));
+    }
+
+    /**
+     * Arm the executor's stop waiter and the focus watch, send the request,
+     * then wait for the armed DAP event (or its timeout, or the session's
+     * end). A request that throws leaves the armed waiter to run out on its
+     * own. The state is read only after a stop: a target whose wait ran out
+     * may still run, and reading its stack would hold the call for the
+     * adapter's request deadline. After the stop it is read once VS Code
+     * has selected a frame for it, and not at all when it has not within
+     * the focus wait.
      */
     private async sendAndAwaitStop(send: () => Promise<void>, overrideMs: number | undefined): Promise<StopOutcome> {
+        const began = this.host().now();
         const limitMs = waitLimitMs(this.configuredSeconds, overrideMs);
         const armed: Promise<StopWaitResult> = this.dbg.armStopWaiter(limitMs);
         armed.catch(() => undefined);
+        // Before the request: a frame VS Code still holds from before it is not the stop's.
+        const focus = this.dbg.watchFrameFocus();
         await send();
         const result = await armed;
         if (result.kind === 'timeout') {
             logger.debug(`No DAP stopped event within ${limitMs} ms`);
         }
-        let state: DebugState;
-        try {
-            state = await this.dbg.getCurrentDebugState(3);
-        } catch {
-            state = new DebugState();
+        let state = new DebugState();
+        let focused = false;
+        if (result.kind === 'stopped') {
+            focused = await this.frameSelected(focus, began, limitMs);
+            if (focused) {
+                try {
+                    state = await this.dbg.getCurrentDebugState(3);
+                } catch {
+                    // The empty state stands.
+                }
+            }
         }
         return {
             state,
+            focused,
             timedOut: result.kind === 'timeout',
             waitedMs: limitMs,
             ended: result.kind === 'ended',
@@ -538,7 +691,8 @@ export class DebuggingHandler
      * A step or continue: gate, request, wait. When nothing stopped, a step
      * pauses the target to say where it went and answers with status
      * `timeout`; a continue leaves the target running and answers with
-     * status `running`. A session that ends during the wait is a failure,
+     * status `running` (on an Arm FVP without the advice to pause, which the
+     * model ignores). A session that ends during the wait is a failure,
      * `NO_SESSION`, as for pause and `wait_for_stop`; the gate's own refusal
      * passes unwrapped.
      */
@@ -555,29 +709,36 @@ export class DebuggingHandler
                 + 'the target may have run to completion, crashed, or lost its connection.', SESSION_ENDED_HINT);
         }
         if (outcome.timedOut && spec.onWaitOut === 'keep-running') {
+            const next = this.onFvp()
+                ? FVP_KEEPS_RUNNING
+                : 'Call wait_for_stop to wait for the next stop (a breakpoint, a fault), or pause_execution to halt it and see where it is.';
             return {
                 text: `Target is running: no stop within ${durationText(outcome.waitedMs)} of '${spec.tool}', and it keeps running; `
-                    + 'nothing was paused. Call wait_for_stop to wait for the next stop (a breakpoint, a fault), '
-                    + 'or pause_execution to halt it and see where it is.',
+                    + `nothing was paused. ${next}`,
                 status: 'running',
             };
         }
-        const body = outcome.reason
-            ? `Target stopped (reason: ${outcome.reason}).\n\n${this.compactState(outcome.state)}`
-            : this.compactState(outcome.state);
         if (outcome.timedOut) {
-            const overrun = `\n\n⚠️ '${spec.tool}' did not complete within ${durationText(outcome.waitedMs)}. `
+            const overrun = `⚠️ '${spec.tool}' did not complete within ${durationText(outcome.waitedMs)}. `
                 + 'The target is still running or the probe is unresponsive. '
                 + 'Consider adding a breakpoint, checking the hardware connection, or calling check_target_connection.';
-            return { text: body + overrun + await this.locateRunawayTarget(spec.tool), status: 'timeout' };
+            // An Arm FVP ignores the pause the recovery would send: only a breakpoint stops the model.
+            const recovery = this.onFvp() ? `\n${FVP_NO_RECOVERY_PAUSE}` : await this.locateRunawayTarget(spec.tool);
+            return { text: overrun + recovery, status: 'timeout' };
         }
-        return body;
+        const stopped = outcome.reason ? `Target stopped (reason: ${outcome.reason}).` : 'Target stopped.';
+        if (!outcome.focused) {
+            return `${stopped} ${NO_FRAME_SELECTED}`;
+        }
+        return outcome.reason ? `${stopped}\n\n${this.compactState(outcome.state)}` : this.compactState(outcome.state);
     }
 
     /**
-     * After a step that did not stop: pause the target and say
-     * where it is. Reads the recovered state directly, so the breakpoint
-     * diff of the compact state is not touched. Never throws.
+     * After a step that did not stop: pause the target and say where it is,
+     * ending with the compact state read after that stop. Nothing is read
+     * while the target may still run. When VS Code selected no frame for
+     * the pause, the PC/LR line stays only when the registers have values,
+     * and no state is shown. Never throws.
      */
     private async locateRunawayTarget(tool: string): Promise<string> {
         const report = ['\n🩹 Recovery attempt: target did not stop on its own — issuing DAP pause to find out where it is.'];
@@ -607,13 +768,19 @@ export class DebuggingHandler
             const lrPart = lr !== undefined ? `, LR = ${lr}` : '';
             const framePart = where.frameName ? ` in ${where.frameName}` : '';
             const filePart = where.fileName ? ` at ${where.fileName}:${where.currentLine}` : '';
-            report.push(`Paused successfully. PC = ${pc}${lrPart}${framePart}${filePart}.`);
+            report.push(paused.focused || registerNumber(pc) !== undefined
+                ? `Paused successfully. PC = ${pc}${lrPart}${framePart}${filePart}.`
+                : `Paused successfully. ${NO_FRAME_SELECTED}`);
             if (where.currentLineContent) {
                 report.push(`  Current line: ${where.currentLineContent}`);
             }
             report.push('The breakpoint you expected was not hit — the firmware did not reach it. '
                 + 'Verify the breakpoint location, check the call stack with get_call_stack, '
                 + 'or step from here with step_over / continue_execution.');
+            // No empty state block: VS Code selected no frame, or the stack read after it failed.
+            if (paused.focused && (where.frameName !== null || where.stackTrace.length > 0)) {
+                report.push('', this.compactState(where));
+            }
         }
         return report.join('\n');
     }
@@ -633,8 +800,8 @@ export class DebuggingHandler
         return frameId;
     }
 
-    /** Scopes of the focused frame; a missing `global` scope widens to `all`. */
-    private async focusedScopes(scope: VariableScope, timeoutMs: number | undefined): Promise<{ scopes: DapScope[]; widened: boolean }> {
+    /** Scopes of the focused frame and those left unread; a missing `global` scope widens to `all`. */
+    private async focusedScopes(scope: VariableScope, timeoutMs: number | undefined): Promise<{ scopes: DapScope[]; widened: boolean; skipped: string[] }> {
         const frameId = this.focusedFrame();
         const hasScopes = (reply: VariablesReply): reply is { scopes: DapScope[] } =>
             Array.isArray(reply?.scopes) && reply.scopes.length > 0;
@@ -644,7 +811,7 @@ export class DebuggingHandler
             reply = await this.dbg.getVariables(frameId, 'all', timeoutMs);
             widened = true;
         }
-        return { scopes: hasScopes(reply) ? reply.scopes : [], widened };
+        return { scopes: hasScopes(reply) ? reply.scopes : [], widened, skipped: reply?.skipped ?? [] };
     }
 
     private variableRedactor(): RedactCallback | undefined {
@@ -662,41 +829,107 @@ export class DebuggingHandler
                 'Use stop_debugging first, or call restart_debugging to reuse the current session, '
                     + 'or proceed directly with inspection tools (get_variables_values, read_memory, …).');
         }
+        let reservation: GdbPortReservation | undefined;
         try {
             const chosen = args.configurationName ?? await this.chooseConfiguration(args);
             if (chosen && chosen !== SYNTHESISED_CONFIGURATION) {
+                reservation = await this.reserveGdbPortForStart(args.workingDirectory, chosen);
+                const began = this.host().now();
+                // Before the start: a frame VS Code holds from an earlier session is not this one's.
+                const focus = this.dbg.watchStartFocus();
                 if (!(await this.dbg.startDebuggingByName(args.workingDirectory, chosen))) {
                     throw new Error(`Failed to start debug session with configuration '${chosen}'.`);
                 }
                 await this.requireLiveStart();
-                const started = await this.dbg.getCurrentDebugState(3);
+                reservation?.adopt();
+                const shown = await this.startedState(focus, began);
                 const subject = args.fileFullPath ? args.fileFullPath : chosen;
-                return `Debug session started successfully for: ${subject} using configuration '${chosen}'. `
-                    + `Current state: ${this.fullState(started)}`;
+                return `Debug session started successfully for: ${subject} using configuration '${chosen}'. ${shown}`;
             }
             if (!args.fileFullPath) {
                 throw new ToolError('INVALID_ARGUMENT', 'fileFullPath is required when no named configuration is provided.');
             }
             const launch = await this.launchConfigs.getDebugConfig(args.workingDirectory, args.fileFullPath, chosen, args.testName);
+            const began = this.host().now();
+            const focus = this.dbg.watchStartFocus();
             if (!(await this.dbg.startDebugging(args.workingDirectory, launch))) {
                 throw new Error(START_REFUSED);
             }
             await this.requireLiveStart();
-            const started = await this.dbg.getCurrentDebugState(3);
+            const shown = await this.startedState(focus, began);
             const using = chosen ? ` using configuration '${chosen}'` : ' with default configuration';
             const forTest = args.testName ? ` for test '${args.testName}'` : '';
-            return `Debug session started successfully for: ${args.fileFullPath}${using}${forTest}. `
-                + `Current state: ${this.fullState(started)}`;
+            return `Debug session started successfully for: ${args.fileFullPath}${using}${forTest}. ${shown}`;
         } catch (caught) {
+            if (!this.dbg.hasDebugSession()) {
+                reservation?.release();
+            }
             // What the adapter and the GDB server said rides along as problem records (#48).
             throw wrapError('Error starting debug session', caught);
         }
     }
 
+    /**
+     * Before the launch of a CMSIS Debugger configuration whose GDB server
+     * has a fixed local port: refuse it while another window's session or
+     * CMSIS Run task, or another program, holds that port, since GDB would
+     * connect to that server instead (`src/core/gdbPortGuard.ts`). The
+     * configuration is read from the launch.json of the workspace folder that
+     * holds `workingDirectory`, else of `workingDirectory` itself; an attach
+     * connects to a server that is meant to listen, and is left alone.
+     */
+    private async reserveGdbPortForStart(workingDirectory: string, name: string): Promise<GdbPortReservation | undefined> {
+        const configuration = await this.launchConfiguration(workingDirectory, name);
+        const listens = (configuration as { request?: unknown } | undefined)?.request === 'launch' ? configurationGdbPort(configuration) : undefined;
+        if (!listens) {
+            return;
+        }
+        const start = { what: 'launch' as const, subject: 'Debug session not started', configuration: name, server: listens.server };
+        const reservation = this.host().reserveGdbPort(listens.port, start);
+        try {
+            const holder = await this.host().gdbPortHolder(listens.port);
+            if (holder) {
+                logger.info(`start_debugging: '${name}' not started, its GDB port ${listens.port} is held by ${holder.kind === 'window' ? `window pid ${holder.pid} (${holder.claim.label})` : 'another program'}`);
+                throw gdbPortRefusal(start, listens.port, holder);
+            }
+            return reservation;
+        } catch (caught) {
+            reservation.release();
+            throw caught;
+        }
+    }
+
+    /** The launch.json entry `name` that `start_debugging` would start, from the folders that may hold it, deepest first. */
+    private async launchConfiguration(workingDirectory: string, name: string): Promise<unknown> {
+        const wanted = path.resolve(workingDirectory);
+        const holders = this.host().workspaceFolders().map((folder) => folder.uri.fsPath)
+            .filter((folder) => wanted === path.resolve(folder) || wanted.startsWith(`${path.resolve(folder)}${path.sep}`))
+            .sort((a, b) => b.length - a.length);
+        for (const folder of [...holders, wanted]) {
+            const found = await folderLaunchConfiguration(folder, name);
+            if (found !== undefined) {
+                return found;
+            }
+        }
+        return undefined;
+    }
+
     private async requireLiveStart(): Promise<void> {
-        if (!(await this.awaitLiveSession())) {
+        if ((await this.awaitLiveSession()) !== 'live') {
             throw new Error('Debug session started but failed to become active within timeout period');
         }
+    }
+
+    /**
+     * `Current state: …` of a session that came up during this call, read
+     * through the frame VS Code selected for its stop; `NO_FRAME_SELECTED`
+     * when VS Code selected none within the focus wait, which never runs past
+     * the call's own limit from `began`.
+     */
+    private async startedState(focus: StartFocusWatch, began: number): Promise<string> {
+        const leftMs = waitLimitMs(this.configuredSeconds, undefined) - (this.host().now() - began);
+        const state = await stateAfterStart(this.dbg, focus, leftMs);
+        return state === undefined ? NO_FRAME_SELECTED : `Current state: ${this.fullState(state)}`;
     }
 
     /**
@@ -727,22 +960,47 @@ export class DebuggingHandler
      * Stop the session and wait at most 10 s for VS Code to end it (#14). A
      * stop that does not settle in time, while the session is still listed,
      * answers with status `timeout`; one whose session is gone by then is a
-     * success.
+     * success. On an Arm FVP that timeout says to stop once more: the
+     * adapter waits for a halt the model never reports.
      */
     async handleStopDebugging(): Answer {
         try {
             if (!this.dbg.hasDebugSession()) {
                 return NOTHING_TO_STOP;
             }
+            // Asked before the stop: once it is sent the session may already be on its way out.
+            const fvp = this.onFvp();
+            const cmsis = this.dbg.getActiveSession()?.type === CMSIS_DEBUGGER_TYPE;
             const settled = await this.settlesWithin(this.dbg.stopDebugging(), STOP_WAIT_MS);
             if (!settled && this.dbg.hasDebugSession()) {
                 logger.info(`stop_debugging: the session did not end within ${STOP_WAIT_MS} ms`);
-                return { text: STOP_UNCONFIRMED, status: 'timeout' };
+                return { text: fvp ? FVP_STOP_UNCONFIRMED : STOP_UNCONFIRMED, status: 'timeout' };
             }
-            return `${SESSION_STOPPED}\n\n${ROOT_CAUSE_CHECK}`;
+            return this.withRootCauseCheck(SESSION_STOPPED, cmsis);
         } catch (caught) {
             throw wrapError('Could not stop the debug session', caught);
         }
+    }
+
+    /**
+     * The stop's reply with the root-cause check, the first time in an MCP
+     * session (calls outside one count as one session). It reminds the agent
+     * to explain the bug before the investigation closes; on every stop it
+     * is noise, since a stop also ends a session in the middle of an
+     * investigation — to start it again, to switch configurations, twice on
+     * an Arm FVP.
+     */
+    private withRootCauseCheck(reply: string, cmsis: boolean): string {
+        const session = currentCallContext()?.sessionId ?? '';
+        if (this.rootCauseShown.has(session)) {
+            return reply;
+        }
+        if (this.rootCauseShown.size >= ROOT_CAUSE_SESSIONS_KEPT) {
+            const [oldest] = this.rootCauseShown;
+            this.rootCauseShown.delete(oldest);
+        }
+        this.rootCauseShown.add(session);
+        return `${reply}\n\n${rootCauseCheck(cmsis ? 'cmsis_action load_and_debug' : 'start_debugging')}`;
     }
 
     /**
@@ -782,7 +1040,7 @@ export class DebuggingHandler
             }
             const logpoints = this.dbg.gdbLogpoints().length;
             const how = await this.dbg.restart();
-            if (!(await this.awaitLiveSession())) {
+            if ((await this.awaitLiveSession()) !== 'live') {
                 throw new Error(`Debug session restart issued but target did not become ready within ${durationText(waitLimitMs(this.configuredSeconds, undefined))}. `
                     + 'The probe or target may be unresponsive.');
             }
@@ -841,7 +1099,8 @@ export class DebuggingHandler
     async handleGetSessionStatus(): Answer {
         const status = await this.dbg.getSessionStatus();
         const gaps = status.state === 'no-session' ? this.bootstrapLines() : [];
-        return renderSessionStatus(status, this.dbg.getDiagnostics(), [...gaps, ...this.cmsisTaskLines(), ...this.serialLines()]);
+        return renderSessionStatus(status, this.dbg.getDiagnostics(), [...gaps, ...this.cmsisTaskLines(), ...this.serialLines()], this.sessionRequest(),
+            this.onFvp());
     }
 
     /**
@@ -969,7 +1228,11 @@ export class DebuggingHandler
         return this.move(CONTINUE, args);
     }
 
-    /** Not fenced and not wrapped: refusals and errors keep their own text and code. */
+    /**
+     * Not fenced and not wrapped: refusals and errors keep their own text and
+     * code. A pause an Arm FVP ignored says that only a breakpoint stops it.
+     * An unresponsive session gets one short pause before it is refused.
+     */
     async handlePause(args?: TimeoutArg): Answer {
         if (!this.dbg.hasDebugSession()) {
             throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION, START_FIRST);
@@ -979,7 +1242,7 @@ export class DebuggingHandler
             case 'stopped':
                 return `Target is already stopped (reason: ${status.detail ?? 'n/a'}). No pause needed — proceed with inspection tools.`;
             case 'unresponsive':
-                throw new ToolError('TIMEOUT', 'Cannot pause: probe/GDB server is unresponsive.', 'Call check_target_connection or restart_debugging.');
+                return this.pauseUnresponsive();
             case 'no-session':
                 throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION);
             case 'initializing':
@@ -990,7 +1253,7 @@ export class DebuggingHandler
         const outcome = await this.sendAndAwaitStop(() => this.dbg.pause(args?.timeoutMs), args?.timeoutMs);
         if (outcome.timedOut) {
             return {
-                text: 'Pause requested but target did not stop within the timeout. '
+                text: this.onFvp() ? FVP_PAUSE_IGNORED : 'Pause requested but target did not stop within the timeout. '
                     + 'Probe may be unresponsive — call get_session_status / check_target_connection.',
                 status: 'timeout',
             };
@@ -998,7 +1261,30 @@ export class DebuggingHandler
         if (outcome.ended) {
             throw new ToolError('NO_SESSION', 'Pause requested but the debug session ended. The target may have crashed.');
         }
-        return `Target paused. ${this.compactState(outcome.state)}`;
+        return outcome.focused ? `Target paused. ${this.compactState(outcome.state)}` : `Target paused. ${NO_FRAME_SELECTED}`;
+    }
+
+    /**
+     * The one call an unresponsive session does not refuse: a pause may be
+     * what brings an adapter back that is busy with a running target, so it
+     * is sent once, with a short deadline. When it does not stop the target,
+     * the answer is the gate's `PROBE_WEDGED` with the way to reconnect that
+     * keeps the fault state (#3).
+     */
+    private async pauseUnresponsive(): Promise<ToolText> {
+        let outcome: StopOutcome | undefined;
+        try {
+            outcome = await this.sendAndAwaitStop(() => this.dbg.pause(UNRESPONSIVE_PAUSE_MS), UNRESPONSIVE_PAUSE_MS);
+        } catch (caught) {
+            logger.info(`pause_execution on an unresponsive session failed: ${failureText(caught)}`);
+        }
+        if (outcome?.ended) {
+            throw new ToolError('NO_SESSION', 'Pause requested but the debug session ended. The target may have crashed.');
+        }
+        if (!outcome || outcome.timedOut) {
+            throw stoppedTargetRefusal('pause', 'unresponsive', this.sessionRequest());
+        }
+        return outcome.focused ? `Target paused. ${this.compactState(outcome.state)}` : `Target paused. ${NO_FRAME_SELECTED}`;
     }
 
     handleWaitForStop(args?: TimeoutArg): Answer {
@@ -1006,13 +1292,16 @@ export class DebuggingHandler
             if (!this.dbg.hasDebugSession()) {
                 throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION, `wait_for_stop waits on a live session. ${START_FIRST}`);
             }
+            const began = this.host().now();
             const budgetMs = args?.timeoutMs
                 ? Math.max(args.timeoutMs - WAIT_FOR_STOP_MARGIN_MS, 100)
                 : WAIT_FOR_STOP_DEFAULT_MS;
+            // Before the wait: a frame VS Code still holds from before the stop is not the stop's.
+            const focus = this.dbg.watchFrameFocus();
             const outcome = await this.dbg.waitForStop(budgetMs);
             if (outcome.kind === 'timeout') {
                 return {
-                    text: 'Target did not stop within the timeout — it is still running (or the probe is unresponsive). '
+                    text: this.onFvp() ? FVP_WAIT_RAN_OUT : 'Target did not stop within the timeout — it is still running (or the probe is unresponsive). '
                         + 'Options: call wait_for_stop again with a larger timeoutMs, pause_execution to see where it is, '
                         + 'or check_target_connection if other calls are also stalling.',
                     status: 'timeout',
@@ -1024,14 +1313,17 @@ export class DebuggingHandler
                         + 'or the session was stopped in the UI.',
                     'Call get_session_status to confirm.');
             }
-            await this.host().sleep(STOP_SETTLE_MS);
-            const state = await this.dbg.getCurrentDebugState(3);
             const reason = outcome.reason ?? 'unknown';
             if (outcome.kind === 'already-stopped') {
-                return `Target was already stopped (reason: ${reason}).\n\n${this.compactState(state)}`;
+                // The stop came before this call, so VS Code has had its time to select a frame.
+                return `Target was already stopped (reason: ${reason}).\n\n${this.compactState(await this.dbg.getCurrentDebugState(3))}`;
             }
             const thread = outcome.threadId !== null && outcome.threadId !== undefined ? `, threadId=${outcome.threadId}` : '';
-            return `Target stopped (reason: ${reason}${thread}).\n\n${this.compactState(state)}`;
+            const stopped = `Target stopped (reason: ${reason}${thread}).`;
+            if (!(await this.frameSelected(focus, began, budgetMs))) {
+                return `${stopped} ${NO_FRAME_SELECTED}`;
+            }
+            return `${stopped}\n\n${this.compactState(await this.dbg.getCurrentDebugState(3))}`;
         });
     }
 
@@ -1043,6 +1335,8 @@ export class DebuggingHandler
      * first and resumed afterwards, also when the change fails; the answer
      * then says so (#13). Without a session the change only touches VS
      * Code's model, and other adapters take changes while the target runs.
+     * An Arm FVP that did not stop for the change is `TARGET_RUNNING`, with
+     * the way to set it on a halted model.
      */
     private async withTargetHalted<T>(operation: string, change: (context: ChangeContext) => Promise<T>): Promise<HaltedChange<T>> {
         if (!this.dbg.hasDebugSession()) {
@@ -1057,8 +1351,7 @@ export class DebuggingHandler
             throw new Refusal('NO_SESSION', `Cannot ${operation} yet: the session is still initializing.`, 'Wait briefly and retry.');
         }
         if (status.state === 'unresponsive') {
-            throw new Refusal('TIMEOUT', `Cannot ${operation}: the probe/GDB server is unresponsive.`,
-                'Call check_target_connection, then restart_debugging if needed.');
+            throw stoppedTargetRefusal(operation, status.state, this.sessionRequest());
         }
         const began = this.host().now();
         const paused = await this.pauseAndWait(CHANGE_PAUSE_MS);
@@ -1066,6 +1359,9 @@ export class DebuggingHandler
             throw new Refusal('NO_SESSION', `Cannot ${operation}: the debug session ended while the target was being paused for it.`);
         }
         if (paused.kind === 'timeout') {
+            if (this.onFvp()) {
+                throw fvpChangeRefusal(operation);
+            }
             throw new Refusal('TIMEOUT', `Cannot ${operation}: the target did not stop within ${CHANGE_PAUSE_MS / 1000} s of the pause request.`,
                 'Call check_target_connection; if the probe answers, pause_execution and retry.');
         }
@@ -1321,13 +1617,29 @@ export class DebuggingHandler
         }
     }
 
+    /**
+     * The breakpoints VS Code adopted from the debug adapter that `all`, its
+     * list as extensions see it, lacks: those only its Breakpoints view can
+     * remove before the window reloads.
+     */
+    private unlistedAdopted(all: ReadonlyArray<vscode.Breakpoint>): AdoptedBreakpoint[] {
+        const listed = new Set(all.map((bp) => sourceLocationOf(bp)).filter((location) => location !== undefined)
+            .map((location) => `${location.uri.toString()}:${location.range.start.line + 1}`));
+        return this.dbg.adoptedBreakpoints().filter((bp) => !listed.has(`${vscode.Uri.file(bp.path).toString()}:${bp.line}`));
+    }
+
     /** Clears VS Code's model and deletes the session's GDB logpoints by number — never with a bare `delete`. */
     async handleClearAllBreakpoints(): Answer {
         try {
             const count = this.dbg.getBreakpoints().length;
             const logpoints = this.dbg.gdbLogpoints();
+            const adopted = this.unlistedAdopted(this.dbg.getBreakpoints()).length;
+            const kept = adopted > 0
+                ? `${adopted} breakpoint(s) VS Code adopted from the debug adapter stay: only its Breakpoints view removes them before a window `
+                    + 'reload (list_breakpoints names them).'
+                : '';
             if (count === 0 && logpoints.length === 0) {
-                return NOTHING_TO_CLEAR;
+                return adopted > 0 ? `Nothing this tool can clear. ${kept}` : NOTHING_TO_CLEAR;
             }
             const change = await this.withTargetHalted('clear the breakpoints', async () => {
                 const notes: string[] = [];
@@ -1339,7 +1651,7 @@ export class DebuggingHandler
                 }
                 return notes;
             });
-            return [`Cleared ${count} breakpoint(s) from the model.`, ...change.result, change.pausedNote].filter((line) => line.length > 0).join('\n');
+            return [`Cleared ${count} breakpoint(s) from the model.`, ...change.result, change.pausedNote, kept].filter((line) => line.length > 0).join('\n');
         } catch (caught) {
             throw wrapError('Could not clear the breakpoints', caught);
         }
@@ -1347,16 +1659,19 @@ export class DebuggingHandler
 
     /**
      * VS Code's breakpoints with the adapter's binding of each while a
-     * session runs, then the CMSIS Debugger logpoints with GDB's hit count.
-     * Kinds other than source and function breakpoints print nothing but
-     * keep their number (KB15).
+     * session runs, then the CMSIS Debugger logpoints with GDB's hit count,
+     * then the breakpoints VS Code adopted from the debug adapter, which
+     * extensions do not see until the window reloads. Kinds other than
+     * source and function breakpoints print nothing but keep their number
+     * (KB15).
      */
     async handleListBreakpoints(): Answer {
         try {
             const all = this.dbg.getBreakpoints();
             const logpoints = this.dbg.gdbLogpoints();
+            const adopted = this.unlistedAdopted(all);
             if (all.length === 0 && logpoints.length === 0) {
-                return NO_BREAKPOINTS;
+                return adopted.length === 0 ? NO_BREAKPOINTS : adoptedListing(adopted);
             }
             const live = this.dbg.hasDebugSession();
             let listing = 'Breakpoints that are set:\n';
@@ -1391,7 +1706,7 @@ export class DebuggingHandler
                 });
                 this.dbg.forgetGdbLogpoints(gone);
             }
-            return listing;
+            return adopted.length === 0 ? listing : `${listing}${adoptedListing(adopted)}`;
         } catch (caught) {
             throw wrapError('Could not list the breakpoints', caught);
         }
@@ -1414,37 +1729,38 @@ export class DebuggingHandler
     handleListVariableNames(args: ScopeRequest): Answer {
         return this.fence('list_variable_names', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('list variable names');
-            const { scopes } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
+            const { scopes, skipped } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
             if (scopes.length === 0) {
-                return NO_SCOPES_HERE;
+                return noteSkippedScopes(NO_SCOPES_HERE, skipped);
             }
-            return renderVariableNames(scopes, { maxVariables: DEFAULT_NAME_LISTING_LIMIT });
+            return noteSkippedScopes(renderVariableNames(scopes, { maxVariables: DEFAULT_NAME_LISTING_LIMIT }), skipped);
         });
     }
 
     handleGetVariables(args: ValuesRequest): Answer {
         return this.fence('get_variables_values', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read variables');
-            const { scopes, widened } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
+            const { scopes, widened, skipped } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
             if (scopes.length === 0) {
-                return NO_SCOPES_HERE;
+                return noteSkippedScopes(NO_SCOPES_HERE, skipped);
             }
             const names = requestedNames(args.variableNames);
             const picked = narrowScopes(scopes, names);
+            const unread = unreadScopes(skipped, names, picked.missing);
             const note = widened
                 ? 'Note: No dedicated "Global" scope is available from this debug adapter. Showing all available scopes instead. '
                     + 'Use evaluate_expression to inspect specific global variables by name.\n\n'
                 : '';
             if (names && picked.scopes.length === 0) {
-                return `${note}None of the requested variables are in scope: ${names.join(', ')}.\n`
-                    + 'Call list_variable_names to see what is available here.';
+                return noteSkippedScopes(`${note}None of the requested variables are in scope: ${names.join(', ')}.\n`
+                    + 'Call list_variable_names to see what is available here.', unread);
             }
             const listing = renderScopes(picked.scopes, {
                 header: 'Variables',
                 redact: this.variableRedactor(),
                 limits: names ? undefined : DEFAULT_LISTING_LIMITS,
             });
-            return note + listing + formatMissingNames(picked.missing);
+            return noteSkippedScopes(note + listing + formatMissingNames(picked.missing), unread);
         });
     }
 
@@ -1455,19 +1771,20 @@ export class DebuggingHandler
             const reply: VariablesReply = await this.dbg.getVariablesForFrame(args.frameId, args.scope ?? 'all', args.timeoutMs);
             const scopes = reply?.scopes;
             if (!Array.isArray(scopes) || scopes.length === 0) {
-                return `No variable scopes available for frameId=${args.frameId}.`;
+                return noteSkippedScopes(`No variable scopes available for frameId=${args.frameId}.`, reply?.skipped ?? []);
             }
             const names = requestedNames(args.variableNames);
             const picked = narrowScopes(scopes, names);
+            const unread = unreadScopes(reply?.skipped ?? [], names, picked.missing);
             if (names && picked.scopes.length === 0) {
-                return `None of the requested variables are in scope at frameId=${args.frameId}: ${names.join(', ')}.`;
+                return noteSkippedScopes(`None of the requested variables are in scope at frameId=${args.frameId}: ${names.join(', ')}.`, unread);
             }
             const listing = renderScopes(picked.scopes, {
                 header: `Variables for frameId=${args.frameId}`,
                 redact: this.variableRedactor(),
                 limits: names ? undefined : DEFAULT_LISTING_LIMITS,
             });
-            return listing + formatMissingNames(picked.missing);
+            return noteSkippedScopes(listing + formatMissingNames(picked.missing), unread);
         });
     }
 
@@ -1476,7 +1793,7 @@ export class DebuggingHandler
      * CMSIS Debugger in its `>` spelling, with the text GDB printed as the
      * result) and is never redacted: it is a raw target read like read_memory.
      * A result with children (a struct, an array, a pointer) lists them under
-     * `Fields:`, `depth` levels deep (one by default), capped and redacted
+     * `Fields:`, `depth` levels deep (one by default, none for 0), capped and redacted
      * like a variable listing.
      */
     handleEvaluateExpression(args: ExpressionRequest): Answer {
@@ -1499,13 +1816,14 @@ export class DebuggingHandler
             }
             let redacted = shown.redacted;
             const reference = typeof reply.variablesReference === 'number' ? reply.variablesReference : 0;
+            const depth = args.depth ?? 1;
             // A struct, array or pointer: its fields below, never those of a withheld or credential-named value.
-            if (reference > 0 && !passthrough && !shown.redacted && !(redacting && isSensitiveName(args.expression.trim()))) {
+            if (reference > 0 && depth > 0 && !passthrough && !shown.redacted && !(redacting && isSensitiveName(args.expression.trim()))) {
                 const fields = await expandFields({
                     children: (ref) => this.dbg.getVariableChildren(ref, args.timeoutMs),
                     redact: redacting ? (name, value) => redactVariableValue(name, value) : undefined,
                     withholdChildren: redacting ? isSensitiveName : undefined,
-                }, reference, args.depth ?? 1);
+                }, reference, depth);
                 if (fields.shown.length > 0 || fields.hidden > 0 || fields.error !== undefined) {
                     text += `\n${renderFields(fields)}`;
                 }
@@ -1524,15 +1842,54 @@ export class DebuggingHandler
         return this.fence('read_memory', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read memory');
             const format = args.format ?? 'hex';
-            const bytes = await this.dbg.readMemory(args.address, args.length, args.timeoutMs);
-            return renderMemoryDump(args.address, args.length, bytes, format);
+            const given = args.address.trim();
+            const address = isAddressLiteral(given) ? given : await this.addressOfExpression(given, args.timeoutMs);
+            const read = await this.dbg.readMemory(address, args.length, args.timeoutMs);
+            return renderMemoryDump(address, args.length, read, format, address === given ? undefined : given);
         });
     }
 
+    /**
+     * The address an expression such as `&buffer`, `buffer` (an array) or
+     * `ptr->data` stands for, as GDB evaluates `(unsigned long)(expression)`
+     * in the focused frame. Agents pass such expressions to read_memory
+     * (Kimi Code did), and GDB reads its value where a number is expected.
+     * One that would change the target — an assignment, `++`, a call — is
+     * refused before GDB sees it: read_memory is a read (K05).
+     */
+    private async addressOfExpression(expression: string, overrideMs?: number): Promise<string> {
+        const effect = sideEffectOf(expression);
+        if (effect !== undefined) {
+            throw new ToolError('INVALID_ARGUMENT', `Cannot read memory at "${expression}": it has ${effect}, and evaluating it would change the target.`,
+                ADDRESS_HINT);
+        }
+        const frameId = this.focusedFrame();
+        // `face` is a symbol to GDB; the agent may have meant 0xface.
+        const hint = isHexWord(expression) ? `For the address 0x${expression}, write the 0x. ${ADDRESS_HINT}` : ADDRESS_HINT;
+        let value: unknown;
+        try {
+            const reply: EvaluateReply = await this.dbg.evaluateExpression(`(unsigned long)(${expression})`, frameId, overrideMs);
+            value = reply?.result;
+        } catch (caught) {
+            if (caught instanceof HardwareTimeoutError || (caught instanceof ToolError && caught.code === 'TIMEOUT')) {
+                throw caught;
+            }
+            throw new ToolError('INVALID_ARGUMENT', `${notAnAddress(expression)} GDB: ${failureText(caught)}`, hint);
+        }
+        const address = addressFromValue(value);
+        if (address === undefined) {
+            throw new ToolError('INVALID_ARGUMENT', `${notAnAddress(expression)} GDB gave "${String(value)}".`, hint);
+        }
+        return address;
+    }
+
+    /** The register table; when no register could be read on the CMSIS Debugger, also whether the core answers (#3). */
     handleReadCoreRegisters(args?: TimeoutArg): Answer {
         return this.fence('read_core_registers', args?.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read core registers');
-            return renderCoreRegisters(await this.dbg.readCoreRegisters(args?.timeoutMs));
+            const registers = await this.dbg.readCoreRegisters(args?.timeoutMs);
+            const silence = await this.silentCoreNote(registers, args?.timeoutMs);
+            return `${renderCoreRegisters(registers)}${silence ?? ''}`;
         });
     }
 
@@ -1584,13 +1941,27 @@ export class DebuggingHandler
                 lr: registerNumber(raw.lr),
                 pc: registerNumber(raw.pc),
                 xpsr: registerNumber(raw.xpsr),
-                msp: registerNumber(raw.msp),
+                // A GDB server without msp (the Arm FVP's): in Handler mode the SP is the MSP.
+                msp: registerNumber(raw.msp) ?? mspFromHandlerSp(raw),
                 psp: registerNumber(raw.psp),
                 msplim: registerNumber(raw.msplim),
                 psplim: registerNumber(raw.psplim),
             };
 
-            const selection = selectExceptionFrame(regs.lr, regs.msp, regs.psp);
+            // A frame on the other Security state's stack needs that state's banked registers, read only then.
+            const bankedNames = bankedStackRegisters(regs.lr);
+            const banked: Record<string, number | undefined> = {};
+            if (bankedNames.length > 0) {
+                try {
+                    const values = await this.dbg.readCoreRegisters(timeoutMs, bankedNames);
+                    for (const name of bankedNames) {
+                        banked[name] = registerNumber(values[name]);
+                    }
+                } catch {
+                    // Left undefined: the frame note says which register is missing.
+                }
+            }
+            const selection = selectExceptionFrame(regs.lr, regs.msp, regs.psp, banked);
             let frame: StackedFrame | null = null;
             let frameNote: string | undefined;
             if (!selection.isExcReturn) {
@@ -1598,10 +1969,10 @@ export class DebuggingHandler
                     ? 'LR unavailable — read_core_registers, then read_memory at PSP/MSP'
                     : 'LR is not an EXC_RETURN value — halted deeper inside the handler; get_call_stack has the frames';
             } else if (selection.sp === null) {
-                frameNote = `${selection.source} unavailable — read_core_registers`;
+                frameNote = selection.note ?? `${selection.source} unavailable — read_core_registers`;
             } else {
                 try {
-                    frame = parseStackedFrame(await this.dbg.readExceptionFrame(selection.sp, timeoutMs));
+                    frame = parseStackedFrame(await this.dbg.readExceptionFrame(selection.sp, timeoutMs, selection.stateOffset), selection.stateOffset);
                     if (!frame) {
                         frameNote = `short read at ${selection.source}`;
                     }
@@ -1623,7 +1994,8 @@ export class DebuggingHandler
             let device: SvdDevice | null = null;
             let svdNote: string | undefined;
             try {
-                device = (await loadSvdForLookup({})).device;
+                // The SVD of the session the registers were read from.
+                device = (await loadSvdForLookup({ session: this.dbg.getActiveSession() })).device;
                 if (!device) {
                     svdNote = 'no SVD found — addresses are classified by the Cortex-M system map only; '
                         + 'pass svdFile to lookup_peripheral to resolve them';
@@ -1650,7 +2022,7 @@ export class DebuggingHandler
 
     handleLookupPeripheral(args?: PeripheralLookup): Answer {
         return this.fence('lookup_peripheral', args?.timeoutMs, 'error', async () => {
-            const loaded = await loadSvdForLookup({ svdFile: args?.svdFile, pname: args?.pname });
+            const loaded = await loadSvdForLookup({ svdFile: args?.svdFile, pname: args?.pname, session: this.dbg.getActiveSession() });
             if (!loaded.device) {
                 return missingSvdText(loaded.tried);
             }
@@ -1677,7 +2049,7 @@ export class DebuggingHandler
 
     handleLookupRegister(args: RegisterLookup): Answer {
         return this.fence('lookup_register', args.timeoutMs, 'error', async () => {
-            const loaded = await loadSvdForLookup({ svdFile: args.svdFile, pname: args.pname });
+            const loaded = await loadSvdForLookup({ svdFile: args.svdFile, pname: args.pname, session: this.dbg.getActiveSession() });
             if (!loaded.device) {
                 return missingSvdText(loaded.tried);
             }
@@ -1727,10 +2099,39 @@ export class DebuggingHandler
         const run = (): Answer => this.fence('cmsis_action', waitMs, 'reply', () => runCmsisAction({
             executor: this.dbg,
             host: this.host(),
-            awaitLiveSession: (overrideMs) => this.awaitLiveSession(overrideMs),
+            awaitLiveSession: (overrideMs) => this.awaitLiveSession(overrideMs, true),
             renderFullState: (state) => this.fullState(state),
-        }, args.action, args.target, waitMs, args.path, args.client), { capMs: LONG_LIMIT_CAP_MS, advice: CMSIS_FENCE_ADVICE });
+            journal: this.journal,
+        }, args.action, args.target, waitMs, args.path, args.client, args.pack, args), { capMs: LONG_LIMIT_CAP_MS, advice: CMSIS_FENCE_ADVICE });
         return PROGRAMMING_ACTIONS.has(args.action) ? this.noteHeldSerialPort(run) : run();
+    }
+
+    /**
+     * `cmsis_query` (#41, the catalog slice): boards, devices and the examples
+     * of a board or device from CMSIS Solution's API version 2. Needs no
+     * solution and no session; activates the CMSIS Solution extension when it
+     * is installed but inactive. The extension's first list request fills its
+     * catalog from Arm's web service, which can outlast the call: the query's
+     * own deadline, and the fence behind it, answer `running` then, like a
+     * long build, and the same call again finds the catalog.
+     */
+    handleCmsisQuery(args: CatalogQuery): Answer {
+        return this.fence('cmsis_query', QUERY_FENCE_MS, 'reply', async () => {
+            const host = this.host();
+            const deadline = host.now() + QUERY_FENCE_MS - QUERY_MARGIN_MS;
+            const api = await acquireSolutionApi(host.solutionExtension(), `cmsis_query {what:'${args.what}'}`, host);
+            return queryCatalog(api, args, host, deadline, (board, ms) => webExampleOrigins(host.webCatalogFetch, board, ms, host),
+                (pack) => this.packInstalled(pack));
+        }, { advice: QUERY_FENCE_ADVICE, capStatus: 'running' });
+    }
+
+    /** Whether any version of a pack is installed in the pack root CMSIS Solution uses; undefined when that cannot be told. */
+    private async packInstalled(pack: ApiPackId): Promise<boolean | undefined> {
+        try {
+            return packInstalledIn(await this.host().packInstall().packRoot(), pack.vendor, pack.name);
+        } catch {
+            return undefined;
+        }
     }
 
     /** `flash`; it notes a serial port this window holds (#49). */
@@ -1739,6 +2140,11 @@ export class DebuggingHandler
         return this.noteHeldSerialPort(() => this.fence('flash', waitMs, 'reply', () => runFlash(this.dbg, this.host(), args, waitMs),
             { capMs: LONG_LIMIT_CAP_MS, advice: FLASH_FENCE_ADVICE }));
     }
+}
+
+/** The breakpoints VS Code adopted from the debug adapter, under their head, one per line. */
+function adoptedListing(adopted: readonly AdoptedBreakpoint[]): string {
+    return `${ADOPTED_HEAD}\n${adopted.map((bp) => `  ${lastSegment(bp.path)}:${bp.line} (announced by '${bp.sessionName}')`).join('\n')}\n`;
 }
 
 /** `Did you mean: A, B?` after a failed name lookup, or nothing. */

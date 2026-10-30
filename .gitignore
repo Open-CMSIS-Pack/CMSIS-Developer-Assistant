@@ -18,15 +18,36 @@ test/eval/.work/
 test/eval/reports/
 
 # cbuild output inside the evaluation fixture: built locally, never committed
-test/eval/fixtures/corstone-blinky/.cmsis/
 test/eval/fixtures/corstone-blinky/build/
-test/eval/fixtures/corstone-blinky/**/RTE/
+test/eval/fixtures/corstone-blinky/tmp/
+test/eval/fixtures/corstone-blinky/out/
+test/eval/fixtures/corstone-blinky/**/.clangd
+# Of RTE/ only what csolution writes at every convert stays out: RTE_Components.h of each
+# context (RTE/_<build>_<target>/), the memory regions header and the linker script template.
+# The component configuration files under RTE/<Cclass>/ and their .base@<version> copies are
+# part of the project: without them a clean checkout fails with "not found; use --update-rte".
+test/eval/fixtures/corstone-blinky/**/RTE/_*/
+test/eval/fixtures/corstone-blinky/**/RTE/**/regions_*.h
+test/eval/fixtures/corstone-blinky/**/RTE/**/*.ld.src
+# Of .cmsis/ the debug configuration (dbgconf, with its base copy) is part of the project;
+# the tools environment CMSIS Solution records per machine is not.
+test/eval/fixtures/corstone-blinky/.cmsis/*
+!test/eval/fixtures/corstone-blinky/.cmsis/*.dbgconf
+!test/eval/fixtures/corstone-blinky/.cmsis/*.dbgconf.base@*
 test/eval/fixtures/corstone-blinky/*.cbuild-idx.yml
 test/eval/fixtures/corstone-blinky/*.cbuild-pack.yml
 test/eval/fixtures/corstone-blinky/**/*.cbuild.yml
 test/eval/fixtures/corstone-blinky/**/*.cbuild-run.yml
 # ...except the one an overlay plants on purpose (scenario flash-image-missing)
 !test/eval/fixtures/corstone-blinky/overlays/**/*.cbuild-run.yml
+# The fixture's FVP set-up is part of it: the model shim, its Docker image and the
+# launch configuration with the readiness fixes. Kept against a global **/.vscode ignore;
+# what CMSIS Solution writes there per machine (cmsis.json, settings.json, tasks.json) stays out.
+!test/eval/fixtures/corstone-blinky/.vscode/
+test/eval/fixtures/corstone-blinky/.vscode/*
+!test/eval/fixtures/corstone-blinky/.vscode/fvp.sh
+!test/eval/fixtures/corstone-blinky/.vscode/fvp.Dockerfile
+!test/eval/fixtures/corstone-blinky/.vscode/launch.json
 
 # Python bytecode left by the generators in scripts/core-svd/
 __pycache__/
@@ -39,3 +60,6 @@ __pycache__/
 # Credentials and operating-system clutter
 *.env
 .DS_Store
+
+# The core knowledge index: built by the knowledge-base repository, pinned by resources/knowledge/core.lock.json, fetched by `npm run knowledge:fetch`.
+resources/knowledge/*.db

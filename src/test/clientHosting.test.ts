@@ -15,7 +15,7 @@
  */
 
 import * as assert from 'assert';
-import { survivesWindowReload } from '../core/clientHosting';
+import { dropsInstructions, offersNoGetStream, survivesWindowReload, wantsTextOnly } from '../core/clientHosting';
 
 suite('Which MCP clients survive a window reload', () => {
     test('the CLIs do: Claude Code, Codex, Gemini CLI, by name prefix, case-insensitively', () => {
@@ -27,6 +27,44 @@ suite('Which MCP clients survive a window reload', () => {
     test('a chat inside the window does not, nor an unknown or absent client', () => {
         for (const name of ['Visual Studio Code', 'Visual Studio Code - Insiders', 'Cline', 'Roo Code', 'cursor-vscode', 'windsurf', '', undefined]) {
             assert.strictEqual(survivesWindowReload(name), false, String(name));
+        }
+    });
+});
+
+suite('Which MCP clients get tool results as text alone', () => {
+    test('a name on the list, exactly and in the case it is sent', () => {
+        const list = ['some-sdk-client'];
+        assert.strictEqual(wantsTextOnly('some-sdk-client', list), true);
+        for (const name of ['Some-SDK-Client', ' some-sdk-client', 'some-sdk-client-2', 'some-sdk', '', undefined]) {
+            assert.strictEqual(wantsTextOnly(name, list), false, String(name));
+        }
+    });
+
+    test('the shipped list: Kimi Code, which appends structuredContent to the text', () => {
+        assert.strictEqual(wantsTextOnly('kimi-code'), true);
+        assert.strictEqual(wantsTextOnly('claude-code'), false);
+    });
+
+    test('an absent or empty name never does, whatever the shipped list holds', () => {
+        assert.strictEqual(wantsTextOnly(undefined), false);
+        assert.strictEqual(wantsTextOnly(''), false);
+    });
+});
+
+suite('Which MCP clients never show the model the server instructions', () => {
+    test('Kimi Code, by its exact name; an absent or other name does not count', () => {
+        assert.strictEqual(dropsInstructions('kimi-code'), true);
+        for (const name of ['Kimi-Code', 'claude-code', 'Visual Studio Code', '', undefined]) {
+            assert.strictEqual(dropsInstructions(name), false, String(name));
+        }
+    });
+});
+
+suite('Which MCP clients are offered no GET stream', () => {
+    test('Kimi Code, by its exact name; every other client keeps its stream', () => {
+        assert.strictEqual(offersNoGetStream('kimi-code'), true);
+        for (const name of ['Kimi-Code', 'claude-code', 'codex-mcp-client', 'Visual Studio Code', '', undefined]) {
+            assert.strictEqual(offersNoGetStream(name), false, String(name));
         }
     });
 });

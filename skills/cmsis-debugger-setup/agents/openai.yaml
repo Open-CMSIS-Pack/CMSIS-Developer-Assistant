@@ -1,4 +1,0 @@
-interface:
-  display_name: "CMSIS: Debugger Setup"
-  short_description: "Wire the debug adapter of a csolution target and verify Load & Debug"
-  default_prompt: "Use $cmsis-debugger-setup to set the debug adapter of my CMSIS target and verify that Load & Debug works."

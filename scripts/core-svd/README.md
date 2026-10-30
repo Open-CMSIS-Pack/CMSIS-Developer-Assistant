@@ -59,10 +59,13 @@ configured), the MTB (device-specific base address), and the Ethos-U NPU
 python3 scripts/core-svd/gen_core_svd.py            # newest ARM.CMSIS pack → assets/svd/core
 python3 scripts/core-svd/gen_core_svd.py --cmsis ~/.cache/arm/packs/ARM/CMSIS/6.3.0 --verbose
 svdconv assets/svd/core/Cortex_M33.svd --strict     # CMSIS-Toolbox validator
-npm run test:unit                                   # src/test/coreSvd.test.ts loads every shipped file
+npm run compile
+./node_modules/.bin/mocha --ui tdd \
+  --require test/transport/vscode-stub.js out/src/test/coreSvd.test.js
 ```
 
-`npm run svd:core` runs the generator. All files pass `svdconv --strict`
+The Python command above runs the generator; there is no npm alias.
+The committed files were validated with `svdconv --strict`
 with no errors; the only warning (M332, "peripheral has only one register")
 is for `SCnSCB` on Cortex-M1 and SC000, whose CMSIS header defines just
 `ACTLR` there — pass `-x M332` to silence it. Device names are C identifiers

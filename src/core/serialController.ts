@@ -36,6 +36,14 @@
  * as a warning for an unplug and for the user's release and as info
  * otherwise, without any payload. So is a port that cannot be opened;
  * another program holding it is `PORT_HELD`.
+ *
+ * Opens and closes take turns, one at a time: an open that arrives while
+ * another is in flight waits for it and then finds its port, as it would
+ * afterwards. Several MCP sessions share the window's port; without the
+ * turns a second `serial_open` would open a second device beside the first,
+ * which nothing closes. A rule's background close and the end of an MCP
+ * session take their turns too: the next open finds the device let go, and
+ * the end of a session finds the port that session was still opening.
  */
 
 import { SerialPort } from 'serialport';
@@ -67,6 +75,8 @@ export interface HoldTerms {
 
 export interface SerialPortInfo {
     path: string;
+    /** Windows' name of the port, such as "USB Serial Device (COM7)"; serialport has none elsewhere. */
+    friendlyName?: string;
     manufacturer?: string;
     serialNumber?: string;
     pnpId?: string;
@@ -153,10 +163,10 @@ const MAX_BUFFER_BYTES = 1 * 1024 * 1024;
  * binding's "Port is locked".
  */
 const HELD_ELSEWHERE = /Access denied|\bEBUSY\b|resource busy|Cannot lock port|Port is locked/i;
-/** The next step when another program holds the port. */
-export const PORT_HELD_HINT = 'Another program holds it (the Serial Monitor, a terminal): close it there, '
-    + 'or read the Serial Monitor\'s session with serial_subscribe_monitor.';
-const OPEN_FAILED_HINT = 'serial_list_ports lists the ports; if another program holds this one, close it or use serial_subscribe_monitor.';
+/** The next step when another program holds the port; no Serial Monitor API passes on what it receives. */
+export const PORT_HELD_HINT = 'Another program holds it (the Serial Monitor, a terminal): ask the user to close the port there; '
+    + 'serial_open_monitor shows the Serial Monitor.';
+const OPEN_FAILED_HINT = 'serial_list_ports lists the ports; if another program holds this one, ask the user to close it there.';
 const GONE_HINT = 'Reopen it with serial_open once the adapter is back; the bytes received before stay readable.';
 
 /** How each release is journaled: an unplug and the user's release are warnings, a rule doing its job is info. */
@@ -177,6 +187,12 @@ function isDisconnect(err: Error | null | undefined): boolean {
 /** True when an open failed because another program holds the port. */
 export function isHeldElsewhere(message: string): boolean {
     return HELD_ELSEWHERE.test(message);
+}
+
+/** The friendly name serialport's list gives a port on Windows; its `PortInfo` type leaves the field out. */
+function friendlyNameOf(port: object): string | undefined {
+    const name: unknown = Reflect.get(port, 'friendlyName');
+    return typeof name === 'string' && name !== '' ? name : undefined;
 }
 
 /** `10:42:07`: local wall-clock time, as the user reads it next to the board. */
@@ -222,6 +238,8 @@ export class SerialController {
     private capturing = false;
     /** Counts the successful opens: which port a caller opened, when it wants to close only that one. */
     private generation = 0;
+    /** End of the queue of opens and closes. It never rejects, so a failed open does not block the next. */
+    private portQueue: Promise<unknown> = Promise.resolve();
     private readonly listeners = new Set<() => void>();
     private readonly createPort: (options: PortOptions) => OwnedPort;
     private readonly clock: () => Date;
@@ -239,6 +257,7 @@ export class SerialController {
         const ports = await SerialPort.list();
         return ports.map(p => ({
             path: p.path,
+            friendlyName: friendlyNameOf(p),
             manufacturer: p.manufacturer,
             serialNumber: p.serialNumber,
             pnpId: p.pnpId,
@@ -289,13 +308,20 @@ export class SerialController {
     }
 
     /**
-     * Open the owned port under `terms`. A port already open is `PORT_HELD`,
-     * and so is a port another program holds; other failures pass as they are.
-     * Resolves with the port's generation, for `holds()` and `close()`.
+     * Open the owned port under `terms`, once the open or close in flight has
+     * ended. A port already open is `PORT_HELD` (worded by `refusal()` when
+     * given), and so is a port another program holds; other failures pass as
+     * they are. Resolves with the port's generation, for `holds()` and
+     * `close()`.
      */
-    async open(opts: SerialOpenOptions, terms: HoldTerms = {}): Promise<number> {
+    open(opts: SerialOpenOptions, terms: HoldTerms = {}, refusal?: () => Error): Promise<number> {
+        return this.inTurn(() => this.openPort(opts, terms, refusal));
+    }
+
+    /** `open()` in its turn. */
+    private async openPort(opts: SerialOpenOptions, terms: HoldTerms, refusal: (() => Error) | undefined): Promise<number> {
         if (this.isOpen()) {
-            throw new ToolError('PORT_HELD',
+            throw refusal?.() ?? new ToolError('PORT_HELD',
                 `A serial port is already open on '${this.currentPath}'. Close it first with serial_close.`);
         }
         const baudRate = opts.baudRate ?? 115200;
@@ -317,6 +343,8 @@ export class SerialController {
 
                 p.open((err) => {
                     if (err) { reject(err); return; }
+                    // The port before, if it is still closing by itself, goes now with its lease, whose idle timer would release this one.
+                    this.forgetPort();
                     this.port = p;
                     this.openedAt = this.clock();
                     this.currentPath = opts.path;
@@ -352,9 +380,19 @@ export class SerialController {
         return this.isOpen() && this.generation === generation;
     }
 
-    /** Close the held port; with `generation`, only when it is still that port. */
-    async close(generation?: number): Promise<void> {
-        if (!this.port || (generation !== undefined && generation !== this.generation)) { return; }
+    /**
+     * Close the held port, once the open or close in flight has ended; with
+     * `generation`, only when it is still that port. Resolves with true when a
+     * port was open.
+     */
+    close(generation?: number): Promise<boolean> {
+        return this.inTurn(() => this.closePort(generation));
+    }
+
+    /** `close()` in its turn. */
+    private async closePort(generation: number | undefined): Promise<boolean> {
+        if (!this.port || (generation !== undefined && generation !== this.generation)) { return false; }
+        const wasOpen = this.isOpen();
         const p = this.port;
         // Forgotten before the close, not after: the port's own 'close' event,
         // which comes first, then finds nothing to release. Also when closing
@@ -365,6 +403,7 @@ export class SerialController {
         await new Promise<void>((resolve, reject) => {
             p.close((err) => err ? reject(err) : resolve());
         });
+        return wasOpen;
     }
 
     /** A serial call used the port now: the idle time starts again (#49). */
@@ -377,9 +416,13 @@ export class SerialController {
         return this.lease ? this.lease.during(work) : work();
     }
 
-    /** The MCP session `sessionId` ended: release the port it opened unless its rule is `manual`; the path released, if any. */
-    sessionEnded(sessionId: string): string | undefined {
-        return this.lease?.endsWithSession(sessionId) ? this.releaseByRule('owner-gone') : undefined;
+    /**
+     * The MCP session `sessionId` ended: release the port it opened unless its
+     * rule is `manual`; the path released, if any. It takes its turn after the
+     * open or close in flight, so a port the session was still opening goes too.
+     */
+    sessionEnded(sessionId: string): Promise<string | undefined> {
+        return this.inTurn(async () => this.lease?.endsWithSession(sessionId) ? this.releaseByRule('owner-gone') : undefined);
     }
 
     /** A debug session in this window ended: release a port opened with `releaseOn: 'debug-session-end'`. */
@@ -445,6 +488,17 @@ export class SerialController {
         return n;
     }
 
+    /**
+     * Runs `work` once the open or close before it has ended, so one runs at
+     * a time and each finds what the one before left. A `work` that fails
+     * lets the next one run.
+     */
+    private inTurn<T>(work: () => Promise<T>): Promise<T> {
+        const turn = this.portQueue.then(work);
+        this.portQueue = turn.catch(() => undefined);
+        return turn;
+    }
+
     private forgetPort(): void {
         this.lease?.end();
         this.lease = undefined;
@@ -479,11 +533,15 @@ export class SerialController {
         }
         const idleSeconds = reason === 'idle' && this.lease ? this.lease.idleMs / 1000 : undefined;
         this.release(path, reason, undefined, idleSeconds);
-        p.close((err) => {
-            if (err) {
-                logger.debug(`Closing serial port '${path}' after its release failed: ${err.message}`);
-            }
-        });
+        // In the background, but in turn: the next open waits until the device is let go.
+        void this.inTurn(() => new Promise<void>((resolve) => {
+            p.close((err) => {
+                if (err) {
+                    logger.debug(`Closing serial port '${path}' after its release failed: ${err.message}`);
+                }
+                resolve();
+            });
+        }));
         return path;
     }
 

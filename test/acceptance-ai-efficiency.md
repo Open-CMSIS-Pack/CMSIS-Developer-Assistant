@@ -1,5 +1,13 @@
 # Acceptance test — AI-efficiency work (2.3.5 → WP7)
 
+> **Historical checklist (2.3.5 → WP7).** Preserved as the original work-package
+> test design; its counts, skills, setup flow and expected replies are not
+> current acceptance criteria for 2.7.0. The result cells were not filled in.
+> Use [the transport harness](transport/README.md) and
+> [the evaluation scenarios](eval/README.md) for current checks. The
+> [28 October review](../docs/reviews/2026-10-28-knowledge-and-docs.md) will
+> agree the remaining release acceptance scope.
+
 Exercises what `npm test` cannot: the new tools against a live target, what an agent sees,
 and the evaluation runner. One pass takes ~45 min on an FVP, less on a board. Record the
 numbers you get in the *Result* column of §6 — they are the before/after for #18 and #23.
@@ -95,7 +103,7 @@ the reply names `Skipped (timeout or read failure): …` rather than failing.
 | "The firmware faults right after boot. Find out why." | First tool: the `cmsis-debug-live` skill; then `get_session_status`; on `stopped` it calls **`diagnose_fault`** (not six separate calls); no `add_logpoint`/printf edits |
 | "Which bit in RCC enables I2C1?" (no session) | `lookup_register` / `lookup_peripheral`, no attempt to start a session |
 | "What is at 0x40005400?" | `lookup_peripheral { address }` |
-| "Explain how to bring up the target" (Copilot Chat, no skills) | `get_debug_instructions { topic: "build" }` — not the whole guide |
+| "Explain how to bring up the target" (Copilot Chat, no skills) | `get_debug_instructions { topic: "cmsis-action" }` (or `target`) — not the whole guide |
 
 ## 5. Evaluation runner (10 min) — machine with Copilot CLI + FVP/board
 

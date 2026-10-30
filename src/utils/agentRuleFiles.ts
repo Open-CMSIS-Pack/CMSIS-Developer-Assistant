@@ -24,9 +24,10 @@
  * - `runRuleStep()`: offer the files, then apply what was checked or
  *   unchecked, one previewed and confirmed change at a time. A change the
  *   user does not confirm writes nothing.
- * - `refreshRecordedRules()`: at activation, update every recorded block
- *   whose text is not the current contract's, in place. It never creates a
- *   block or a file.
+ * - `refreshRecordedRules()`: at activation, offer to update every recorded
+ *   block whose text is not the current contract's, and update in place the
+ *   ones the user confirms after the preview. It never creates a block or a
+ *   file.
  *
  * The files the rules went into are recorded (`RuleRecordStore`, globalState
  * in the extension): a removal needs to know whether the file and its
@@ -258,23 +259,38 @@ export async function runRuleStep(targets: readonly RuleFileTarget[], rules: str
     return report;
 }
 
+/** The two questions the refresh asks. */
+export interface RuleRefreshUi {
+    /** Offer to review the updates of outdated blocks; true when the user wants to see them. */
+    offer(changes: readonly RuleChange[]): Promise<boolean>;
+    /** Show one update and ask for it; true only when the user confirmed. */
+    confirm(change: RuleChange): Promise<boolean>;
+}
+
 export interface RuleRefreshReport {
     updated: string[];
+    /** Outdated blocks left as they are: the offer was not taken up, or the update was declined. */
+    postponed: string[];
     /** Records dropped: the file or its block is gone, and neither is brought back. */
     forgotten: string[];
     failed: string[];
 }
 
 /**
- * At activation: bring every recorded block whose text differs from the
- * current rules up to date, in place, and log it. A recorded file that is
- * gone, or whose block the user deleted, is forgotten — never recreated. A
- * file that cannot be read or written keeps its record for the next time.
+ * At activation: offer to bring every recorded block whose text differs
+ * from the current rules up to date, then update in place each one the user
+ * confirms after its preview. The user may own the file, keep it in version
+ * control or link it from elsewhere, so a new release never rewrites it
+ * unasked; a block left outdated is offered again by the setup step. A
+ * recorded file that is gone, or whose block the user deleted, is forgotten
+ * — never recreated. A file that cannot be read or written keeps its record
+ * for the next time.
  */
-export async function refreshRecordedRules(rules: string, deps: RuleStepDeps): Promise<RuleRefreshReport> {
-    const report: RuleRefreshReport = { updated: [], forgotten: [], failed: [] };
+export async function refreshRecordedRules(rules: string, ui: RuleRefreshUi, deps: RuleStepDeps): Promise<RuleRefreshReport> {
+    const report: RuleRefreshReport = { updated: [], postponed: [], forgotten: [], failed: [] };
     const records = deps.store.read();
     const kept: RuleFileRecord[] = [];
+    const changes: RuleChange[] = [];
     for (const record of records) {
         let text: string | undefined;
         let state: RulesState;
@@ -297,17 +313,47 @@ export async function refreshRecordedRules(rules: string, deps: RuleStepDeps): P
         if (state === 'current') {
             continue;
         }
-        try {
-            await deps.fs.write(record.file, withRules(text, record.file, rules));
-            deps.log.info(`Tool rules in ${record.file} updated to the current tool contract`);
-            report.updated.push(record.file);
-        } catch (failure) {
-            deps.log.warn(`Tool rules: could not update ${record.file}`, failure);
-            report.failed.push(record.file);
-        }
+        const target: RuleFileTarget = {
+            file: record.file,
+            scope: record.scope,
+            form: record.form,
+            agents: [...record.agents],
+            preselect: false,
+        };
+        changes.push({ target, kind: 'update', before: text, after: withRules(text, record.file, rules) });
     }
     if (kept.length !== records.length) {
         await deps.store.write(kept);
+    }
+    if (changes.length === 0) {
+        return report;
+    }
+    if (!(await ui.offer(changes))) {
+        report.postponed.push(...changes.map((change) => change.target.file));
+        deps.log.info(`Tool rules: ${changes.length} rule file(s) have an older version of the rules and are left as they are; `
+            + 'Configure Agent offers the update');
+        return report;
+    }
+    for (const change of changes) {
+        if (!(await ui.confirm(change))) {
+            report.postponed.push(change.target.file);
+            deps.log.info(`Tool rules: update of ${change.target.file} declined; the file is unchanged`);
+            continue;
+        }
+        try {
+            // The offer may have waited a long time: a file deleted or emptied of its block meanwhile is not written back.
+            const now = await deps.fs.read(change.target.file);
+            if (now === undefined || rulesState(now, rules) === 'absent') {
+                report.postponed.push(change.target.file);
+                deps.log.info(`Tool rules: ${change.target.file} lost its rules block while the update was offered; it is not written`);
+                continue;
+            }
+            await applyRuleChange(change, rules, deps);
+            report.updated.push(change.target.file);
+        } catch (failure) {
+            deps.log.warn(`Tool rules: could not update ${change.target.file}`, failure);
+            report.failed.push(change.target.file);
+        }
     }
     return report;
 }

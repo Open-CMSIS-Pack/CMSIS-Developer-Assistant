@@ -355,7 +355,7 @@ suite('serial release rules (#49)', () => {
         await holdPort(windowB, '/dev/ttyACM0', 'session-B', 'idle');
         await holdPort(windowC, '/dev/cu.usbmodem1102', 'session-A', 'manual');
         await holdPort(windowD, '/dev/tty.usbmodem1102', undefined, 'idle');
-        const released = [windowA, windowB, windowC, windowD].map((serial) => serial.controller.sessionEnded('session-A'));
+        const released = await Promise.all([windowA, windowB, windowC, windowD].map((serial) => serial.controller.sessionEnded('session-A')));
         assert.deepStrictEqual(released, ['COM7', undefined, undefined, undefined]);
         assert.deepStrictEqual([windowA, windowB, windowC, windowD].map((serial) => outcomeOf(serial.controller)),
             ['owner-gone', 'open', 'open', 'open']);
@@ -375,7 +375,7 @@ suite('serial release rules (#49)', () => {
             await holdPort(serial, 'COM7', 'session-A', 'idle');
             serial.ports[0].port?.emitData(Buffer.from('secret payload'));
             await serial.controller.read({ waitMs: 2_000, consume: false });
-            release(serial);
+            await release(serial);
             assert.strictEqual(serial.journaled.length, 1, label);
             const [record] = serial.journaled;
             assert.ok(!record.message.includes('secret') && typeof record.hint === 'string', label);
@@ -473,5 +473,173 @@ suite('serial release rules (#49)', () => {
                     && failure.message === 'A serial port is already open on \'COM7\'. Close it first with serial_close.');
             assert.deepStrictEqual(serial.journaled, [], 'the agent\'s own port is no problem of the window');
         });
+    });
+});
+
+/** One device as the OS keeps it: an open fails while a port still has it, and a close ends only when the test says. */
+class LockedDevice {
+    readonly ports: DevicePort[] = [];
+
+    /** The controller's port factory: every port is one of this device. */
+    readonly createPort = (): DevicePort => {
+        const port = new DevicePort(this);
+        this.ports.push(port);
+        return port;
+    };
+
+    /** True from a port's open until its close has ended. */
+    taken(): boolean {
+        return this.ports.some((port) => port.hasDevice);
+    }
+}
+
+/** A port of a `LockedDevice`, refused as serialport's `flock` refuses a second open on POSIX. */
+class DevicePort extends ScriptedPort {
+    hasDevice = false;
+    private closing: (() => void) | undefined;
+
+    constructor(private readonly device: LockedDevice) {
+        super();
+    }
+
+    override open(callback: (err: Error | null) => void): void {
+        if (this.device.taken()) {
+            callback(new Error('Error Resource temporarily unavailable Cannot lock port'));
+            return;
+        }
+        this.hasDevice = true;
+        this.isOpen = true;
+        callback(null);
+    }
+
+    override close(callback: (err: Error | null) => void): void {
+        this.isOpen = false;
+        this.closing = () => {
+            this.hasDevice = false;
+            callback(null);
+        };
+    }
+
+    /** The driver ends the close: the device is free again. */
+    endClose(): void {
+        const closing = this.closing;
+        this.closing = undefined;
+        closing?.();
+    }
+}
+
+/** Lets every callback and promise that is due run, the mock binding's next tick included. */
+function settle(): Promise<void> {
+    return new Promise((resolve) => setImmediate(resolve));
+}
+
+/** What became of each open: `opened`, or the message it failed with. */
+function outcomes(settled: Array<PromiseSettledResult<number>>): string[] {
+    return settled.map((outcome) => outcome.status === 'fulfilled' ? 'opened' : (outcome.reason as Error).message);
+}
+
+/**
+ * Opens and closes take turns: several MCP sessions share the window's port,
+ * and one that opens while another's open is in flight gets what it would
+ * get once that open had ended, never a second device beside it. Mock ports,
+ * whose open ends on the next tick, and a device the OS locks.
+ */
+suite('serial opens and closes take turns', () => {
+    setup(() => SerialPortMock.binding.reset());
+    teardown(() => SerialPortMock.binding.reset());
+
+    test('two opens at once: the second waits for the first and is PORT_HELD, and only the first device is opened', async () => {
+        const serial = mockSerial();
+        SerialPortMock.binding.createPort('/dev/ttyACM0');
+        SerialPortMock.binding.createPort('/dev/ttyACM1');
+        const settled = await Promise.allSettled([
+            serial.controller.open({ path: '/dev/ttyACM0' }, { owner: 'session-A', rule: 'idle', idleSeconds: 300 }),
+            serial.controller.open({ path: '/dev/ttyACM1' }, { owner: 'session-B', rule: 'idle', idleSeconds: 300 }),
+        ]);
+        assert.deepStrictEqual(outcomes(settled), ['opened', 'A serial port is already open on \'/dev/ttyACM0\'. Close it first with serial_close.']);
+        assert.ok(settled[1].status === 'rejected' && settled[1].reason instanceof ToolError && settled[1].reason.code === 'PORT_HELD');
+        assert.deepStrictEqual(serial.ports.map((port) => port.path), ['/dev/ttyACM0'], 'the second device was never opened');
+        assert.strictEqual(serial.controller.hold()?.owner, 'session-A');
+        assert.strictEqual(serial.time.armed(), 1, 'one lease, one idle timer');
+        assert.deepStrictEqual(serial.journaled, []);
+        await serial.controller.close();
+        assert.ok(serial.ports.every((port) => !port.isOpen), 'serial_close leaves no port open');
+    });
+
+    test('the same port opened twice at once is PORT_HELD for this window, not "another program holds it"', async () => {
+        const serial = mockSerial();
+        SerialPortMock.binding.createPort('COM7');
+        const settled = await Promise.allSettled([serial.controller.open({ path: 'COM7' }), serial.controller.open({ path: 'COM7' })]);
+        assert.deepStrictEqual(outcomes(settled), ['opened', 'A serial port is already open on \'COM7\'. Close it first with serial_close.']);
+        assert.ok(settled[1].status === 'rejected' && settled[1].reason instanceof ToolError && settled[1].reason.hint === undefined);
+        assert.strictEqual(serial.ports.length, 1);
+        assert.deepStrictEqual(serial.journaled, [], 'the window\'s own port is no problem of the window');
+    });
+
+    test('an open that fails lets the next one have its turn', async () => {
+        const serial = mockSerial();
+        SerialPortMock.binding.createPort('COM7');
+        SerialPortMock.binding.createPort('COM8');
+        const settled = await Promise.allSettled([
+            serial.controller.open({ path: '/dev/nope' }),
+            serial.controller.open({ path: 'COM7' }),
+            serial.controller.open({ path: 'COM8' }),
+        ]);
+        assert.deepStrictEqual(outcomes(settled), [
+            'Port does not exist - please call MockBinding.createPort(\'/dev/nope\') first',
+            'opened',
+            'A serial port is already open on \'COM7\'. Close it first with serial_close.',
+        ]);
+        assert.strictEqual(serial.controller.hold()?.path, 'COM7');
+        assert.deepStrictEqual(serial.journaled.map((problem) => problem.origin), ['/dev/nope'], 'only the failed open is journaled');
+    });
+
+    test('an open after serial_close or a rule\'s release waits until the device is let go', async () => {
+        const device = new LockedDevice();
+        const time = new ManualTime();
+        const journaled: ProblemInput[] = [];
+        const controller = new SerialController({
+            createPort: device.createPort, clock: () => time.date(), timers: time, journal: (problem) => journaled.push(problem),
+        });
+        await controller.open({ path: 'COM7' });
+        const closing = controller.close();
+        const reopening = controller.open({ path: 'COM7' });
+        await settle();
+        assert.strictEqual(device.ports.length, 1, 'the open waits for the close');
+        device.ports[0].endClose();
+        assert.strictEqual(await closing, true);
+        await reopening;
+
+        assert.strictEqual(controller.releaseForUser(), 'COM7');
+        const third = controller.open({ path: 'COM7' });
+        await settle();
+        assert.strictEqual(device.ports.length, 2, 'and for the close a release runs in the background');
+        device.ports[1].endClose();
+        await third;
+        assert.deepStrictEqual(device.ports.map((port) => port.isOpen), [false, false, true]);
+        assert.deepStrictEqual(journaled.map((problem) => problem.code), [undefined], 'the release only: no PORT_HELD');
+    });
+
+    test('a port that opens while the one before is still closing by itself holds the only lease', async () => {
+        const time = new ManualTime();
+        const ports: ScriptedPort[] = [];
+        const controller = new SerialController({
+            createPort: () => {
+                const port = new ScriptedPort();
+                ports.push(port);
+                return port;
+            },
+            clock: () => time.date(), timers: time, journal: () => undefined,
+        });
+        await controller.open({ path: 'COM7' }, { owner: 'session-A', rule: 'idle', idleSeconds: 300 });
+        ports[0].isOpen = false;    // closing by itself, as a stream is between its close and its 'close' event
+        time.advanceSeconds(200);
+        await controller.open({ path: 'COM8' }, { owner: 'session-A', rule: 'idle', idleSeconds: 300 });
+        ports[0].emit('close', null);
+        assert.strictEqual(time.armed(), 1, 'the first port\'s lease went with it');
+        time.advanceSeconds(299);
+        assert.strictEqual(controller.hold()?.path, 'COM8', 'the first port\'s idle limit does not release the second');
+        time.advanceSeconds(1);
+        assert.strictEqual(controller.status().lastRelease?.reason, 'idle', 'its own does');
     });
 });

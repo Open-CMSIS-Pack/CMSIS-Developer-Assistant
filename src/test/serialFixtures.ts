@@ -16,7 +16,8 @@
 
 /**
  * What the serial suites share (#49): a clock and timers moved by hand, a
- * port that fails or answers as a test says, a Serial Monitor that has a
+ * port that fails or answers as a test says, a Serial Monitor that hands out
+ * its API through `getApi(version, context)` as 0.13 does, with or without a
  * data event, and the device paths of every platform. Only mock ports:
  * serialport's `SerialPortMock` over its `MockBinding`, never a device.
  */
@@ -141,25 +142,116 @@ export function mockSerial(time: ManualTime = new ManualTime()): MockSerial {
     return { controller, time, ports, journaled };
 }
 
-/** A Serial Monitor whose API has the data event the bridge looks for. */
+/** The extension context the tests hand the bridge, as the Serial Monitor's `getApi` reads it. */
+export const CONSUMER = { extension: { id: 'arm.cmsis-developer-assistant' } };
+
+/** One call of the Serial Monitor's `getApi`. */
+export interface ApiRequest {
+    version: unknown;
+    consumer: unknown;
+}
+
+/**
+ * The API of `ms-vscode.vscode-serial-monitor` 0.13 (`SerialMonitorImpl` in
+ * its dist/extension.js): a class instance whose methods live on the
+ * prototype, which refuses to be made without an extension context and has
+ * no data event.
+ */
+class SerialMonitorApiV0 {
+    readonly hashedConsumerExtensionIdentifier: string;
+
+    constructor(context: unknown) {
+        const extension: unknown = typeof context === 'object' && context !== null ? Reflect.get(context, 'extension') : undefined;
+        const id: unknown = typeof extension === 'object' && extension !== null ? Reflect.get(extension, 'id') : undefined;
+        if (typeof id !== 'string') {
+            throw new Error('An extension context must be passed to the Serial Monitor API.');
+        }
+        this.hashedConsumerExtensionIdentifier = `sha256(${id})`;
+    }
+
+    async listAvailablePorts(): Promise<Array<{ portName: string; friendlyName?: string; vid?: string; pid?: string }>> {
+        return [{ portName: 'COM7', friendlyName: 'USB Serial Device (COM7)', vid: '0D28', pid: '0204' }];
+    }
+
+    async startMonitoringPort(): Promise<{ stopMonitoring(): Promise<void> }> {
+        return { stopMonitoring: async () => undefined };
+    }
+
+    async stopMonitoringPort(): Promise<boolean> {
+        return false;
+    }
+
+    async startMonitoringTCPConnection(): Promise<{ stopMonitoring(): Promise<void> }> {
+        return { stopMonitoring: async () => undefined };
+    }
+
+    async stopMonitoringTCPConnection(): Promise<boolean> {
+        return false;
+    }
+
+    async clearOutput(): Promise<void> {
+        return undefined;
+    }
+
+    dispose(): void {
+        return undefined;
+    }
+}
+
+/** What the fake Serial Monitor is like. */
+export interface FakeMonitorOptions {
+    /** Its API has the data event the bridge looks for, as a later build might; true by default. */
+    dataEvent?: boolean;
+    /** It is active already; true by default. */
+    active?: boolean;
+    /** The one API version its `getApi` accepts; 0, as 0.13, by default. */
+    apiVersion?: number;
+}
+
+/** A Serial Monitor as the bridge meets it: exports that hold `getApi(version, context)`, and the API that hands out. */
 export interface FakeSerialMonitor {
     extension: BridgeExtension;
+    /** Every `getApi` call, in order. */
+    requests: ApiRequest[];
+    /** How often the extension was activated. */
+    activations(): number;
     /** Deliver bytes as the Serial Monitor would. */
     emit(data: string): void;
     /** True while the bridge listens. */
     listening(): boolean;
 }
 
-export function fakeSerialMonitor(): FakeSerialMonitor {
+/** A fake `ms-vscode.vscode-serial-monitor` as `options` describe it; by default active, with a data event. */
+export function fakeSerialMonitor(options: FakeMonitorOptions = {}): FakeSerialMonitor {
+    const { dataEvent = true, apiVersion = 0 } = options;
+    let active = options.active ?? true;
+    let activations = 0;
     let listener: ((event: unknown) => void) | undefined;
-    const api = {
-        onDidReceiveData: (callback: (event: unknown) => void) => {
+    const requests: ApiRequest[] = [];
+    /** The API of a later build: version 0 and a data event. */
+    class SerialMonitorApiWithData extends SerialMonitorApiV0 {
+        onDidReceiveData(callback: (event: unknown) => void): { dispose(): void } {
             listener = callback;
             return { dispose: () => { listener = undefined; } };
+        }
+    }
+    const exports = {
+        getApi: (version: unknown, consumer: unknown): SerialMonitorApiV0 => {
+            requests.push({ version, consumer });
+            if (version !== apiVersion) {
+                throw new Error('Invalid Serial Monitor API version.');
+            }
+            return dataEvent ? new SerialMonitorApiWithData(consumer) : new SerialMonitorApiV0(consumer);
         },
     };
     return {
-        extension: { isActive: true, exports: api, activate: async () => api },
+        extension: {
+            get isActive(): boolean { return active; },
+            get exports(): unknown { return active ? exports : undefined; },
+            activate: async () => { activations += 1; active = true; return exports; },
+        },
+        requests,
+        activations: () => activations,
         emit: (data) => listener?.({ data: Buffer.from(data, 'utf8') }),
         listening: () => listener !== undefined,
     };

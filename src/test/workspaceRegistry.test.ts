@@ -523,5 +523,14 @@ suite('Workspace registry', () => {
             const odd = { ...base, busy: [{ tool: 7 }, null, 'x'], lagMs: 'slow' } as unknown as WindowRegistration;
             assert.strictEqual(describeWindow(odd, now), 'pid=4242 | /proj/blinky');
         });
+
+        test('names the GDB ports its sessions and CMSIS Run tasks use; an entry without them, or with what it does not know, names none', () => {
+            assert.strictEqual(describeWindow({
+                ...base, hasActiveSession: true, activeConfigurationName: 'STLink@pyOCD (attach)',
+                gdbPorts: [{ port: 3333, source: 'cmsis-run', label: 'CMSIS Run', server: 'pyOCD' }, { port: 3334, source: 'session', label: 'Core1' }],
+            }), 'pid=4242 | /proj/blinky | debugging: STLink@pyOCD (attach) | GDB port 3333 (CMSIS Run), 3334 (Core1)');
+            const odd = { ...base, gdbPorts: [{ port: 'x' }, 3333] } as unknown as WindowRegistration;
+            assert.strictEqual(describeWindow(odd), 'pid=4242 | /proj/blinky');
+        });
     });
 });

@@ -32,10 +32,14 @@
  *     that (`reduceJob` in `src/core/cmsisTasks.ts`); a build binds to the
  *     execution the build command returns, when it returns one;
  *   - other CMSIS executions of the window are noted, never the result;
- *   - a build, load or erase started elsewhere while no job of that action
- *     is open is adopted, so a repeated call waits for it instead of
- *     starting a second one;
- *   - settled jobs are kept 10 minutes, in memory only.
+ *   - a build, rebuild, clean, load or erase started elsewhere while no job
+ *     of that action is open is adopted, so a repeated call waits for it
+ *     instead of starting a second one;
+ *   - `requestStop` marks the executions `cmsis_action stop_build` ends, so
+ *     that their jobs count as stopped however the task closes;
+ *   - the latest settled job of each action is kept until a newer one of
+ *     that action settles; older settled jobs are kept 10 minutes; all in
+ *     memory only.
  *
  * A build's result is completed after the job settled: an `onDidFinishJob`
  * listener hands its work to `completeWith` — the error lines of a failed
@@ -55,10 +59,12 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { attachBuildDiagnosis, vscodeDiagnosisHost } from './cmsisBuildDiagnosis';
+import { samePath } from './core/bootstrapState';
 import { problemJournal } from './core/problemJournal';
 import { attachJobJournal } from './windowProblems';
 import {
     armJob,
+    BUILD_TASK_TYPE,
     classifyByLabelLoosely,
     classifyCmsisTask,
     CmsisTaskKind,
@@ -77,6 +83,7 @@ import {
     withDiagnosis,
     WORKSPACE_SOURCE,
 } from './core/cmsisTasks';
+import { taskCommandWords } from './core/gdbServerPorts';
 import { logger } from './utils/logger';
 
 /** A task's definition: `type`, and for a build the fields cbuild's command line is made from. */
@@ -88,6 +95,8 @@ export interface ExecutionLike {
         readonly name: string;
         readonly source: string;
         readonly definition?: TaskDefinitionLike;
+        /** `vscode.Task.execution`: what a shell or process task runs (`taskCommandWords`). */
+        readonly execution?: unknown;
     };
     terminate(): void;
 }
@@ -144,7 +153,11 @@ export interface EndReport {
     alive: ExecutionLike[];
 }
 
-/** Settled jobs are kept this long for `status`, `get_session_status` and `last`. */
+/**
+ * Settled jobs other than the latest of their action are kept this long. The
+ * latest of each action stays until a newer one settles: an agent may ask
+ * `status` long after a build failed, while it waited for the user.
+ */
 export const JOB_RETENTION_MS = 10 * 60_000;
 /** The label pre-check gives `fetchTasks` this long. */
 export const LABEL_FETCH_MS = 3_000;
@@ -153,12 +166,12 @@ const END_POLL_MS = 250;
 
 /** The job id prefix of each action: `b-3` is the third job of the window, a build. */
 const ID_PREFIX: Readonly<Record<JobAction, string>> = {
-    build: 'b', load: 'l', erase: 'e', run: 'g', load_and_run: 'r', load_and_debug: 'd',
+    build: 'b', rebuild: 'rb', clean: 'c', load: 'l', erase: 'e', run: 'g', load_and_run: 'r', load_and_debug: 'd',
 };
 
 /** Executions started elsewhere that become jobs of their own, so that a repeated call attaches to them. */
 const ADOPTED: ReadonlyMap<CmsisTaskKind, JobAction> = new Map<CmsisTaskKind, JobAction>([
-    ['build', 'build'], ['load', 'load'], ['erase', 'erase'],
+    ['build', 'build'], ['rebuild', 'rebuild'], ['clean', 'clean'], ['load', 'load'], ['erase', 'erase'],
 ]);
 
 /** Kinds that hold the probe while they are alive. */
@@ -167,7 +180,7 @@ const PROBE_KINDS: ReadonlySet<CmsisTaskKind> = new Set<CmsisTaskKind>(['run', '
 /** The facts of an execution's task; undefined for anything that is not shaped like one. */
 function factsOf(execution: unknown): TaskFacts | undefined {
     const task = (execution as { task?: unknown } | undefined)?.task as
-        { name?: unknown; source?: unknown; definition?: { type?: unknown; setup?: unknown } } | undefined;
+        { name?: unknown; source?: unknown; definition?: { type?: unknown; setup?: unknown; clean?: unknown; rebuild?: unknown } } | undefined;
     if (typeof task?.name !== 'string') {
         return undefined;
     }
@@ -176,6 +189,8 @@ function factsOf(execution: unknown): TaskFacts | undefined {
         source: typeof task.source === 'string' ? task.source : '',
         type: typeof task.definition?.type === 'string' ? task.definition.type : undefined,
         setup: task.definition?.setup === true,
+        clean: task.definition?.clean === true,
+        rebuild: task.definition?.rebuild === true,
     };
 }
 
@@ -193,10 +208,15 @@ function tasksJsonStamp(folder: string): number {
     }
 }
 
-/** Is a fetched task scoped to this workspace folder, as CMSIS Solution requires of the tasks it runs? */
+/**
+ * Is a fetched task scoped to this workspace folder, as CMSIS Solution
+ * requires of the tasks it runs? Compared as `samePath` compares: on Windows
+ * VS Code's fsPath writes the drive letter in lower case (`c:\…`), a path from
+ * elsewhere may not.
+ */
 function scopedTo(scope: unknown, folder: string): boolean {
     const fsPath = (scope as { uri?: { fsPath?: unknown } } | undefined)?.uri?.fsPath;
-    return typeof fsPath === 'string' && path.resolve(fsPath) === path.resolve(folder);
+    return typeof fsPath === 'string' && samePath(fsPath, folder);
 }
 
 export class CmsisJobTracker {
@@ -217,6 +237,8 @@ export class CmsisJobTracker {
     private readonly followUps = new Map<string, Promise<void>>();
     /** The task definition of each CMSIS execution seen, by key, while a job or the live list refers to it. */
     private readonly definitions = new Map<number, TaskDefinitionLike>();
+    /** The command words of each CMSIS execution seen, by key, kept as long as its definition. */
+    private readonly commands = new Map<number, readonly string[]>();
     private readonly subscriptions: Array<{ dispose(): unknown }> = [];
     private readonly labelCache = new Map<string, { stamp: number; labels: ReadonlySet<string> }>();
     private flashes: Array<{ id: number; startedAt: number }> = [];
@@ -346,14 +368,19 @@ export class CmsisJobTracker {
         return [...this.jobs.values()].filter((job) => !isSettled(job.state)).sort((a, b) => a.armedAt - b.armedAt);
     }
 
-    /** The latest settled job of `action` from the last 10 minutes. */
+    /** The latest settled job of `action`, however long ago it settled. */
     last(action: JobAction): Job | undefined {
         return this.recent().find((job) => job.action === action);
     }
 
-    /** The latest settled job of each action from the last 10 minutes, newest first. */
+    /** The latest settled job of each action, however long ago it settled, newest first. */
     recent(): Job[] {
         this.prune();
+        return this.latestSettled().sort((a, b) => (b.settledAt ?? 0) - (a.settledAt ?? 0));
+    }
+
+    /** The latest settled job of each action, in no particular order. */
+    private latestSettled(): Job[] {
         const latest = new Map<JobAction, Job>();
         for (const job of this.jobs.values()) {
             if (!isSettled(job.state)) {
@@ -364,7 +391,7 @@ export class CmsisJobTracker {
                 latest.set(job.action, job);
             }
         }
-        return [...latest.values()].sort((a, b) => (b.settledAt ?? 0) - (a.settledAt ?? 0));
+        return [...latest.values()];
     }
 
     /**
@@ -426,6 +453,15 @@ export class CmsisJobTracker {
         return this.definitions.get(key);
     }
 
+    /**
+     * The program and arguments of the task an execution the tracker saw ran
+     * (`taskCommandWords`), by its key; kept while a job or the live list
+     * refers to it. Undefined for a task without a shell or process execution.
+     */
+    commandOf(key: number): readonly string[] | undefined {
+        return this.commands.get(key);
+    }
+
     /** Called with each CMSIS execution when the tracker first sees it start. */
     onDidStartExecution(listener: (execution: LiveExecution) => void): { dispose(): void } {
         this.startListeners.add(listener);
@@ -471,6 +507,30 @@ export class CmsisJobTracker {
         const listed = this.aliveInVsCode();
         const all = listed ?? this.liveExecutions().map((execution) => execution.execution);
         return all.filter((execution) => factsOf(execution)?.name.startsWith('CMSIS') === true);
+    }
+
+    /**
+     * The executions of CMSIS Solution's build task type alive now — builds,
+     * rebuilds, cleans and setups — which its Stop Build ends. VS Code's own
+     * list when it offers one, else the tracker's.
+     */
+    buildExecutions(): ExecutionLike[] {
+        const listed = this.aliveInVsCode();
+        const all = listed ?? this.liveExecutions().map((execution) => execution.execution);
+        return all.filter((execution) => factsOf(execution)?.type === BUILD_TASK_TYPE);
+    }
+
+    /**
+     * `cmsis_action stop_build` is about to end these executions: each counts
+     * as stopped in its job (state `cancelled`), whatever exit code its task
+     * closes with. Returns the open jobs they are bound to.
+     */
+    requestStop(executions: readonly ExecutionLike[]): Job[] {
+        const keys = executions.map((execution) => this.liveKeyOf(execution)).filter((key): key is number => key !== undefined);
+        for (const key of keys) {
+            this.dispatch({ type: 'stopRequested', key, at: this.clock.now() });
+        }
+        return this.openJobs().filter((job) => job.executions.some((execution) => execution.role !== undefined && keys.includes(execution.key)));
     }
 
     /** Resolves when every one of `executions` has ended, or after `ms` with those still alive. */
@@ -524,17 +584,19 @@ export class CmsisJobTracker {
     /**
      * The labels of the tasks CMSIS Solution can run in `folder` (source
      * `Workspace`, scoped to the folder), from `fetchTasks` within 3 s and
-     * cached until the folder's tasks.json changes. Undefined when they could
-     * not be read, so that the caller does not refuse on a guess.
+     * cached until the folder's tasks.json changes; `fresh` reads them again
+     * (after the tasks were rewritten, VS Code may list the new ones a moment
+     * later than the file changed). Undefined when they could not be read, so
+     * that the caller does not refuse on a guess.
      */
-    async taskLabels(folder: string): Promise<ReadonlySet<string> | undefined> {
+    async taskLabels(folder: string, fresh = false): Promise<ReadonlySet<string> | undefined> {
         const fetchTasks = this.source.fetchTasks;
         if (!fetchTasks) {
             return undefined;
         }
         const stamp = tasksJsonStamp(folder);
         const cached = this.labelCache.get(folder);
-        if (cached && cached.stamp === stamp) {
+        if (!fresh && cached && cached.stamp === stamp) {
             return cached.labels;
         }
         let tasks: readonly FetchedTask[] | undefined;
@@ -682,6 +744,10 @@ export class CmsisJobTracker {
             if (definition && typeof definition === 'object') {
                 this.definitions.set(entry.key, { ...definition });
             }
+            const words = taskCommandWords(execution.task);
+            if (words) {
+                this.commands.set(entry.key, words);
+            }
         }
         this.remember(execution, entry.key);
         if (type === 'processStart' && entry.processStartedAt === undefined) {
@@ -732,7 +798,7 @@ export class CmsisJobTracker {
         return false;
     }
 
-    /** A build, load or erase nobody asked for: follow it as a job, unless one of that action is open. */
+    /** A build, rebuild, clean, load or erase nobody asked for: follow it as a job, unless one of that action is open. */
     private adopt(kind: CmsisTaskKind, event: JobEvent): void {
         const action = ADOPTED.get(kind);
         if (!action || this.inFlight(action)) {
@@ -806,11 +872,16 @@ export class CmsisJobTracker {
         return `${ID_PREFIX[action]}-${++this.jobCount}`;
     }
 
-    /** Drop settled jobs older than the retention, with anything still waiting on them, and definitions no one refers to. */
+    /**
+     * Drop settled jobs older than the retention, except the latest of each
+     * action, with anything still waiting on them, and definitions and
+     * commands no one refers to.
+     */
     private prune(): void {
         const cutoff = this.clock.now() - JOB_RETENTION_MS;
+        const latest = new Set(this.latestSettled());
         for (const [id, job] of this.jobs) {
-            if (isSettled(job.state) && (job.settledAt ?? 0) < cutoff && !this.followUps.has(id)) {
+            if (isSettled(job.state) && (job.settledAt ?? 0) < cutoff && !latest.has(job) && !this.followUps.has(id)) {
                 this.jobs.delete(id);
                 this.waiters.delete(id);
             }
@@ -821,9 +892,10 @@ export class CmsisJobTracker {
                 referred.add(execution.key);
             }
         }
-        for (const key of [...this.definitions.keys()]) {
+        for (const key of [...this.definitions.keys(), ...this.commands.keys()]) {
             if (!referred.has(key)) {
                 this.definitions.delete(key);
+                this.commands.delete(key);
             }
         }
     }

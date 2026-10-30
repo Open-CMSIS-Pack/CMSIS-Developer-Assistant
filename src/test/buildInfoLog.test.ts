@@ -84,6 +84,66 @@ suite('buildInfo/buildLog', () => {
         assert.deepStrictEqual([g.notes, g.warnings], [0, 1]);
     });
 
+    test('Windows paths: drive letters with either slash, spaces, CRLF; the compiler driver\'s own lines', () => {
+        // A tester's assembler failure (armclang on Windows), and the forms around it.
+        const s = parseBuildLog([
+            '[1/3] Building ASM object CMakeFiles/Group_CubeMX.dir/D_/Test/DUT/startup_stm32f746xx.o',
+            'FAILED: CMakeFiles/Group_CubeMX.dir/D_/Test/DUT/startup_stm32f746xx.o',
+            'armclang: warning: argument unused during compilation: \'-MD\' [-Wunused-command-line-argument]',
+            'D:\\Test\\DUT\\Board\\MDK-ARM\\startup_stm32f746xx.s:39:1: error: unknown directive',
+            'D:/Test/DUT/main.c:12:5: error: use of undeclared identifier \'x\'',
+            'C:\\Users\\dev one\\My Project\\main.c:10:5: warning: unused variable \'y\' [-Wunused-variable]',
+            '/Users/dev/My Project/main.c:3:5: error: boom',
+            '1> C:\\x\\y.c:2: note: behind a prefix',
+            'D:\\x\\main.c:12: undefined reference to `foo\'',
+            'C:\\My Project\\main.c:13: undefined reference to `bar\'',
+            'arm-none-eabi-gcc.exe: error: unrecognized command-line option \'-mfoo\'',
+            'CMake Error at D:/Test/DUT/CMakeLists.txt:12 (message):',
+            '  Missing pack component',
+            '',
+            'ninja: build stopped: subcommand failed.',
+        ].join('\r\n'), 'w.log');
+        const shown = s.diagnostics.map((d) => [d.severity, d.tool, d.file, d.line, d.code, d.message]);
+        assert.deepStrictEqual(shown, [
+            ['warning', 'compiler', undefined, undefined, '-Wunused-command-line-argument', 'argument unused during compilation: \'-MD\''],
+            ['error', 'compiler', 'D:\\Test\\DUT\\Board\\MDK-ARM\\startup_stm32f746xx.s', 39, undefined, 'unknown directive'],
+            ['error', 'compiler', 'D:/Test/DUT/main.c', 12, undefined, 'use of undeclared identifier \'x\''],
+            ['warning', 'compiler', 'C:\\Users\\dev one\\My Project\\main.c', 10, '-Wunused-variable', 'unused variable \'y\''],
+            ['error', 'compiler', '/Users/dev/My Project/main.c', 3, undefined, 'boom'],
+            ['note', 'compiler', 'C:\\x\\y.c', 2, undefined, 'behind a prefix'],
+            ['error', 'linker', 'D:\\x\\main.c', 12, undefined, 'undefined reference to `foo\''],
+            ['error', 'linker', 'C:\\My Project\\main.c', 13, undefined, 'undefined reference to `bar\''],
+            ['error', 'compiler', undefined, undefined, undefined, 'unrecognized command-line option \'-mfoo\''],
+            ['error', 'cmake', 'D:/Test/DUT/CMakeLists.txt', 12, undefined, 'Missing pack component'],
+        ]);
+        assert.deepStrictEqual([s.errors, s.warnings, s.notes, s.ok], [7, 2, 1, false]);
+        assert.deepStrictEqual(s.failedSteps, ['…/Test/DUT/startup_stm32f746xx.o']);
+    });
+
+    test('csolution lines with the YAML file\'s location before " - ": Windows and POSIX paths, spaces, no line, CRLF', () => {
+        // A tester's schema error (Windows), the forms the knowledge index cites, and the plain form without a location.
+        const s = parseBuildLog([
+            'C:/Temp/XMC4700-Blinky/snmp_agent_demo.cproject.yml:18:11 - error csolution: schema check failed, verify syntax',
+            'C:/Temp/XMC4700-Blinky/snmp_agent_demo.cproject.yml:1:1 - error csolution: cproject not parsed, adding context failed',
+            'C:/Temp/XMC4700-Blinky/snmp_agent_demo.cproject.yml:18:11 - error csolution: String does not match the pattern of "^([^=:]+)$".',
+            '/Users/dev/AWS MQTT Demo/Demo.csolution.yml:43:7 - error csolution: unexpected instance type',
+            '/.cbuild-pack.yml - error csolution: file cannot be written',
+            'C:\\Users\\dev one\\Blinky\\Blinky.csolution.yml:9:3 - warning csolution: unknown key \'packs-dir\'',
+            'error csolution: undefined variables in Blinky.cproject.yml: $Board-Layer$',
+        ].join('\r\n'), 'csolution.log');
+        const shown = s.diagnostics.map((d) => [d.severity, d.tool, d.code, d.file, d.line, d.col, d.message]);
+        assert.deepStrictEqual(shown, [
+            ['error', 'cbuild', 'csolution', 'C:/Temp/XMC4700-Blinky/snmp_agent_demo.cproject.yml', 18, 11, 'schema check failed, verify syntax'],
+            ['error', 'cbuild', 'csolution', 'C:/Temp/XMC4700-Blinky/snmp_agent_demo.cproject.yml', 1, 1, 'cproject not parsed, adding context failed'],
+            ['error', 'cbuild', 'csolution', 'C:/Temp/XMC4700-Blinky/snmp_agent_demo.cproject.yml', 18, 11, 'String does not match the pattern of "^([^=:]+)$".'],
+            ['error', 'cbuild', 'csolution', '/Users/dev/AWS MQTT Demo/Demo.csolution.yml', 43, 7, 'unexpected instance type'],
+            ['error', 'cbuild', 'csolution', '/.cbuild-pack.yml', undefined, undefined, 'file cannot be written'],
+            ['warning', 'cbuild', 'csolution', 'C:\\Users\\dev one\\Blinky\\Blinky.csolution.yml', 9, 3, 'unknown key \'packs-dir\''],
+            ['error', 'cbuild', 'csolution', undefined, undefined, undefined, 'undefined variables in Blinky.cproject.yml: $Board-Layer$'],
+        ]);
+        assert.deepStrictEqual([s.errors, s.warnings, s.notes, s.ok], [6, 1, 0, false]);
+    });
+
     test('looksLikeBuildLog and shortPath', () => {
         assert.ok(looksLikeBuildLog(path.join(BUILDINFO_FIXTURES, 'build-ok.log')));
         const tmp = path.join(BUILDINFO_FIXTURES, '..', '..', '..', '..', 'out', 'not-a-build.log.tmp');

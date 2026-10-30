@@ -1,4 +1,0 @@
-interface:
-  display_name: "CMSIS: Debugger Troubleshooting"
-  short_description: "Find out why a debug or flash session fails to start, connect or program"
-  default_prompt: "Use $debugger-troubleshooting to find out why my debug session does not connect."

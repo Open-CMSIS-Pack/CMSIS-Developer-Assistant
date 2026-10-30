@@ -28,17 +28,19 @@
  * captured. Rows the proposal named without such a line wait for one:
  * pyOCD's "No available debug probes" and a J-Link connect failure
  * (`PROBE_NOT_FOUND`), and "Could not find core in Coresight setup"
- * (`CORE_NOT_FOUND`); so do the pyOCD log prefix and the J-Link banner that
- * would mark any GDB-server line.
+ * (`CORE_NOT_FOUND`); so does the J-Link banner that would mark any
+ * GDB-server line. pyOCD's log prefix has its line: `serverLineSeverity`
+ * weighs a GDB-server line by the level pyOCD gave it.
  *
  * Pure: no vscode.
  */
 
 import type { ProblemSeverity, ProblemSource } from './problemJournal';
+import { PROBE_SOFTWARE_STEPS, RESTART_VS_CODE } from './programLookup';
 import type { ErrorCode } from './toolResult';
 
 /** What a record's `code` can be: an `ErrorCode`, or a code only the journal uses. */
-export type ProblemCode = ErrorCode | 'DAP_POWER_UP_FAILED' | 'BUILD_ERROR';
+export type ProblemCode = ErrorCode | 'DAP_POWER_UP_FAILED' | 'BUILD_ERROR' | 'GDB_SERVER_NOT_FOUND';
 
 /** What `classifyProblem` knows about a line. */
 export interface ProblemClass {
@@ -74,7 +76,17 @@ const ROWS: readonly ProblemRow[] = [
         code: 'PROBE_BUSY',
         severity: 'error',
         source: 'gdb-server',
-        hint: 'Another task or session holds the probe: cmsis_action stop_run or stop_debugging, then retry.',
+        hint: 'pyOCD sees no free probe: another task or session holds it (cmsis_action stop_run or stop_debugging, then retry), '
+            + 'or the probe is not connected or lacks its USB driver (ask the user).',
+    },
+    {
+        // cdt-gdb-adapter could not start the server program the launch configuration names (Windows: ENOENT).
+        pattern: /gdbserver has hit error Error: spawn \S+ ENOENT/i,
+        code: 'GDB_SERVER_NOT_FOUND',
+        severity: 'error',
+        hint: 'The debug adapter could not start the GDB server program of the launch configuration: it is not installed, or its folder is not '
+            + 'on the PATH VS Code was started with. Ask the user to install it (J-Link: the SEGGER J-Link Software) or add its folder to the system '
+            + `or user PATH, ${RESTART_VS_CODE}; ${PROBE_SOFTWARE_STEPS}`,
     },
     {
         pattern: /\btarget is running\b/i,
@@ -96,6 +108,23 @@ const ROWS: readonly ProblemRow[] = [
  * records are texts of this extension.
  */
 const CLASSIFIED_SOURCES: ReadonlySet<ProblemSource> = new Set<ProblemSource>(['dap', 'gdb-server', 'task', 'ui', 'extension']);
+
+/**
+ * pyOCD's log line: milliseconds since start, seven digits, and the level's
+ * first letter (`0000992 E Unhandled exception in 'gdbserver' subcommand
+ * [gdbserver_cmd]`), as the CMSIS Debugger's pyOCD prints it.
+ */
+const PYOCD_LEVEL = /^\d{7} ([DIWEC]) /;
+
+/**
+ * The weight pyOCD gave a GDB-server line: `W` a warning, `E` and `C` (critical)
+ * an error; undefined for its debug and info lines and for any line without
+ * the prefix, which keep the weight of their output category.
+ */
+export function serverLineSeverity(text: string): ProblemSeverity | undefined {
+    const level = PYOCD_LEVEL.exec(text)?.[1];
+    return level === 'W' ? 'warning' : level === 'E' || level === 'C' ? 'error' : undefined;
+}
 
 /** The code, weight and next step of a known line; undefined for any other line or source. */
 export function classifyProblem(text: string, source: ProblemSource): ProblemClass | undefined {

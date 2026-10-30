@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package schemaVersion="1.7.44" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance" xs:noNamespaceSchemaLocation="https://raw.githubusercontent.com/Open-CMSIS-Pack/Open-CMSIS-Pack-Spec/v1.7.44/schema/PACK.xsd">
+  <name>Mini_BSP</name>
+  <vendor>Acme</vendor>
+  <description>Acme mini board support pack (test fixture)</description>
+  <url>https://example.com/packs/</url>
+  <license>LICENSE</license>
+  <licenseSets>
+    <licenseSet id="all" default="true" gating="true">
+      <license title="Apache-2.0 License" name="LICENSE" spdx="Apache-2.0"/>
+    </licenseSet>
+  </licenseSets>
+  <releases>
+    <release version="0.2.0" date="2026-10-10">Second release.</release>
+    <release version="0.1.0" date="2026-10-01">First release.</release>
+  </releases>
+  <requirements>
+    <packages>
+      <package vendor="Acme" name="Acme_DFP" version="1.0.0"/>
+    </packages>
+  </requirements>
+  <boards>
+    <board vendor="Acme" name="mini-board" revision="Rev.B">
+      <description>Acme mini board</description>
+      <book category="manual" name="https://example.com/mini-board.pdf" title="Mini board manual"/>
+      <mountedDevice deviceIndex="0" Dvendor="Acme:999" Dname="AC12_xA"/>
+      <mountedPart n="1" Hvendor="STMicroelectronics" Hname="LSM6DSO" Hvariant="LSM6DSOTR"/>
+    </board>
+  </boards>
+  <components>
+    <component Cclass="Board Support" Cgroup="LED" Cversion="1.0.0">
+      <description>LED driver</description>
+      <files><file category="sourceC" name="Board/led.c"/></files>
+    </component>
+    <component Cclass="CMSIS Driver" Cgroup="VIO" Csub="Board" Cversion="1.0.0" Capiversion="1.0.0">
+      <description>VIO</description>
+      <files><file category="sourceC" name="Board/vio.c"/></files>
+    </component>
+  </components>
+</package>

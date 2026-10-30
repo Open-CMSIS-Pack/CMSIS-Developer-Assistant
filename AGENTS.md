@@ -15,9 +15,11 @@ registers, peripheral registers described by the device SVD, decoded
 Cortex-M fault status, the build, flash and debug actions of the CMSIS
 Solution extension, and serial consoles. Other debug types, such as Python,
 Node.js or C/C++ on the host, are still served by the generic tools. The
-extension also installs Agent Skills for CMSIS work, writes its tool rules
-into the agents' rule files when the user confirms it, offers tools over the
-target's documentation and build artefacts.
+extension also ships a knowledge index of the CMSIS procedures and reads it
+through the knowledge tools, installs one Agent Skill (`cmsis-help`, the entry
+point and health check), writes its tool rules into the agents' rule files
+when the user confirms it, and offers tools over the target's documentation
+and build artefacts.
 
 The project started as a fork of microsoft/DebugMCP. The code that still
 came from there has since been replaced by independently written code
@@ -56,9 +58,10 @@ simply forwards to itself.
 | `DebugState` | `src/debugState.ts` | Value object for location, stack and breakpoints, rendered in a full and a compact form | [docs/architecture/debugState.md](docs/architecture/debugState.md) |
 | `DebugConfigurationManager` | `src/utils/debugConfigurationManager.ts` | The `launch.json` picker and configurations synthesized from the file type for `start_debugging` | [docs/architecture/debugConfigurationManager.md](docs/architecture/debugConfigurationManager.md) |
 | Window routing | `src/windowCoordinator.ts`, `src/routingDebuggingHandler.ts`, `src/controlServer.ts`, `src/utils/workspaceRegistry.ts`, `src/core/opTable.ts`, `src/core/windowHealth.ts`, `src/windowStatus.ts`, `src/core/windowStatus.ts` | Router and worker windows, the window registry and the default target, forwarding of every op, fences and health checks on the control channel, the status-bar item and Select Target Window | [docs/architecture/windowRouting.md](docs/architecture/windowRouting.md) |
-| `AgentConfigurationManager` | `src/utils/agentConfigurationManager.ts`, `src/core/agentRules.ts`, `src/utils/agentRuleFiles.ts` | Registers the server in AI agents' configuration files, installs Agent Skills, and writes the tool rules into the agents' rule files the user confirms | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
+| `AgentConfigurationManager` | `src/utils/agentConfigurationManager.ts`, `src/core/agentRules.ts`, `src/utils/agentRuleFiles.ts` | Registers the server in AI agents' configuration files, installs the `cmsis-help` skill (and removes, marker-guarded, the skills earlier releases installed), and writes the tool rules into the agents' rule files the user confirms | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
 | `PackDocsHandler` / `BuildInfoHandler` | `src/packDocsHandler.ts`, `src/buildInfoHandler.ts`, `src/core/packDocs/`, `src/core/buildInfo/` | Documentation tools (pack PDFs, Arm documents, user and workspace documents, core SVDs) and build-artefact tools (ELF, map file, build log); both on by default and routed like every other op | [docs/architecture/packDocs.md](docs/architecture/packDocs.md) |
-| `skills/` | `skills/` | The skills the extension installs, every one of them: the entry points `cmsis-debug-live`, `add-board-layer`, `cmsis-bootstrap`, `cmsis-pack-docs` and the generated `cmsis-help`; the hidden `cmsis-debugger-setup`, `fvp-debug-setup` and `debugger-troubleshooting`; the vendored Open-CMSIS-Pack/cmsis-skills skills of the configured categories; the `cmsis-project` router; `catalog.json` | [skills/README.md](skills/README.md) |
+| `KnowledgeHandler` | `src/knowledgeHandler.ts`, `src/knowledgeTools.ts`, `src/core/knowledge/`, `src/knowledgePanel.ts`, `src/knowledgePanelPage.ts` | Experimental knowledge tools over the knowledge index — the core index the extension ships (`resources/knowledge/core.db`), the `.knowledge/knowledge.db` of the installed packs, a workspace folder's `.cmsis/knowledge.db`: search by summaries scoped to the active target, the whole unit, one hop in the graph; always on, routed with the documentation ops. The knowledge browser, a read-only panel over the same index | [docs/architecture/knowledge.md](docs/architecture/knowledge.md) |
+| `skills/` | `skills/cmsis-help/`, `skills/catalog.json` | The one installed skill and its generated installer catalog. Knowledge procedure sources, assets and routing definitions are authored in `cmsis-knowledge-base/sources/cda-procedures`; the extension consumes their pinned index | [skills/README.md](skills/README.md) |
 
 Smaller parts: `src/serialHandler.ts` with `src/core/serialController.ts`,
 `src/core/serialMonitorBridge.ts` and `src/core/serialLease.ts` (the
@@ -79,7 +82,10 @@ the agent guide), where most modules do not import `vscode` at all.
 
 - **Activation:** `activate()` in `src/extension.ts`. esbuild bundles it into
   `dist/extension.js`, the `main` of `package.json`; the extension activates
-  on `onStartupFinished` and `onDebug`.
+  on `onStartupFinished` and `onDebug`, and earlier, during start-up, in a
+  workspace with a `*.csolution.yml`. It binds the MCP endpoint before it
+  installs the skill or migrates agent files: Kimi Code's VS Code extension
+  connects once, at its own activation, and never retries.
 - **MCP endpoint:** `http://localhost:{serverPort}/mcp` (port 3001 by
   default), Streamable HTTP, bound to 127.0.0.1. The legacy `/sse` route
   answers 410.
@@ -96,13 +102,15 @@ the agent guide), where most modules do not import `vscode` at all.
 | `npm run build` | `check-types`, then the production esbuild bundle in `dist/` |
 | `npm run package` | `build`, then a platform-specific VSIX (`scripts/package.ts`) |
 | `npm run lint` | ESLint over `src/` |
-| `npm run lint:md` | markdownlint over the repository's Markdown with `.github/markdownlint.jsonc` (`docs/architecture/`, `skills/cmsis-skills/`, `CHANGELOG.md` and build folders are skipped) |
+| `npm run lint:md` | markdownlint over the repository's Markdown with `.github/markdownlint.jsonc` (`docs/architecture/`, `CHANGELOG.md` and build folders are skipped) |
 | `npm test` | Compile and lint first (`pretest`), then run `src/test/*.test.ts` inside VS Code with `vscode-test`, coverage into `coverage/` |
 | `npm run test:transport` | Compile, then `test/transport/session-lifecycle.js` and `test/transport/two-window-routing.js` over real sockets |
 | `npm run test:surface` | Compile, then compare everything an agent can see without hardware — the initialize result, `tools/list`, the resources and each tool's reply without a session — with `test/transport/surface.snapshot.json`. Pass `-- --update` only for an intended change. The snapshot depends on the host, so this is a local check, not a CI job |
 | `npm run provenance:check` | Per file, the lines shared with microsoft/DebugMCP (clones it once, so it needs network the first time). With `-- --gate` it fails when a gated file — any path DebugMCP ever had, or any file added since the rewrite began, unless it still carries the Microsoft line or is on the script's exemption list — contains more than five lines found anywhere in DebugMCP's history. `-- --lines <file>` prints DebugMCP text; do not use it while writing independent code |
-| `npm run skills:sync` | Vendor the cmsis-skills skills of the categories `scripts/skills.config.json` names again at the pinned commit and regenerate `skills/catalog.json`, the router skills, `skills/cmsis-help` and the tool-contract blocks; `-- --update` moves the pin to upstream `main` |
-| `npm run skills:sync -- --offline` | The same regeneration without a fetch: from the vendored skills and the committed catalog, lock untouched. Run it after editing `scripts/skills.config.json`, the commands or settings in `package.json`, or `docs/agent-resources/tool-contract.md` |
+| `npm run skills:sync` | Regenerate `skills/catalog.json` from the skills `scripts/skills.config.json` lists and copy the tool-contract blocks into their files; no network. Each `$name` hand-over must name a skill of the extension or a procedure of the pinned core index, so `core.db` must be fetched. Run it after editing a skill's frontmatter, `scripts/skills.config.json` or `docs/agent-resources/tool-contract.md` |
+| `npm run knowledge:fetch` | Download the core knowledge index `resources/knowledge/core.lock.json` pins (a release in the public repository `MatthiasHertelArm/cmsis-knowledge-index`, where the knowledge base publishes its index) into `resources/knowledge/core.db` when the file is missing or its sha256 differs; hash and size checked; the same for `resources/knowledge/SOURCES.md`, the attribution of the index's sources, which is committed (`sources`, `sourcesSha256` of the lock). The CI package job runs it before packaging |
+| `npm run knowledge:check` | Verify only that `core.db` is the pinned index and `SOURCES.md` the release's; exit 1 when either is missing or differs. `npm run package` runs the same check and refuses a VSIX without the pinned index (`--index-unpinned` lets a present, rebuilt index through with a warning) |
+| `npm run knowledge:update -- <version>` | Pin the release `core-<version>` of the index repository: reads its `knowledge-core-<version>.json` and rewrites the lock; then `knowledge:fetch` |
 
 Behaviour oracles, run with `node` after `npm run compile`:
 `test/transport/dap-scenarios.js` (tool replies and adapter traffic over
@@ -125,9 +133,11 @@ checks a built package.
 | `cmsis-developer-assistant.serial.enabled` | `true` | Offer the eleven `serial_*` tools |
 | `cmsis-developer-assistant.serial.idleCloseSeconds` | 300 | Release a serial port an agent opened after this many seconds without a serial tool call; 0 is off. Scope `window` |
 | `cmsis-developer-assistant.telemetry.jsonlPath` | `""` | Append one JSON line per tool call to this file; empty is off |
-| `cmsis-developer-assistant.agentRules.install` | `"ask"` | `ask`: step 2 of the setup offers to add the tool rules to the agents' rule files, each change shown as a diff and written only when confirmed, and activation updates the blocks it wrote; `never`: no rule file is touched. Scope `application` |
+| `cmsis-developer-assistant.agentRules.install` | `"ask"` | `ask`: step 2 of the setup offers to add the tool rules to the agents' rule files, each change shown as a diff and written only when confirmed, and activation offers to update the blocks it wrote when the rules change; `never`: no rule file is touched. Scope `application` |
 | `cmsis-developer-assistant.packDocs.enabled` | `true` | Offer the five documentation tools; off drops them from the tool list. PDF text comes from the bundled pdf.js, or from `pdftotext` when `packDocs.extractor` says so; `packDocs.*` also set the size limit, unlisted pack PDFs and the workspace and user document folders |
 | `cmsis-developer-assistant.buildInfo.enabled` | `true` | Offer the five build-artefact tools; off drops them from the tool list; `buildInfo.maxSymbols` (20) and `buildInfo.logGlobs` tune them |
+| `cmsis-developer-assistant.knowledge.indexPath` | (empty) | The knowledge index the knowledge tools read, always on. Empty uses the core index the extension ships (`resources/knowledge/core.db`); a path replaces it, for testing a rebuilt index. Packs and the workspace add their own indexes. Read on every call. |
+| `cmsis-developer-assistant.knowledge.includeIncomplete` | `false` | Include placeholder knowledge units in searches. Off leaves them out; failed-build hints never name them. Read on every call. |
 
 `agentRules.install` takes effect at once, `redactSecrets` is read on every call, `build.diagnosticRerun` for
 every failed build and `serial.idleCloseSeconds` at each `serial_open`. The
@@ -154,20 +164,22 @@ holds the tool rules (#50), which keep agents on the MCP tools instead of
 pyOCD, GDB, cbuild or a serial terminal in the shell, and a table of shell
 commands with the tools that replace them. The server starts its
 `instructions` with the rules, and the first `get_session_status` of a session
-repeats them in one line. `npm run skills:sync -- --offline` copies both
+repeats them in one line, or whole for a client that never shows the model the
+instructions (Kimi Code). `npm run skills:sync` copies both
 blocks between `<!-- cmsis-developer-assistant:<block>:begin -->` and `…:end -->`
-markers into the bundled skills, `cmsis-help` and `debug_instructions.md`
+markers into `cmsis-help` and `debug_instructions.md`
 (`src/core/toolContract.ts`). Edit the contract, never a copy;
-`src/test/toolContract.test.ts` compares them and holds the rules to ten lines
-and 1 600 bytes. Tool descriptions never repeat the contract: `tools/list`
-rides along on every turn, and `test/transport/session-lifecycle.js` pins its
-size.
+`src/test/toolContract.test.ts` compares them and holds the rules to at most
+ten non-empty lines after the heading and under 1 600 bytes in total. Tool
+descriptions never repeat the contract: `tools/list` rides along on every
+turn, and `test/transport/session-lifecycle.js` pins its size.
 
 `debug_instructions.md` is split into topics by
 `<!-- topic: name | blurb -->` … `<!-- /topic -->` comments, which
 `src/core/instructionTopics.ts` parses. Keep the markers and the topic names;
 `src/test/instructionTopics.test.ts` and `src/test/debugSkillGuidance.test.ts`
-also pin the size of the overview and a few phrases.
+also pin the overview to at most 3 700 bytes without the tool rules, each
+served topic to at most 7 000 bytes, and a few phrases.
 
 ## Dependencies
 
@@ -175,6 +187,8 @@ also pin the size of the overview and a few phrases.
 - `zod`: the input schema of every tool
 - `express`: the HTTP app behind `/mcp`
 - `jsonc-parser`: reads `launch.json`, comments and trailing commas included
+- `js-yaml`: reads the csolution's target-types and the YAML the CMSIS tools
+  write (`cbuild-idx.yml`, `tools-environment.yml`), scalars kept as strings
 - `serialport`: the serial tools; left out of the esbuild bundle because of
   its native binary, and shipped in `node_modules` (see
   `docs/packaging-esbuild.md`)
@@ -196,7 +210,9 @@ it is:
   failed. A caught value is `unknown` until checked.
 - **Imports:** `import * as vscode from 'vscode'` first, then Node built-ins
   and packages, then this repository's modules; `import type` for type-only
-  imports. Import names are camelCase or PascalCase (ESLint naming rule).
+  imports, which keep the place of their module. `src/test/importOrder.test.ts`
+  checks the order. Import names are camelCase or PascalCase (ESLint naming
+  rule).
 - **Names:** camelCase for functions, methods and variables; PascalCase for
   classes, interfaces and types; UPPER_SNAKE_CASE for module constants such as
   limits and fixed texts. Only the three layer contracts carry an `I` prefix:
@@ -226,7 +242,7 @@ it is:
   `test/transport/dap-scenarios.snapshot.json`. Change them on purpose,
   update the snapshot in the same commit and say in the message what
   changed. `registerTool('…'` calls keep literal tool names:
-  `src/test/skill.test.ts` compares them with the skill's `allowed-tools`.
+  `src/test/skill.test.ts` checks the installed help skill's `allowed-tools`; the knowledge base checks its procedure sources against the debugger tool contract.
 
 ESLint reports every rule as a warning, so `npm run lint` does not fail on
 them; keep its output clean anyway.
@@ -244,12 +260,11 @@ New source files carry the Arm Apache-2.0 header, as in `src/core/toolRun.ts`:
  */
 ```
 
-A few files still derive from microsoft/DebugMCP and keep its copyright line
-until they are rewritten (issue #53). They are listed in
-`src/test/provenance.test.ts`, and that test fails if any other file gains
-the line. Never copy that line into a new file. When a file is rewritten,
-remove the line and its list entry in the same change, and run
-`npm run provenance:check -- --gate`.
+The source rewrite is complete (issue #53). Only `LICENSE-MIT` and `NOTICE`
+retain the original project's copyright line pending the licence review
+(issue #54); `src/test/provenance.test.ts` lists them and fails if another
+file gains that line. Never copy it into a new file. Keep the provenance
+check in place: `npm run provenance:check -- --gate`.
 
 ## Keeping the documentation current
 

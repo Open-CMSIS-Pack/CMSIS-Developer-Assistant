@@ -371,7 +371,7 @@
     "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.28.0",
     "eslint": "^10.12.0",
-    "markdownlint-cli": "^0.49.1",
+    "markdownlint-cli": "^0.50.0",
     "semver": "^7.8.5",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",

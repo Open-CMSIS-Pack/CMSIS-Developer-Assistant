@@ -354,7 +354,7 @@
     "express": "^5.3.0",
     "js-yaml": "5.4.2",
     "jsonc-parser": "^3.3.1",
-    "pdfjs-dist": "6.3.289",
+    "pdfjs-dist": "6.4.299",
     "serialport": "^13.0.0",
     "zod": "^4.6.5"
   },

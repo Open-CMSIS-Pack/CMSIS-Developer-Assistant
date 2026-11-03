@@ -10,7 +10,7 @@ Generated for release: 2.8.0
 | jsonc-parser | 3.3.1 | https://github.com/microsoft/node-jsonc-parser | [MIT](https://github.com/microsoft/node-jsonc-parser/blob/main/LICENSE.md) |
 | serialport | 13.0.0 | https://github.com/serialport/node-serialport | [MIT](https://github.com/serialport/node-serialport/blob/master/LICENSE) |
 | zod | 4.6.7 | https://github.com/colinhacks/zod | [MIT](https://github.com/colinhacks/zod/blob/main/LICENSE) |
-| pdfjs-dist | 6.3.289 | https://github.com/mozilla/pdf.js | [Apache-2.0](https://github.com/mozilla/pdf.js/blob/master/LICENSE) |
+| pdfjs-dist | 6.4.299 | https://github.com/mozilla/pdf.js | [Apache-2.0](https://github.com/mozilla/pdf.js/blob/master/LICENSE) |
 
 ## Knowledge index
 

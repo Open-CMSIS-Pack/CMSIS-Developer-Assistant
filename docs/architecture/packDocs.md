@@ -5,14 +5,6 @@ handlers, one dispatch seam, wired into the MCP server and the multi-window
 router the same way as the serial tool group. The [knowledge tools](knowledge.md)
 share their dispatch and host but have their own handler and are always enabled.
 
-Two working notes under `docs/proposals/` go further than this page: the
-[cross-extension call inventory](../proposals/extension-calls.md) lists the
-exact calls into other extensions, and the
-[document-storage proposal](../proposals/pack-docs-storage.md) separates the
-existing storage functions from a proposed provider API, with
-[Pack Docs storage at a glance](../proposals/pack-docs-storage-overview.md)
-as its one-page map.
-
 ## Layout
 
 | Path | What | Imports `vscode`? |
@@ -64,7 +56,7 @@ extension's getters.
 - **Tokenizer** (`tokenizer.ts`): NFKC before tokenising, identifier expansion (`RCC_AHB2ENR1` → `rcc`, `ahb2enr1`), hex spellings folded.
 - **Index** (`bm25Index.ts`, version 2): body postings plus heading postings per page; BM25 over the body plus `headingWeight` (5) × the heading term score; a version-1 index on disk is rebuilt from `pages.jsonl` on first load. `search.ts` adds phrase, manual and table-of-contents adjustments and a 1.5 heading tie-breaker.
 - **Query expansion** (`queryExpansion.ts`): identifier-only queries are expanded from the device SVD at half weight — a peripheral instance with its type synonyms and description, a bare field name with its register and description. Register names, prose and quoted phrases are not expanded (measured: it only dilutes). Expansions never gate the all-terms boost.
-- **Benchmark** (`scripts/search-benchmark.ts`, `npm run bench:search`): gold pages are the manual headings that name a register, queries come from the SVD descriptions; reports R@1 / R@3 / MRR per heading weight and post boost, and can extract a PDF with either extractor first. Numbers in `docs/improvement-notes.md` §11.
+- **Benchmark** (`scripts/search-benchmark.ts`, `npm run bench:search`): gold pages are the manual headings that name a register, queries come from the SVD descriptions; reports R@1 / R@3 / MRR per heading weight and post boost, and can extract a PDF with either extractor first.
 
 ## Storage
 

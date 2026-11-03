@@ -5,8 +5,7 @@ the documentation tools. Procedures, rules, concepts, and the causes and
 fixes of csolution, packchk and svdconv messages are knowledge units in
 Markdown; the knowledge-base tooling builds them into one SQLite file,
 `knowledge.db`, with the entities they apply to and the relations between
-them. [docs/proposals/knowledge-base.md](../proposals/knowledge-base.md) has
-the reasons and the open decisions.
+them.
 
 The knowledge index is mandatory. The extension ships the core index
 (`resources/knowledge/core.db`) and the knowledge tools are always on.

@@ -8,12 +8,6 @@ register table, a status record — and, for a few reports (connection check,
 device information, decoded fault registers, peripheral reads), finished
 text; how the result is presented to the agent is the handler's business.
 
-The exact extension IDs, command arguments, optional exports and DAP
-requests are listed in the
-[cross-extension call inventory](../proposals/extension-calls.md), a working
-note under `docs/proposals/` that restates the code and is not part of this
-architecture page.
-
 ## Why it is a layer of its own
 
 On an embedded target the debug adapter is where calls hang: the probe
@@ -242,8 +236,7 @@ rewrite could be reviewed as behaviour-neutral: the workbench fallbacks of
 adapters other than the CMSIS Debugger act on VS Code's focused session,
 which need not be the one the request went to; every frame lookup costs a
 `stackTrace` request. Comments in the code number each case (`KB1`, `KB7`,
-`KB8`, …); the list is in the *Known bugs to preserve* section of
-`docs/provenance/specs/debuggingExecutor.md`. KB1 and KB2 (the workbench
+`KB8`, …). KB1 and KB2 (the workbench
 fallbacks and restart) no longer apply to the CMSIS Debugger since #13; KB3
 (the `-exec` prefix) is fixed by #56, and of KB4 only the `set` fallback of a
 memory write and the reset still judge GDB's reply by its text alone.

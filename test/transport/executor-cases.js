@@ -16,7 +16,7 @@
 
 // Executor characterization cases (issue #53).
 //
-// Runs the cases listed in docs/provenance/specs/debuggingExecutor.md against
+// Runs the characterization cases of the executor's rewrite against
 // out/src/debuggingExecutor.js with scripted fake debug sessions: DAP request
 // shapes, fallbacks, timeouts, reset verification and the memory-read ladder.
 // Complements dap-scenarios.js, which drives the executor through the handler.

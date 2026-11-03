@@ -4,6 +4,14 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.8.0] - 2026-11-03
+
+The release of the 2.7 line. 2.7.0 brought the knowledge engine, the CMSIS Solution catalog and project actions and Kimi Code, and was packaged as a pre-release VSIX (odd minor version); 2.8.0 is the same extension as a release VSIX, with a README written for it. No tool, argument, setting or behaviour changed since 2.7.0.
+
+### Changed
+- **The README is written for the release (#117).** "Choose a workflow", which listed the procedures of the index and the generic MCU skills they came from, is "Explore the knowledge base": what the knowledge base holds (thousands of CMSIS and Zephyr topics: procedures, concepts, rules, examples and troubleshooting guidance, from the extension, installed packs and the workspace), that agents search it before a task, and the **Open Knowledge Browser** command. New: a tip on the Arm webinar *Getting Started with AI: A New Level of Productivity for Embedded Developers*, a section "Working with multiple VS Code windows" (router and worker windows, the **R** and **W** of the status-bar item, **Select Target Window**), and one-line descriptions in the command table. The warning on `packDocs.enabled` is a sentence.
+- **The user guide no longer says the extension is published as a pre-release.** It is experimental still: tools, parameters and settings may change between releases.
+
 ## [2.7.0] - 2026-10-28
 
 The knowledge engine, with a core index in the extension and knowledge that packs ship, and more of the CMSIS Solution extension: its catalog of boards, devices and examples, project creation from an example, pack installation, and the rebuild, clean and stop actions. A pre-release.

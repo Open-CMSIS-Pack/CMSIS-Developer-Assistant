@@ -45,6 +45,8 @@ suite('armDocs catalogue', () => {
         assert.strictEqual(archOf('Cortex-M85'), 'Armv8.1-M');
         assert.strictEqual(archOf('ARMV81MML'), 'Armv8.1-M');
         assert.strictEqual(archOf('Star-MC3'), 'Armv8.1-M');
+        assert.strictEqual(archOf('Cortex-M42'), 'Armv8.1-M');
+        assert.ok(armDocsFor(['Cortex-M42']).some(doc => doc.docId === 'ddi0553'));
         assert.strictEqual(archOf('Cortex-M1'), 'Armv6-M');
         assert.strictEqual(archOf('SC000'), 'Armv6-M');
         assert.strictEqual(archOf('Cortex-A53'), undefined);

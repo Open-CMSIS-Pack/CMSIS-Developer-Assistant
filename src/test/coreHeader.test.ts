@@ -64,6 +64,7 @@ suite('coreHeader', () => {
         assert.ok(ref, 'Cortex-M33 has a header');
         assert.strictEqual(ref!.file, 'core_cm33.h');
         assert.strictEqual(resolveCoreHeader(root, 'Cortex-M0+')!.file, 'core_cm0plus.h');
+        assert.strictEqual(resolveCoreHeader(root, 'Cortex-M42')!.file, 'core_cm42.h');
         assert.strictEqual(resolveCoreHeader(root, 'ARMV81MML')!.file, 'core_cm55.h');
         assert.strictEqual(resolveCoreHeader(root, 'Cortex-A53'), undefined);
         if (!ref!.exists) { this.skip(); return; }

@@ -43,6 +43,7 @@ suite('coreSvd', () => {
 
     test('resolves csolution core names, pdsc aliases and the M0+ spelling', () => {
         assert.strictEqual(resolveCoreSvd(ASSETS, 'Cortex-M33')?.file, 'Cortex_M33.svd');
+        assert.strictEqual(resolveCoreSvd(ASSETS, 'Cortex-M42')?.file, 'Cortex_M42.svd');
         assert.strictEqual(resolveCoreSvd(ASSETS, 'cortex-m0plus')?.file, 'Cortex_M0plus.svd');
         assert.strictEqual(resolveCoreSvd(ASSETS, 'Cortex-M0+')?.core, 'Cortex-M0+');
         assert.strictEqual(resolveCoreSvd(ASSETS, 'ARMv8MML')?.file, 'Cortex_M33.svd');

@@ -79,3 +79,16 @@ architecture manual so nothing ships silently undocumented.
 
 The `scripts/` directory is excluded from the VSIX; only `assets/svd/core`
 ships.
+
+## Cortex-M42
+
+Cortex-M42 uses the STAR-MC3-compatible register layout from `core_cm42.h`.
+Generate it from a CMSIS-Core checkout containing that header:
+
+```sh
+python3 scripts/core-svd/gen_core_svd.py --cmsis /path/to/CMSIS_6 --core Cortex-M42 --out /tmp/cm42-svd
+```
+
+The Cortex-M42 index entry records its own generator and CMSIS source version;
+the existing entries retain the provenance of their earlier generation. Generated
+SVD documents start at version 1.0.0 independently of the generator revision.

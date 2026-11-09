@@ -419,6 +419,45 @@
       ],
       "registers": 599,
       "fields": 892
+    },
+    "Cortex-M42": {
+      "file": "Cortex_M42.svd",
+      "arch": "ARMv8.1-M Mainline",
+      "header": "core_cm42.h",
+      "peripherals": [
+        "ITM",
+        "DWT",
+        "FPB",
+        "PMU",
+        "ICB",
+        "SysTick",
+        "NVIC",
+        "SCB",
+        "MPU",
+        "SAU",
+        "DCB",
+        "FPU",
+        "DIB",
+        "PWRMODCTL",
+        "EWIC_ISA",
+        "PRCCFGINF",
+        "ICB_NS",
+        "SysTick_NS",
+        "NVIC_NS",
+        "SCB_NS",
+        "MPU_NS",
+        "DCB_NS",
+        "FPU_NS",
+        "DIB_NS",
+        "TPIU",
+        "CTI",
+        "EWIC"
+      ],
+      "registers": 599,
+      "fields": 892,
+      "generator": "gen_core_svd.py 1.0.1",
+      "cmsis": "CMSIS_6 (CMSIS-Core 6.4)",
+      "generated": "2026-11-05"
     }
   }
 }

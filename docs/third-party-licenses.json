@@ -43,7 +43,7 @@
     },
     {
         "name": "pdfjs-dist",
-        "version": "6.3.289",
+        "version": "6.4.299",
         "spdx": "Apache-2.0",
         "url": "https://github.com/mozilla/pdf.js",
         "license": "https://github.com/mozilla/pdf.js/blob/master/LICENSE"

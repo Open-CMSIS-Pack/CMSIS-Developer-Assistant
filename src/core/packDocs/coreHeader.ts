@@ -40,7 +40,7 @@ const HEADER_BY_CORE: Record<string, string> = {
     'cortex-m0': 'core_cm0.h', 'cortex-m0+': 'core_cm0plus.h', 'cortex-m0plus': 'core_cm0plus.h', 'cortex-m1': 'core_cm1.h',
     'cortex-m3': 'core_cm3.h', 'cortex-m4': 'core_cm4.h', 'cortex-m7': 'core_cm7.h',
     'cortex-m23': 'core_cm23.h', 'cortex-m33': 'core_cm33.h', 'cortex-m35p': 'core_cm35p.h',
-    'cortex-m52': 'core_cm52.h', 'cortex-m55': 'core_cm55.h', 'cortex-m85': 'core_cm85.h',
+    'cortex-m42': 'core_cm42.h', 'cortex-m52': 'core_cm52.h', 'cortex-m55': 'core_cm55.h', 'cortex-m85': 'core_cm85.h',
     'sc000': 'core_sc000.h', 'sc300': 'core_sc300.h', 'star-mc1': 'core_starmc1.h', 'star-mc3': 'core_starmc3.h',
     'armv8mbl': 'core_cm23.h', 'armv8mml': 'core_cm33.h', 'armv81mml': 'core_cm55.h',
 };

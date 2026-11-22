@@ -3,6 +3,8 @@
         "target": "ES2024",
         "module": "Node16",
         "moduleResolution": "node16",
+        "types": ["node"],
+        "resolveJsonModule": true,
         "noEmit": true,
         "strict": true,
         "esModuleInterop": true,

@@ -11,7 +11,7 @@ short version for the Marketplace page.
 >
 > - The CMSIS Developer Assistant originated as a fork of [DebugMCP](https://github.com/microsoft/DebugMCP) by Microsoft and is now developed independently by Arm within the [Open-CMSIS-Pack](https://www.open-cmsis-pack.org/) project.
 > - Version numbers were inherited from DebugMCP and continue its 2.x line; they do not start at 1.0.
-> - The extension is **experimental** and published as a pre-release. Tools, parameters, and settings may change between releases.
+> - The extension is **experimental**: tools, parameters, and settings may change between releases.
 
 The Arm® CMSIS Developer Assistant extension connects AI coding agents to the debugger in Visual Studio Code. It runs a local [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that exposes the debug session as tools, so that an agent can drive the [Arm CMSIS Debugger](https://marketplace.visualstudio.com/items?itemName=Arm.vscode-cmsis-debugger) against Arm Cortex®-M devices the same way a developer does: build, flash, run to a breakpoint, and look at the target.
 

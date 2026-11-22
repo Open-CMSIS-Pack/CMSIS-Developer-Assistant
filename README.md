@@ -27,10 +27,9 @@ iterate.
 - **Close the loop on real hardware.** Build and deploy software, observe its
   behavior on the target, reason about failures, and iterate against test
   criteria.
-- **Apply reusable expert workflows.** The knowledge index the extension ships
-  holds the procedures for project setup, board layers, debugging,
-  documentation lookups, and CI automation; the agent looks them up before it
-  starts.
+- **Apply expert knowledge.** The knowledge base contains thousands of
+  CMSIS and Zephyr topics, including procedures, concepts, rules, examples, and
+  troubleshooting guidance; the agent searches it before starting a task.
 
 > &#128204; **TIP**
 >
@@ -45,15 +44,11 @@ iterate.
 
 The extension combines three complementary capabilities:
 
-- **Knowledge** teaches agents reliable CMSIS workflows, such as starting a
-  project, adding a board layer, consulting pack documentation, and debugging a
-  live Cortex-M target. The procedures are units of a knowledge index the
-  extension ships and the agent reads through the `knowledge_search`,
+- **Knowledge** gives agents indexed guidance for CMSIS and Zephyr development,
+  including procedures, concepts, rules, examples, and troubleshooting. The
+  agent searches and reads the relevant topics through the `knowledge_search`,
   `knowledge_get`, and `knowledge_expand` tools, scoped to the active target.
-  They act as reusable cookbooks: they define the expected workflow, identify
-  the tools to use, and set boundaries that keep the agent on a predictable
-  path. One installed AI Skill, `cmsis-help`, is the entry point and health
-  check.
+  One installed AI Skill, `cmsis-help`, is the entry point and health check.
 - **MCP tools** let agents perform those workflows through VS Code: build and
   flash, control the debugger, inspect the target, use serial ports, and read
   project documentation and build artifacts.
@@ -67,11 +62,10 @@ Together, these capabilities help the agent follow repeatable workflows, use
 the established CMSIS tools, and base its decisions on the actual target and
 project configuration.
 
-The extension helps configure supported coding agents and installs the
-`cmsis-help` skill, the one skill it ships; the CMSIS procedures come from the
-knowledge index the extension ships, and software packs can add their own
-units in a `.knowledge/` folder. GitHub Copilot in VS Code discovers the MCP
-server automatically.
+The extension helps configure supported coding agents, installs the
+`cmsis-help` entry skill, and provides the indexed knowledge base. Installed
+software packs can extend the knowledge base with target-specific content.
+GitHub Copilot in VS Code discovers the MCP server automatically.
 The integration has been tested with Codex, Claude Code, GitHub Copilot, and Kimi Code.
 Other agents that support MCP may also work; the Agent Skills format adds the
 `/cmsis-help` entry point.
@@ -96,7 +90,15 @@ CMSIS Developer Assistant is free to use and works in combination with:
 3. In your agent's chat window, describe the outcome you want. For example, ask
    the agent to work with an open CMSIS solution or to create one from an empty
    VS Code window. `/cmsis-help` checks the setup and names the procedure for
-   a task (see [Choose a workflow](#choose-a-workflow)).
+   a task (see [Explore the knowledge base](#explore-the-knowledge-base)).
+
+> &#128204; **TIP**
+>
+> [**Webinar: Getting Started with AI: A New Level of Productivity for Embedded
+> Developers**](https://developer.arm.com/embedded-and-microcontrollers/ai-assisted-embedded-development)
+> shows how CMSIS Developer Assistant and Keil Studio accelerate Cortex-M
+> development, from understanding hardware and creating projects to building,
+> debugging, and verifying firmware.
 
 ## Supported development tasks
 
@@ -177,11 +179,12 @@ privacy terms.
 
 Open the
 [command palette](https://code.visualstudio.com/docs/getstarted/userinterface#_command-palette)
-and type **CMSIS Developer Assistant** to find them.
+and type **CMSIS Developer Assistant** to find the commands below. Every command
+name is prefixed with **CMSIS Developer Assistant:**.
 
 | Command | What it does |
 |---------|--------------|
-| **Configure Agent** | Register the AI agent and add tool rules to agent instruction files. |
+| **Configure Agent** | Register selected AI agents, install the `cmsis-help` skill, and optionally add tool rules to agent instruction files. |
 | **Select Target Window** | Choose which VS Code window receives agent calls, or use automatic selection. |
 | **Release Serial Port** | Return an agent-held serial port to the Serial Monitor or another application. |
 | **List Target Documentation** | List the current target's manuals, datasheets, Arm documents, and imported PDFs. |
@@ -189,39 +192,33 @@ and type **CMSIS Developer Assistant** to find them.
 | **Import Document for Current Target** | Import and attribute PDFs that are not supplied by a software pack. |
 | **Open User Documents Folder** | Open the folder containing imported target documentation. |
 | **Open Pack Docs Panel** | Inspect target documents, SVD peripherals, index state, and documentation tools. |
-| **Open Knowledge Browser** | Experimental. A panel over the knowledge index: the core index the extension ships (or the one `cmsis-developer-assistant.knowledge.indexPath` names), the packs' and the workspace's: every unit with filters by type, domain and state and the search of `knowledge_search`; a unit's text, the files it ships and its frontmatter; its relations as a graph to walk; and an overview of the index with the routing units as places to start. Read-only. |
+| **Open Knowledge Browser** | Search the knowledge base and explore relationships between topics. |
 | **Copy Recent Problems** | Copy recent errors and warnings, with their source and suggested next step. |
 
-## Choose a workflow
+## Explore the knowledge base
 
-The extension installs one AI Skill, `cmsis-help`: the entry point and health
-check. Enter `/cmsis-help` in the chat window, or simply ask the agent for the
-outcome you need. Before a CMSIS task, the agent looks the procedure up in the
-knowledge index the extension ships and follows it. The index covers:
+The extension ships an indexed knowledge base containing thousands of topics
+for CMSIS and Zephyr development. It combines built-in content with knowledge
+from installed software packs and the current workspace, allowing searches to
+return guidance specific to the selected target.
 
-- Creating a project from an empty VS Code window, and creating, extending,
-  or retargeting a CMSIS or Zephyr project.
-- Generating and integrating a board layer.
-- Setting up the debugger for a target, including Arm FVP models, and finding
-  out why a debug or flash session fails.
-- Investigating firmware on a connected Cortex-M target.
-- Searching target documentation with page citations.
-- Writing a GitHub Actions workflow that builds the solution and optionally
-  tests it on an FVP.
+Each topic is a knowledge unit: a self-contained procedure, concept, rule,
+example, or troubleshooting guide with metadata and relationships to related
+units. Together, these units connect a task or error message to the guidance
+needed to address it.
 
-Many of these procedures are converted from the
-[generic MCU skills of Open-CMSIS-Pack/cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills/blob/main/generic-mcu-skills/README.md),
-which remain available there as skills to install by hand:
+AI agents are instructed to search the index before CMSIS and Zephyr tasks and
+retrieve only the knowledge relevant to the current task and target. The
+installed `cmsis-help` skill is the entry point and health check; enter
+`/cmsis-help`, or simply describe the outcome you need.
 
-| Category | What the procedures cover |
-|----------|---------------------------|
-| **Project** | Create, inspect, extend, and manage CMSIS and Zephyr projects. |
-| **DevOps** | Automate builds, tests, releases, and CI/CD workflows. |
-| **Bring-up, Pack, Ethos-U, Stream** | Author CMSIS-Pack debug and trace content, evaluate Ethos-U model variants, and generate CMSIS-Stream components; for pack and library authors. |
+For direct access, run **CMSIS Developer Assistant: Open Knowledge Browser**.
+It lets you search the complete collection, read individual units, explore
+their relationships, and inspect index metadata.
 
-Software packs can ship their own procedures in a `.knowledge/` folder; the
-agent sees them in projects that use the pack. **Open Knowledge Browser** shows
-the whole index.
+The knowledge base explains how to approach a task. The documentation search
+described next complements it with evidence from the manuals and datasheets for
+the selected target hardware.
 
 ## Documentation RAG
 
@@ -239,10 +236,10 @@ headings. RAG finds the most relevant passages for a question and supplies them
 to the AI agent as context, making large documentation sets practical to use.
 
 Through MCP tools, the AI agent can search and retrieve relevant documentation
-pages and CMSIS-SVD peripheral information. Because retrieval is local and
-scoped to the selected target, the system is lightweight, privacy-preserving,
-and well suited to precise queries about devices, registers, bit fields, and
-other embedded-software terminology.
+pages and CMSIS-SVD peripheral information. Because retrieval and indexing are
+local and scoped to the selected target, the system is lightweight and well
+suited to precise queries about devices, registers, bit fields, and other
+embedded-software terminology.
 
 > &#8505;&#65039; **IMPORTANT**
 >
@@ -254,11 +251,19 @@ other embedded-software terminology.
 > agent. If a required manual is missing, download a copy and add it with
 > **CMSIS Developer Assistant: Import Document for Current Target**.
 
-The documentation tools are part of every agent's tool list by default.
+Documentation tools are enabled by default. Disabling
+[`cmsis-developer-assistant.packDocs.enabled`](https://code.visualstudio.com/docs/configure/settings#_extension-settings)
+removes them from the AI agent's tool list after the VS Code window is reloaded.
 
-> &#9888;&#65039; **WARNING**
->
-> Disabling the
-> [`cmsis-developer-assistant.packDocs.enabled`](https://code.visualstudio.com/docs/configure/settings#_extension-settings)
-> setting removes access to documentation from the MCP tool list. The AI
-> agent can no longer access or search target documentation.
+## Working with multiple VS Code windows
+
+In this context, a window is a separately opened VS Code window, whether it
+contains a workspace or is empty. Each has its own extension host and may have
+its own workspace folders, projects, and debug sessions. One window acts as the
+router and forwards AI agent requests to the appropriate window. Other windows
+act as workers and run requests for their own projects and debug sessions.
+Router election and target-window selection are automatic in most cases.
+
+The CMSIS Developer Assistant status-bar item shows **R** for the router and
+**W** for a worker. Click it, or run **CMSIS Developer Assistant: Select Target
+Window**, to choose which window the agent should use.

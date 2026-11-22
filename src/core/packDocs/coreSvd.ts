@@ -21,7 +21,10 @@
  * `core_cm<n>.h` at runtime and therefore has offsets and bit positions but
  * no descriptions; the header stays the fallback for a core without a file.
  *
- * `index.json` maps the csolution / cbuild-run `core:` name to the file.
+ * `index.json` maps the csolution / cbuild-run `core:` name to the file and
+ * says, per core, which generator run wrote it and from which CMSIS source:
+ * the files do not all come from the same pack (a core can be added from a
+ * CMSIS checkout before a pack ships its header).
  */
 
 import * as fs from 'fs';
@@ -46,11 +49,24 @@ const GROUP_OF: Record<string, string> = {
     STL: 'Memory system', DCAR: 'Memory system', EMSS: 'Memory system',
 };
 
-interface CoreSvdIndex {
+/** One core of `index.json`: its file and content, and the generator run that wrote the file. */
+interface CoreSvdEntry {
+    file: string;
+    arch: string;
+    header: string;
+    peripherals: string[];
+    registers: number;
+    fields: number;
+    /** `gen_core_svd.py 1.1.0` */
     generator: string;
+    /** The CMSIS source of the header: a pack version, `6.3.0 (CMSIS-Core 6.1)`, or the commit of a checkout, `CMSIS_6@272b292539 (CMSIS-Core 6.4)`. */
     cmsis: string;
+    /** The date of the run, `2026-08-28`. */
     generated: string;
-    cores: Record<string, { file: string; arch: string; header: string; peripherals: string[]; registers: number; fields: number }>;
+}
+
+interface CoreSvdIndex {
+    cores: Record<string, CoreSvdEntry>;
 }
 
 export interface CoreSvdRef {
@@ -61,7 +77,7 @@ export interface CoreSvdRef {
     core: string;
     /** `ARMv8-M Mainline` */
     arch: string;
-    /** Where the description came from, for the panel: `cmsis-pack-docs (from ARM::CMSIS 6.3.0)`. */
+    /** Where the description came from, for the panel: `cmsis-pack-docs (from ARM::CMSIS 6.3.0 (CMSIS-Core 6.1))`, the CMSIS source of this core's file. */
     source: string;
     exists: boolean;
 }
@@ -96,7 +112,7 @@ export function resolveCoreSvd(assetsDir: string | undefined, core: string): Cor
     if (!entry) { return undefined; }
     const [name, info] = entry;
     const p = path.join(dir, info.file);
-    return { file: info.file, path: p, core: name, arch: info.arch, source: `cmsis-pack-docs (from ARM::CMSIS ${index.cmsis})`, exists: fs.existsSync(p) };
+    return { file: info.file, path: p, core: name, arch: info.arch, source: `cmsis-pack-docs (from ARM::CMSIS ${info.cmsis})`, exists: fs.existsSync(p) };
 }
 
 const cache = new Map<string, { mtimeMs: number; summary: SvdSummary }>();

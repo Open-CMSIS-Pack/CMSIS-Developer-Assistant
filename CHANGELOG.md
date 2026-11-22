@@ -4,6 +4,10 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- Add Cortex-M42 core SVD, header resolution and architecture documentation lookup.
+
 ## [2.8.0] - 2026-11-03
 
 The release of the 2.7 line. 2.7.0 brought the knowledge engine, the CMSIS Solution catalog and project actions and Kimi Code, and was packaged as a pre-release VSIX (odd minor version); 2.8.0 is the same extension as a release VSIX, with a README written for it. No tool, argument, setting or behaviour changed since 2.7.0.

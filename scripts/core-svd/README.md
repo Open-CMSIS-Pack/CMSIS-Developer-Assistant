@@ -14,6 +14,8 @@ fallback for a core without a shipped file.
 
 `index.json` maps the csolution / cbuild-run `core:` name (`Cortex-M33`,
 `Cortex-M0+`, …) to the file, its architecture and the peripherals it holds.
+Each entry also names the generator run that wrote the file: the generator
+version, the CMSIS source and the date (see [The index](#the-index)).
 
 | Core | File | Peripherals |
 | ---- | ---- | ----------- |
@@ -21,7 +23,7 @@ fallback for a core without a shipped file.
 | Cortex-M3, M4, M7, SC300 | `Cortex_M3.svd` … | + SCnSCB, ITM, TPIU, FPB, (FPU), Cortex-M7: cache/TCM regs, ERRBNK |
 | Cortex-M23 | `Cortex_M23.svd` | SCB, SysTick, NVIC, MPU, SAU, DCB, DIB, DWT, TPIU, FPB, CTI, `*_NS` aliases |
 | Cortex-M33, M35P, STAR-MC1 | `Cortex_M33.svd` … | + ITM, FPU, SCnSCB |
-| Cortex-M55, M85, M52, STAR-MC3 | `Cortex_M55.svd` … | + ICB, PMU, MEMSYSCTL, PWRMODCTL, EWIC, EWIC_ISA, ERRBNK, PRCCFGINF, STL, (DCAR) |
+| Cortex-M55, M85, M52, M42, STAR-MC3 | `Cortex_M55.svd` … | + ICB, PMU, MEMSYSCTL, PWRMODCTL, EWIC, EWIC_ISA, ERRBNK, PRCCFGINF, STL, (DCAR) |
 
 Optional components are described whether or not a particular device has
 them; the ID/TYPE registers (or the DFP) say what is really present.
@@ -79,3 +81,47 @@ architecture manual so nothing ships silently undocumented.
 
 The `scripts/` directory is excluded from the VSIX; only `assets/svd/core`
 ships.
+
+## The index
+
+`index.json` is written by the generator only; do not edit it. Every entry
+carries `generator`, `cmsis` and `generated`: the run that wrote that core's
+file. `cmsis` is the version of the pack (`6.3.0 (CMSIS-Core 6.1)`), or for a
+git checkout its directory and commit (`CMSIS_6@272b292539 (CMSIS-Core 6.4)`).
+The same text is in the head of the SVD file, `coreSvd.ts` shows it as the
+source of the core's registers, and `coreSvd.test.ts` checks that file and
+entry agree.
+
+A run does not have to write every core:
+
+- `--core <name>` (repeatable) writes these cores and keeps the other entries
+  of the existing index as they are. This is how a core is added.
+- A core whose header the CMSIS source does not have is skipped with a
+  warning; its file and its entry stay.
+- A run without `--core` drops the entry of a core that is no longer in
+  `CORES`.
+
+So the files need not all come from one CMSIS source, and each one is
+reproduced by the generator version and the source its entry names. A change
+of the generator alone does not require a new run for all cores; a full run
+stamps every file with the new generator version.
+
+## Cortex-M42
+
+Cortex-M42 uses the STAR-MC3-compatible register layout from `core_cm42.h`;
+its descriptions refer to the STAR-MC3 TRM (`reference_core` in `CORES`).
+No released `ARM.CMSIS` pack has that header yet (6.4.0 does not), so the
+file comes from a checkout of
+[CMSIS_6](https://github.com/ARM-software/CMSIS_6) that contains it:
+
+```sh
+python3 scripts/core-svd/gen_core_svd.py --cmsis /path/to/CMSIS_6 --core Cortex-M42
+```
+
+This writes `Cortex_M42.svd` and its index entry, with the commit of the
+checkout as the source, and leaves the other cores alone. Name the checkout
+directory `CMSIS_6` to get the committed text. Once a pack ships
+`core_cm42.h`, a full run from that pack replaces it.
+
+The `<version>` of a generated SVD document stays 1.0.0 whatever the
+generator revision.

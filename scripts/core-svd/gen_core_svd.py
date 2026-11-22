@@ -37,7 +37,11 @@ Usage:
                   [--inventory <file>] [--verbose]
 
 The output is `<out>/<Core>.svd` for every core in CORES plus `index.json`,
-which maps the csolution / cbuild-run `core:` name to the file.
+which maps the csolution / cbuild-run `core:` name to the file and records,
+per core, the generator version, the CMSIS source and the date of the run
+that wrote the file. A run for some cores (`--core`), or one whose CMSIS
+source lacks a core's header, keeps the other entries of an existing
+`index.json` as they are, so a core can be added without touching the rest.
 """
 from __future__ import annotations
 
@@ -46,6 +50,7 @@ import datetime
 import json
 import os
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -55,7 +60,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import core_svd_descriptions as D  # noqa: E402
 import core_svd_supplement as S  # noqa: E402
 
-GENERATOR_VERSION = '1.0.1'
+GENERATOR_VERSION = '1.1.0'
+
+# What an index entry says about the run that wrote its file.
+PROVENANCE_KEYS = ('generator', 'cmsis', 'generated')
 
 # ── Which cores, which header, what is optional ─────────────────────────────
 
@@ -715,14 +723,60 @@ def find_cmsis(root: str | None) -> Path:
         sys.exit('No ARM.CMSIS pack found; pass --cmsis <path to CMSIS/Core/Include or the pack root>')
     return versions[-1] / 'CMSIS' / 'Core' / 'Include'
 
+def checkout_of(root: Path) -> str | None:
+    """`<directory>@<commit>` when the CMSIS source is a git checkout and not an installed pack."""
+    if not (root / '.git').exists():
+        return None
+    try:
+        commit = subprocess.run(['git', '-C', str(root), 'rev-parse', '--short=10', 'HEAD'],
+                                capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return f'{root.name}@{commit}' if commit else None
+
 def cmsis_version_of(include_dir: Path) -> str:
+    """The CMSIS source as the SVD files and the index name it: the pack version (`6.3.0`), or the commit of a checkout."""
     text_ = (include_dir / 'cmsis_version.h').read_text(errors='replace')
     main = re.search(r'__CM_CMSIS_VERSION_MAIN\s+\(\s*(\d+)', text_)
     sub = re.search(r'__CM_CMSIS_VERSION_SUB\s+\(\s*(\d+)', text_)
-    pack = include_dir.parent.parent.parent.name          # <pack root>/CMSIS/Core/Include
+    root = include_dir.parent.parent.parent               # <pack root>/CMSIS/Core/Include
+    source = checkout_of(root) or root.name
     if main and sub:
-        return f'{pack} (CMSIS-Core {main.group(1)}.{sub.group(1)})'
-    return pack
+        return f'{source} (CMSIS-Core {main.group(1)}.{sub.group(1)})'
+    return source
+
+def read_index(path: Path) -> dict[str, dict]:
+    """
+    The entries of an existing index.json, each with its provenance. An index
+    written before 1.1.0 names one generator run for all cores at its top;
+    those values go to every entry that has none of its own.
+    """
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text(encoding='utf-8'))
+    shared = {k: data[k] for k in PROVENANCE_KEYS if k in data}
+    return {name: {**entry, **{k: v for k, v in shared.items() if k not in entry}}
+            for name, entry in data.get('cores', {}).items()}
+
+def merge_index(previous: dict[str, dict], produced: dict[str, dict], full: bool, log) -> dict[str, dict]:
+    """
+    The entries of this run and those it keeps, in the order of CORES. An
+    entry of a core this run did not write stays as it was. A core that is no
+    longer in CORES leaves the index on a full run only.
+    """
+    merged: dict[str, dict] = {}
+    for spec in CORES:
+        entry = produced.get(spec.name) or previous.get(spec.name)
+        if entry:
+            merged[spec.name] = entry
+    for name, entry in previous.items():
+        if name in merged:
+            continue
+        if full:
+            log(f'{name}: not a core of the generator any more — its entry leaves index.json')
+        else:
+            merged[name] = entry
+    return merged
 
 def file_name(core: str) -> str:
     return device_name(core) + '.svd'
@@ -743,8 +797,11 @@ def main(argv: list[str] | None = None) -> int:
     warnings: list[str] = []
     log = warnings.append
     inventory: dict | None = {} if args.inventory else None
-    index = {'generator': f'gen_core_svd.py {GENERATOR_VERSION}', 'cmsis': version,
-             'generated': datetime.date.today().isoformat(), 'cores': {}}
+    index_path = out_dir / 'index.json'
+    previous = read_index(index_path)
+    provenance = {'generator': f'gen_core_svd.py {GENERATOR_VERSION}', 'cmsis': version,
+                  'generated': datetime.date.today().isoformat()}
+    produced: dict[str, dict] = {}
     missing_fields: dict[str, list[str]] = {}
     missing_regs: dict[str, list[str]] = {}
 
@@ -753,7 +810,8 @@ def main(argv: list[str] | None = None) -> int:
             continue
         header = include_dir / spec.header
         if not header.exists():
-            log(f'{spec.name}: header {header} not found — skipped')
+            kept = '; its file and index entry stay as they are' if spec.name in previous else ''
+            log(f'{spec.name}: header {header} not found — skipped{kept}')
             continue
         model = HeaderModel(header, spec, log)
         builder = Builder(spec, model, log, inventory)
@@ -763,10 +821,11 @@ def main(argv: list[str] | None = None) -> int:
         path.write_text(xml, encoding='utf-8')
         n_regs = sum(len(r.instances()) for p in peripherals if not p.derived_from for r in p.registers)
         n_fields = sum(len(r.fields) for p in peripherals if not p.derived_from for r in p.registers)
-        index['cores'][spec.name] = {
+        produced[spec.name] = {
             'file': path.name, 'arch': spec.arch, 'header': spec.header,
             'peripherals': [p.name for p in peripherals],
             'registers': n_regs, 'fields': n_fields,
+            **provenance,
         }
         for k in builder.missing_field_desc:
             missing_fields.setdefault(k, []).append(spec.name)
@@ -775,7 +834,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f'{path.name:22} {len(peripherals):3} peripherals {n_regs:5} registers {n_fields:5} fields '
               f'(undescribed fields: {len(builder.missing_field_desc)})')
 
-    (out_dir / 'index.json').write_text(json.dumps(index, indent=2) + '\n')
+    index = {'cores': merge_index(previous, produced, not args.core, log)}
+    index_path.write_text(json.dumps(index, indent=2) + '\n', encoding='utf-8')
     if inventory is not None:
         Path(args.inventory).write_text(json.dumps({'fields': inventory, 'missing_field_desc': missing_fields,
                                                    'missing_reg_desc': missing_regs}, indent=1) + '\n')

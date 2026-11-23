@@ -1,7 +1,7 @@
 version: 2
 
 updates:
-  # Maintain dependencies for GitHub Actions
+  # GitHub Actions dependencies
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -15,6 +15,9 @@ updates:
         patterns:
           - "github/codeql-action/*"
 
+      github-actions:
+        patterns:
+          - "*"
   # Maintain dependencies for the JavaScript package
   - package-ecosystem: "npm"
     directory: "/"
@@ -23,6 +26,29 @@ updates:
       time: "02:00"
     cooldown:
       default-days: 3
+
+    groups:
+      vscode-dependencies:
+        patterns:
+          - "@types/vscode"
+          - "@vscode/*"
+
+      react-dependencies:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+
+      jest-dependencies:
+        patterns:
+          - "jest"
+          - "@types/jest"
+
+      npm-dependencies:
+        patterns:
+          - "*"
+
     ignore:
       - dependency-name: "@types/vscode"
       - dependency-name: "react"

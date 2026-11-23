@@ -6,7 +6,7 @@ Originally derived from [microsoft/DebugMCP](https://github.com/microsoft/DebugM
 
 Upstream baseline: forked at [`4422d8c`](https://github.com/microsoft/DebugMCP/commit/4422d8c) (2026-03-14), last synced against [`4051049`](https://github.com/microsoft/DebugMCP/commit/4051049) (upstream v2.3.0, 2026-08-05) in fork v2.0.0; individual changes cherry-picked through [`148cbb9a`](https://github.com/microsoft/DebugMCP/commit/148cbb9a) (upstream v2.3.1, 2026-08-20). See [§9](#9-upstream-work-deliberately-not-taken) for what was deliberately left behind.
 
-This is a historical divergence record, not a description of the current release. The transport, timeout, resource and packaging claims below include superseded designs. For the current release use [CHANGELOG.md](CHANGELOG.md), the [user guide](docs/user-guide.md) and the [architecture pages](docs/architecture/debugMCPServer.md); the independent rewrite is recorded in [provenance](docs/provenance/README.md).
+This is a historical divergence record, not a description of the current release. The transport, timeout, resource and packaging claims below include superseded designs. For the current release use [CHANGELOG.md](CHANGELOG.md), the [user guide](docs/user-guide.md) and the [architecture pages](docs/architecture/debugMCPServer.md); the independent rewrite is issue #53.
 
 ---
 

@@ -176,8 +176,7 @@ npm run compile
 node test/transport/executor-cases.js
 ```
 
-Runs the characterization cases of
-[docs/provenance/specs/debuggingExecutor.md](../../docs/provenance/specs/debuggingExecutor.md)
+Runs the characterization cases written for the executor's rewrite (#53)
 against the compiled executor with scripted fake debug sessions: the DAP
 requests and their arguments, the UI fallbacks and GDB's refusals, restart,
 timeouts, the readiness probe on an adapter that takes no requests, reset

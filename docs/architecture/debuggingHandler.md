@@ -952,8 +952,7 @@ over fake task events.
 
 A few behaviours are known to be wrong and were kept on purpose, so that the
 rewrite could be reviewed as behaviour-neutral. Comments in the code mark
-each with its number (`KB9`, `KB15`, …); the list is in the *Known bugs to
-preserve* section of `docs/provenance/specs/debuggingHandler.md`. Each is
+each with its number (`KB9`, `KB15`, …). Each is
 fixed in a change of its own: KB1, failures answered as ordinary text, by
 the typed results of #11; KB2, KB4 and KB5 — the 60 s cap, the missing
 probe guards and the task matching of `cmsis_action` — by the CMSIS jobs of

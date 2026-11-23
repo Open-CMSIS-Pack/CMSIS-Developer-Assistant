@@ -23,7 +23,7 @@ and build artefacts.
 
 The project started as a fork of microsoft/DebugMCP. The code that still
 came from there has since been replaced by independently written code
-(issue #53); `docs/provenance/README.md` describes how.
+(issue #53); `npm run provenance:check -- --gate` keeps it that way.
 
 ## From agent to target
 

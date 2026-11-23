@@ -21,7 +21,7 @@
  * (one hop in the graph). Experimental: the core index ships with the
  * extension (`resources/knowledge/core.db`, pinned by `core.lock.json`),
  * `knowledge.indexPath` replaces it, packs and the workspace add their own;
- * see docs/architecture/knowledge.md and docs/proposals/knowledge-base.md.
+ * see docs/architecture/knowledge.md.
  *
  * The shape of `BuildInfoHandler`: no `vscode` import, the host is
  * injected, every call runs under the fence and trace of `core/toolRun.ts`.

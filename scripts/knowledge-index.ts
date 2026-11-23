@@ -35,7 +35,7 @@ import { fileURLToPath } from 'url';
 import {
     CoreIndexLock, FETCH_COMMAND, INDEX_RELATIVE, LOCK_RELATIVE, SOURCES_RELATIVE, fetchIndex, fetchSources, fetchText, indexState,
     lockFromRelease, parseReleaseRecord, readLock, releaseRecordUrl, sourcesState, writeLock,
-} from '../src/core/knowledge/coreIndexLock';
+} from '../src/core/knowledge/coreIndexLock.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 

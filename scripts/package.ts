@@ -24,7 +24,7 @@ import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 import { parse as parseSemver } from 'semver';
 
-import { assertPinnedIndex } from '../src/core/knowledge/coreIndexLock';
+import { assertPinnedIndex } from '../src/core/knowledge/coreIndexLock.js';
 
 const argv = process.argv.slice(2);
 
@@ -205,7 +205,7 @@ if (!getOptionValue(argv, '--readme-path', '--readme-path')) {
     fs.mkdirSync(path.dirname(packagedReadme), { recursive: true });
     fs.writeFileSync(packagedReadme, buildPackagedReadme());
     // vsce's rewriting (and its https-only image check) would undo the inlining.
-    argv.push('--readme-path', path.relative(repoRoot, packagedReadme), '--no-rewrite-relative-links');
+    argv.push('--readme-path', path.relative(repoRoot, packagedReadme).split(path.sep).join('/'), '--no-rewrite-relative-links');
 }
 
 // package the extension for the target platform

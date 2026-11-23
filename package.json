@@ -391,6 +391,12 @@
     "markdownlint-cli": {
       "js-yaml": "^5.4.1",
       "minimatch": "^10.2.4"
+    },
+    "markdownlint": {
+      "re2js": "~2.8.7"
+    },
+    "micromark-extension-math": {
+      "katex": "^0.18.2"
     }
   }
 }

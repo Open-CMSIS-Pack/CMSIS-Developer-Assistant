@@ -37,14 +37,14 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { buildIndex } from '../src/core/packDocs/bm25Index';
-import { detectHeading } from '../src/core/packDocs/headings';
-import { LoadedDoc, PageRecord } from '../src/core/packDocs/pageStore';
-import { PdfjsExtractor, PdftotextExtractor } from '../src/core/packDocs/pdfExtract';
-import { DocRef } from '../src/core/packDocs/pdscBooks';
-import { expandQuery } from '../src/core/packDocs/queryExpansion';
-import { isTocLike, searchLoaded } from '../src/core/packDocs/search';
-import { loadSvd, registersOf } from '../src/core/packDocs/svdLite';
+import { buildIndex } from '../src/core/packDocs/bm25Index.js';
+import { detectHeading } from '../src/core/packDocs/headings.js';
+import type { LoadedDoc, PageRecord } from '../src/core/packDocs/pageStore.js';
+import { PdfjsExtractor, PdftotextExtractor } from '../src/core/packDocs/pdfExtract.js';
+import type { DocRef } from '../src/core/packDocs/pdscBooks.js';
+import { expandQuery } from '../src/core/packDocs/queryExpansion.js';
+import { isTocLike, searchLoaded } from '../src/core/packDocs/search.js';
+import { loadSvd, registersOf } from '../src/core/packDocs/svdLite.js';
 
 interface Args {
     pages: string;

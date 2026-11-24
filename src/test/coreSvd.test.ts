@@ -70,6 +70,21 @@ suite('coreSvd', () => {
         assert.deepStrictEqual(files, Object.values(index.cores).map((info) => info.file).sort(), 'an index entry for every SVD file, and the reverse');
     });
 
+    test('the CPUID description names the part number of every core and each implementer code it is listed under', () => {
+        // A new core must not ship with a CPUID that the description cannot name (#148).
+        const PART_NAMES: Record<string, string> = { 'Star-MC3': 'Cortex-M42 or Star-MC3', 'Cortex-M42': 'Cortex-M42 or Star-MC3' };
+        for (const [core, { summary }] of summaries) {
+            const cpuid = registersOf(summary, findPeripheral(summary, 'SCB')!).find((r) => r.name === 'CPUID');
+            const field = (name: string): string => cpuid?.fields.find((f) => f.name === name)?.description ?? '';
+            const partno = field('PARTNO');
+            const name = PART_NAMES[core] ?? core;
+            assert.match(partno, new RegExp(`0x[0-9A-F]{3} ${name.replace(/[+]/g, '\\+')}[,.]`), `${core}: PARTNO names the core`);
+            for (const code of partno.matchAll(/Implementer (0x[0-9A-F]{2}):/g)) {
+                assert.ok(field('IMPLEMENTER').includes(`${code[1]} = `), `${core}: IMPLEMENTER names ${code[1]}`);
+            }
+        }
+    });
+
     test('every shipped core has the SCS registers at their architectural addresses, grouped for the panel', () => {
         for (const [core, { summary }] of summaries) {
             assert.strictEqual(summary.device, `${core} core peripherals (${index.cores[core].file})`);

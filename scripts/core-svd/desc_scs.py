@@ -149,11 +149,13 @@ FIELD_DESC = {
     'NVIC.STIR.INTID': 'Interrupt number to set pending (0 = IRQ0, i.e. exception 16). Unprivileged writes are allowed when CCR.USERSETMPEND is 1.',
     # ── SCB.CPUID ────────────────────────────────────────────────────────────
     'SCB.CPUID.REVISION': 'Minor revision pM of the rNpM product revision.',
-    'SCB.CPUID.PARTNO': 'Part number: 0xC20 Cortex-M0, 0xC60 Cortex-M0+, 0xC21 Cortex-M1, 0xC23 Cortex-M3, 0xC24 Cortex-M4, 0xC27 Cortex-M7, 0xD20 Cortex-M23, '
-                        '0xD21 Cortex-M33, 0xD31 Cortex-M35P, 0xD22 Cortex-M55, 0xD23 Cortex-M85, 0xD24 Cortex-M52.',
+    'SCB.CPUID.PARTNO': 'Part number; read it together with IMPLEMENTER. Implementer 0x41: 0xC20 Cortex-M0, 0xC60 Cortex-M0+, 0xC21 Cortex-M1, '
+                        '0xC23 Cortex-M3, 0xC24 Cortex-M4, 0xC27 Cortex-M7, 0xC30 SC000, 0xC33 SC300, 0xD20 Cortex-M23, 0xD21 Cortex-M33, '
+                        '0xD31 Cortex-M35P, 0xD22 Cortex-M55, 0xD23 Cortex-M85. Implementer 0x63: 0x132 Star-MC1, 0xD24 Cortex-M52, '
+                        '0xD25 Cortex-M42 or Star-MC3.',
     'SCB.CPUID.ARCHITECTURE': 'Architecture: 0xC = ARMv6-M, 0xF = ARMv7-M or ARMv8-M (use ID_PFR/ID_ISAR for the details).',
     'SCB.CPUID.VARIANT': 'Major revision rN of the rNpM product revision.',
-    'SCB.CPUID.IMPLEMENTER': 'Implementer code: 0x41 = Arm.',
+    'SCB.CPUID.IMPLEMENTER': 'Implementer code: 0x41 = Arm, 0x63 = Arm China.',
     # ── SCB.ICSR ─────────────────────────────────────────────────────────────
     'SCB.ICSR.VECTACTIVE': 'Exception number of the currently executing handler; 0 in Thread mode. 2 NMI, 3 HardFault, 4 MemManage, 5 BusFault, 6 UsageFault, 7 SecureFault, '
                            '11 SVCall, 12 DebugMonitor, 14 PendSV, 15 SysTick, 16+n IRQn.',

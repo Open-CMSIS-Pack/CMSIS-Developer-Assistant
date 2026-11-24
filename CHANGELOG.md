@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ## Unreleased
 
 - Add Cortex-M42 core SVD, header resolution and architecture documentation lookup.
+- The `SCB.CPUID` descriptions of the core SVDs name the part numbers of all 17 cores, by implementer: 0x41 Arm, 0x63 Arm China (Star-MC1, Star-MC3, Cortex-M52, Cortex-M42) (#148).
 
 ## [2.8.0] - 2026-11-03
 

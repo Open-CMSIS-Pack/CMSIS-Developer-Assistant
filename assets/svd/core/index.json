@@ -14,9 +14,9 @@
       ],
       "registers": 65,
       "fields": 102,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     },
     "Cortex-M0+": {
       "file": "Cortex_M0plus.svd",
@@ -33,9 +33,9 @@
       ],
       "registers": 71,
       "fields": 122,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     },
     "Cortex-M1": {
       "file": "Cortex_M1.svd",
@@ -52,9 +52,9 @@
       ],
       "registers": 66,
       "fields": 104,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     },
     "SC000": {
       "file": "SC000.svd",
@@ -72,9 +72,9 @@
       ],
       "registers": 73,
       "fields": 123,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     },
     "Cortex-M3": {
       "file": "Cortex_M3.svd",
@@ -94,9 +94,9 @@
       ],
       "registers": 286,
       "fields": 394,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     },
     "Cortex-M4": {
       "file": "Cortex_M4.svd",
@@ -117,9 +117,9 @@
       ],
       "registers": 292,
       "fields": 422,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     },
     "Cortex-M7": {
       "file": "Cortex_M7.svd",
@@ -141,9 +141,9 @@
       ],
       "registers": 318,
       "fields": 516,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     },
     "SC300": {
       "file": "SC300.svd",
@@ -163,9 +163,9 @@
       ],
       "registers": 287,
       "fields": 392,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     },
     "Cortex-M23": {
       "file": "Cortex_M23.svd",
@@ -192,9 +192,9 @@
       ],
       "registers": 391,
       "fields": 311,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     },
     "Cortex-M33": {
       "file": "Cortex_M33.svd",
@@ -226,9 +226,9 @@
       ],
       "registers": 502,
       "fields": 559,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     },
     "Cortex-M35P": {
       "file": "Cortex_M35P.svd",
@@ -260,9 +260,9 @@
       ],
       "registers": 502,
       "fields": 559,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     },
     "Star-MC1": {
       "file": "Star_MC1.svd",
@@ -295,9 +295,9 @@
       ],
       "registers": 524,
       "fields": 650,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     },
     "Cortex-M55": {
       "file": "Cortex_M55.svd",
@@ -337,9 +337,9 @@
       ],
       "registers": 665,
       "fields": 1003,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     },
     "Cortex-M85": {
       "file": "Cortex_M85.svd",
@@ -379,9 +379,9 @@
       ],
       "registers": 669,
       "fields": 1002,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     },
     "Cortex-M52": {
       "file": "Cortex_M52.svd",
@@ -422,9 +422,9 @@
       ],
       "registers": 669,
       "fields": 997,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     },
     "Cortex-M42": {
       "file": "Cortex_M42.svd",
@@ -463,7 +463,7 @@
       "fields": 892,
       "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "CMSIS_6@272b292539 (CMSIS-Core 6.4)",
-      "generated": "2026-11-22"
+      "generated": "2026-11-24"
     },
     "Star-MC3": {
       "file": "Star_MC3.svd",
@@ -500,9 +500,9 @@
       ],
       "registers": 599,
       "fields": 892,
-      "generator": "gen_core_svd.py 1.0.0",
+      "generator": "gen_core_svd.py 1.1.0",
       "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-      "generated": "2026-08-28"
+      "generated": "2026-11-24"
     }
   }
 }
